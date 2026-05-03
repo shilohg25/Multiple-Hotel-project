@@ -1,13 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
-import { requireEnv } from './env';
+import { getEnv } from './env';
 
-export const supabaseAdmin = createClient(
-  requireEnv('NEXT_PUBLIC_SUPABASE_URL'),
-  requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
+const supabaseUrl = getEnv('NEXT_PUBLIC_SUPABASE_URL', 'http://127.0.0.1:54321');
+const supabaseServiceRoleKey = getEnv('SUPABASE_SERVICE_ROLE_KEY', 'missing-service-role-key');
+
+export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
   }
-);
+});
