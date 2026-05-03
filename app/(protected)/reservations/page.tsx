@@ -6,7 +6,7 @@ import type { Hotel, Reservation, Room } from '@/types/app';
 
 type SearchParams = { hotel?: string; from?: string; to?: string };
 
-export default async function ReservationsPage({ searchParams }: { searchParams?: SearchParams | Promise<SearchParams> }) {
+export default async function ReservationsPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const params = (await searchParams) || {};
   const staff = await requireStaff();
   const { from: defaultFrom, to: defaultTo } = monthRange();
