@@ -1,0 +1,128 @@
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import type { Payment } from '@/types/app';
+import { currency } from '@/lib/money';
+import { PaymentStatusBadge } from './StatusBadge';
+
+type PaymentWithUrl = Payment & { proof_url?: string | null };
+
+export function PaymentPanel({
+  reservationId,
+  payments,
+  currencyCode = 'PHP',
+  canConfirm
+}: {
+  reservationId: string;
+  payments: PaymentWithUrl[];
+  currencyCode?: string;
+  canConfirm: boolean;
+}) {
+  const router = useRouter();
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+  const confirmedTotal = payments.filter((payment) => payment.status === 'confirmed').reduce((sum, payment) => sum + Number(payment.amount), 0);
+
+  async function uploadPayment(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage('');
+    setLoading(true);
+    const form = new FormData(event.currentTarget);
+    form.set('reservation_id', reservationId);
+    const response = await fetch('/api/payments', { method: 'POST', body: form });
+    setLoading(false);
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(json.error || 'Payment upload failed');
+      return;
+    }
+    event.currentTarget.reset();
+    setMessage('Payment proof submitted for confirmation.');
+    router.refresh();
+  }
+
+  async function confirmPayment(id: string) {
+    setMessage('Confirming payment...');
+    const response = await fetch(`/api/payments/${id}/confirm`, { method: 'PATCH' });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(json.error || 'Payment confirmation failed');
+      return;
+    }
+    setMessage('Payment confirmed. Booking status updated if down payment requirement is met.');
+    router.refresh();
+  }
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+      <section className="card overflow-hidden">
+        <div className="border-b border-slate-200 px-5 py-4">
+          <h2 className="text-lg font-bold">Payment proofs</h2>
+          <p className="mt-1 text-sm text-slate-500">Confirmed total: {currency(confirmedTotal, currencyCode)}</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-5 py-3">Amount</th>
+                <th className="px-5 py-3">Method</th>
+                <th className="px-5 py-3">Status</th>
+                <th className="px-5 py-3">Proof</th>
+                <th className="px-5 py-3">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {payments.map((payment) => (
+                <tr key={payment.id}>
+                  <td className="px-5 py-3 font-semibold">{currency(payment.amount, currencyCode)}</td>
+                  <td className="px-5 py-3 capitalize text-slate-600">{payment.method.replaceAll('_', ' ')}</td>
+                  <td className="px-5 py-3"><PaymentStatusBadge status={payment.status} /></td>
+                  <td className="px-5 py-3">
+                    {payment.proof_url ? <a href={payment.proof_url} target="_blank" className="text-sm font-semibold text-slate-900 underline">View proof</a> : <span className="text-slate-500">Unavailable</span>}
+                  </td>
+                  <td className="px-5 py-3">
+                    {payment.status === 'submitted' && canConfirm ? (
+                      <button className="btn-primary" type="button" onClick={() => void confirmPayment(payment.id)}>Confirm</button>
+                    ) : <span className="text-slate-500">-</span>}
+                  </td>
+                </tr>
+              ))}
+              {!payments.length ? <tr><td colSpan={5} className="px-5 py-6 text-slate-500">No payment proofs uploaded yet.</td></tr> : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="card p-5">
+        <h2 className="text-lg font-bold">Add payment proof</h2>
+        <p className="mt-1 text-sm text-slate-500">Proof is mandatory. The booking remains tentative until payment is confirmed.</p>
+        {message ? <div className="mt-4 rounded-lg bg-slate-100 px-3 py-2 text-sm">{message}</div> : null}
+        <form onSubmit={uploadPayment} className="mt-4 space-y-4">
+          <div className="space-y-2">
+            <label>Amount received</label>
+            <input name="amount" type="number" min="1" step="0.01" required className="w-full" />
+          </div>
+          <div className="space-y-2">
+            <label>Payment method</label>
+            <select name="method" className="w-full">
+              <option value="gcash">GCash</option>
+              <option value="bank_transfer">Bank transfer</option>
+              <option value="cash">Cash</option>
+              <option value="card">Card / swipe</option>
+              <option value="online_gateway">Online gateway</option>
+              <option value="booking_dot_com">Booking.com</option>
+              <option value="trip_dot_com">Trip.com</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label>Payment proof</label>
+            <input name="proof" type="file" accept="image/*,application/pdf" required className="w-full" />
+          </div>
+          <button className="btn-primary w-full" type="submit" disabled={loading}>{loading ? 'Uploading...' : 'Submit proof'}</button>
+        </form>
+      </section>
+    </div>
+  );
+}
