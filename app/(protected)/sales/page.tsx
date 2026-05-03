@@ -9,7 +9,7 @@ function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default async function SalesPage({ searchParams }: { searchParams?: SearchParams | Promise<SearchParams> }) {
+export default async function SalesPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const params = (await searchParams) || {};
   const staff = await requireStaff();
   const selectedDate = params.date || todayISO();
