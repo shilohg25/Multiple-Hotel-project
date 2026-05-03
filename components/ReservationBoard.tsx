@@ -15,8 +15,12 @@ type DraftMove = {
 
 const dayWidth = 112;
 const roomLabelWidth = 190;
-const rowHeight = 76;
+const rowHeight = 92;
 const headerHeight = 48;
+
+function rangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string) {
+  return aStart < bEnd && aEnd > bStart;
+}
 
 function reservationColor(status: Reservation['status']) {
   switch (status) {
@@ -152,7 +156,7 @@ export function ReservationBoard({
                 className="absolute top-0 z-10 flex items-center justify-center border-b border-r border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600"
                 style={{ left: roomLabelWidth + index * dayWidth, width: dayWidth, height: headerHeight }}
               >
-                {formatDate(day).replace(', 2026', '')}
+                {formatDate(day)}
               </div>
             ))}
             {rooms.map((room, index) => (
@@ -175,7 +179,7 @@ export function ReservationBoard({
                 ))}
               </div>
             ))}
-            {reservations.map((reservation) => {
+            {reservations.map((reservation, reservationListIndex) => {
               const draft = drafts[reservation.id];
               const checkIn = draft?.check_in || reservation.check_in;
               const checkOut = draft?.check_out || reservation.check_out;
@@ -185,8 +189,18 @@ export function ReservationBoard({
               const start = Math.max(0, diffDays(from, checkIn));
               const length = Math.max(1, diffDays(checkIn, checkOut));
               const left = roomLabelWidth + start * dayWidth + 5;
-              const top = headerHeight + y * rowHeight + 9;
+              const overlapLevel = reservations
+                .slice(0, reservationListIndex)
+                .filter((other) => {
+                  const otherDraft = drafts[other.id];
+                  const otherRoomId = otherDraft?.room_id || other.room_id;
+                  const otherCheckIn = otherDraft?.check_in || other.check_in;
+                  const otherCheckOut = otherDraft?.check_out || other.check_out;
+                  return otherRoomId === roomId && rangesOverlap(checkIn, checkOut, otherCheckIn, otherCheckOut);
+                }).length % 2;
+              const top = headerHeight + y * rowHeight + 7 + overlapLevel * 44;
               const width = Math.max(dayWidth - 10, length * dayWidth - 10);
+              const height = 40;
               return (
                 <div
                   key={reservation.id}
@@ -201,19 +215,21 @@ export function ReservationBoard({
                       originalRoomIndex
                     });
                   }}
-                  className={`absolute z-30 cursor-grab rounded-xl border px-3 py-2 text-xs shadow-sm active:cursor-grabbing ${reservationColor(reservation.status)}`}
-                  style={{ left, top, width, height: rowHeight - 18 }}
+                  className={`absolute z-30 cursor-grab rounded-xl border px-3 py-1 text-xs shadow-sm active:cursor-grabbing ${reservationColor(reservation.status)}`}
+                  style={{ left, top, width, height }}
                   title="Drag to move"
                 >
                   <div className="truncate font-bold">{reservation.guests?.full_name || 'Guest'}</div>
-                  <div className="truncate opacity-90">{checkIn} → {checkOut}</div>
-                  <Link
-                    href={`/reservations/${reservation.id}`}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    className="mt-1 inline-block rounded bg-white/20 px-2 py-0.5 font-semibold underline"
-                  >
-                    Open
-                  </Link>
+                  <div className="truncate opacity-90">
+                    {checkIn} → {checkOut} ·{' '}
+                    <Link
+                      href={`/reservations/${reservation.id}`}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      className="font-semibold underline"
+                    >
+                      Open
+                    </Link>
+                  </div>
                 </div>
               );
             })}

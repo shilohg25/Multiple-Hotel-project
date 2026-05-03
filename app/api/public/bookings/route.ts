@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server';
 import { jsonError } from '@/lib/api';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { hasReservationConflict } from '@/lib/availability';
-import { sendHouseRulesEmail } from '@/lib/email';
-import type { Guest, Hotel, Reservation } from '@/types/app';
 
 export const runtime = 'nodejs';
 
@@ -11,23 +9,41 @@ function cleanFileName(name: string) {
   return name.toLowerCase().replace(/[^a-z0-9.\-_]+/g, '-').replace(/-+/g, '-').slice(0, 100) || 'proof';
 }
 
+function requiredText(value: FormDataEntryValue | null, label: string) {
+  const text = String(value || '').trim();
+  if (!text) throw new Error(`${label} is required.`);
+  return text;
+}
+
 export async function POST(request: Request) {
   const form = await request.formData();
   const hotelId = String(form.get('hotel_id') || '');
   const roomId = String(form.get('room_id') || '');
-  const guestName = String(form.get('guest_name') || '').trim();
-  const guestEmail = String(form.get('guest_email') || '').trim();
-  const guestPhone = String(form.get('guest_phone') || '').trim();
+  let guestName = '';
+  let guestEmail = '';
+  let guestPhone = '';
+  let paymentDetails = '';
+
+  try {
+    guestName = requiredText(form.get('guest_name'), 'Full name');
+    guestEmail = requiredText(form.get('guest_email'), 'Email');
+    guestPhone = requiredText(form.get('guest_phone'), 'Phone');
+    paymentDetails = requiredText(form.get('payment_details'), 'Payment information');
+  } catch (error) {
+    return jsonError(error instanceof Error ? error.message : 'Required fields are missing.');
+  }
+
+  const payerName = String(form.get('payer_name') || '').trim() || guestName;
+  const paymentReference = String(form.get('payment_reference') || '').trim() || null;
   const checkIn = String(form.get('check_in') || '');
   const checkOut = String(form.get('check_out') || '');
   const proof = form.get('proof');
   const paymentAmount = Number(form.get('payment_amount') || 0);
 
   if (!hotelId || !roomId) return jsonError('Hotel and room are required.');
-  if (!guestName || !guestEmail || !guestPhone) return jsonError('Name, email, and phone are required.');
   if (!checkIn || !checkOut || checkOut <= checkIn) return jsonError('Valid check-in and check-out dates are required.');
   if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) return jsonError('Down payment amount is required.');
-  if (!(proof instanceof File) || proof.size === 0) return jsonError('Payment proof is mandatory.');
+  if (!(proof instanceof File) || proof.size === 0) return jsonError('Payment proof upload is mandatory.');
 
   const { data: hotelRaw, error: hotelError } = await supabaseAdmin.from('hotels').select('*').eq('id', hotelId).eq('active', true).single();
   if (hotelError || !hotelRaw) return jsonError('Hotel not found.', 404);
@@ -36,7 +52,7 @@ export async function POST(request: Request) {
   if (roomError || !roomRaw) return jsonError('Room not found.', 404);
 
   const conflict = await hasReservationConflict({ roomId, checkIn, checkOut });
-  if (conflict) return jsonError('This room is already secured for the selected dates. Please choose another date or room.');
+  if (conflict) return jsonError('This room is already secured for the selected dates. Please choose another date or room. Tentative bookings do not block dates.');
 
   const reservationId = crypto.randomUUID();
   const proofPath = `${hotelId}/${reservationId}/${Date.now()}-${cleanFileName(proof.name)}`;
@@ -90,7 +106,10 @@ export async function POST(request: Request) {
   const { error: paymentError } = await supabaseAdmin.from('payments').insert({
     reservation_id: reservationRaw.id,
     amount: paymentAmount,
-    method: form.get('payment_method') || 'other',
+    method: 'other',
+    payer_name: payerName,
+    payment_reference: paymentReference,
+    payment_details: paymentDetails,
     proof_path: proofPath,
     proof_original_name: proof.name,
     status: 'submitted'
@@ -101,17 +120,11 @@ export async function POST(request: Request) {
     return jsonError(paymentError.message, 400);
   }
 
-  await sendHouseRulesEmail({
-    hotel: hotelRaw as Hotel,
-    guest: guestRaw as Guest,
-    reservation: reservationRaw as Reservation
-  });
-
   await supabaseAdmin.from('audit_logs').insert({
     hotel_id: hotelId,
     reservation_id: reservationRaw.id,
     action: 'public_booking.created',
-    details: { payment_amount: paymentAmount, payment_method: form.get('payment_method') || 'other' }
+    details: { payment_amount: paymentAmount, payment_method: 'manual_details_box' }
   });
 
   return NextResponse.json({ reservation: reservationRaw });

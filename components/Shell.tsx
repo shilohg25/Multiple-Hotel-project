@@ -5,6 +5,7 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/reservations', label: 'Reservations' },
   { href: '/payments', label: 'Payments' },
+  { href: '/sales', label: 'Sales / Cash' },
   { href: '/rooms', label: 'Rooms' },
   { href: '/hotels', label: 'Hotels' }
 ];

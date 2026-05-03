@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import type { Hotel, Room } from '@/types/app';
 import { diffDays } from '@/lib/date';
 import { currency } from '@/lib/money';
+import { calculateDownpayment, downpaymentLabel } from '@/lib/downpayment';
 
 export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Room[] }) {
   const router = useRouter();
@@ -13,6 +14,7 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
   const [surcharge, setSurcharge] = useState('0');
+  const [manualDownpayment, setManualDownpayment] = useState('0');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -21,7 +23,14 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
   const selectedRoom = visibleRooms.find((room) => room.id === roomId) || visibleRooms[0];
   const nights = checkIn && checkOut ? Math.max(1, diffDays(checkIn, checkOut)) : 1;
   const total = Number(selectedRoom?.base_rate || 0) * nights + Number(surcharge || 0);
-  const downpayment = total * (Number(hotel?.default_downpayment_percent || 0) / 100);
+  const downpayment = hotel
+    ? calculateDownpayment({
+        hotel,
+        total,
+        nightlyRate: Number(selectedRoom?.base_rate || 0),
+        manualAmount: Number(manualDownpayment || 0)
+      })
+    : 0;
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -76,7 +85,7 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
       </div>
       <div className="space-y-2">
         <label>Guest email</label>
-        <input name="guest_email" type="email" className="w-full" placeholder="Auto-sends house rules when provided" />
+        <input name="guest_email" type="email" className="w-full" placeholder="Used for manual email drafts" />
       </div>
       <div className="space-y-2">
         <label>Guest phone</label>
@@ -122,6 +131,12 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
         <label>Surcharge amount</label>
         <input name="surcharge_amount" type="number" min="0" step="0.01" value={surcharge} onChange={(event) => setSurcharge(event.target.value)} className="w-full" />
       </div>
+      {hotel.downpayment_type === 'manual' ? (
+        <div className="space-y-2 lg:col-span-2">
+          <label>Manual down payment required</label>
+          <input name="manual_downpayment_amount" type="number" min="0" step="0.01" value={manualDownpayment} onChange={(event) => setManualDownpayment(event.target.value)} className="w-full" />
+        </div>
+      ) : null}
       <div className="space-y-2 lg:col-span-2">
         <label>Notes</label>
         <textarea name="notes" rows={3} className="w-full" />
@@ -134,6 +149,7 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
           <div><p className="text-xs text-slate-500">Total</p><p className="font-bold">{currency(total, hotel.default_currency)}</p></div>
           <div><p className="text-xs text-slate-500">Required down payment</p><p className="font-bold">{currency(downpayment, hotel.default_currency)}</p></div>
         </div>
+        <p className="mt-3 text-xs text-slate-500">Down payment rule: {downpaymentLabel(hotel.downpayment_type)}. New staff-created reservations are tentative until payment is confirmed.</p>
       </div>
 
       <div className="lg:col-span-2">

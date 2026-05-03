@@ -49,5 +49,5 @@ export function canAccessHotel(profile: Profile, hotelId: string): boolean {
 }
 
 export function canManagePayments(profile: Profile): boolean {
-  return profile.role === 'owner' || profile.role === 'manager' || profile.role === 'accounting';
+  return profile.role === 'owner' || profile.role === 'manager';
 }

@@ -6,6 +6,7 @@ import { currency } from '@/lib/money';
 import { formatDate } from '@/lib/date';
 import { ReservationStatusBadge } from '@/components/StatusBadge';
 import { PaymentPanel } from '@/components/PaymentPanel';
+import { EmailDraftPanel } from '@/components/EmailDraftPanel';
 import type { Guest, Hotel, Payment, Reservation, Room } from '@/types/app';
 
 type PaymentWithUrl = Payment & { proof_url?: string | null };
@@ -70,11 +71,13 @@ export default async function ReservationDetailPage({ params }: { params: Promis
           <Info label="Booking source" value={reservation.booking_source.replaceAll('_', ' ')} />
           <Info label="Breakfast" value={reservation.with_breakfast ? 'Yes' : 'No - room only'} />
           <Info label="Surcharge" value={reservation.surcharge_label ? `${reservation.surcharge_label}: ${currency(reservation.surcharge_amount, reservation.hotels.default_currency)}` : '-'} />
-          <Info label="House rules email" value={reservation.house_rules_sent_at ? 'Sent' : 'Not sent'} />
-          <Info label="Confirmation email" value={reservation.confirmation_sent_at ? 'Sent' : 'Not sent'} />
+          <Info label="House rules email draft" value={reservation.house_rules_sent_at ? 'Marked sent' : 'Not marked sent'} />
+          <Info label="Confirmation email draft" value={reservation.confirmation_sent_at ? 'Marked sent' : 'Not marked sent'} />
           <Info label="Notes" value={reservation.notes || '-'} />
         </div>
       </section>
+
+      <EmailDraftPanel hotel={reservation.hotels} reservation={reservation} guest={reservation.guests} />
 
       <PaymentPanel reservationId={reservation.id} payments={payments} currencyCode={reservation.hotels.default_currency} canConfirm={canManagePayments(staff.profile)} />
     </div>

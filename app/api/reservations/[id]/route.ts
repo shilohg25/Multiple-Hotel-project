@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff } from '@/lib/api';
 import { supabaseAdmin } from '@/lib/supabase-admin';
-import { sendHouseRulesEmail } from '@/lib/email';
-import type { Guest, Hotel, Reservation } from '@/types/app';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiStaff();
@@ -14,7 +12,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { data: currentRaw, error: currentError } = await supabaseAdmin
     .from('reservations')
-    .select('*, hotels(*), guests(*)')
+    .select('*, guests(*)')
     .eq('id', id)
     .single();
   if (currentError || !currentRaw) return jsonError('Reservation not found.', 404);
@@ -42,20 +40,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         phone: payload.guest_phone || currentRaw.guests.phone
       })
       .eq('id', currentRaw.guest_id);
-  }
-
-  const { data: hydratedRaw } = await supabaseAdmin
-    .from('reservations')
-    .select('*, hotels(*), guests(*)')
-    .eq('id', id)
-    .single();
-
-  if (hydratedRaw?.guests?.email && !hydratedRaw.house_rules_sent_at) {
-    await sendHouseRulesEmail({
-      hotel: hydratedRaw.hotels as Hotel,
-      guest: hydratedRaw.guests as Guest,
-      reservation: hydratedRaw as Reservation
-    });
   }
 
   await supabaseAdmin.from('audit_logs').insert({

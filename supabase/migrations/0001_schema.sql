@@ -4,7 +4,8 @@
 create extension if not exists pgcrypto;
 create extension if not exists btree_gist;
 
-create type public.app_role as enum ('owner', 'manager', 'front_desk', 'accounting');
+create type public.app_role as enum ('owner', 'manager', 'front_desk');
+create type public.downpayment_type as enum ('percent', 'fixed', 'first_night', 'manual');
 create type public.reservation_status as enum (
   'tentative',
   'payment_submitted',
@@ -33,8 +34,15 @@ create table public.hotels (
   address text,
   contact_email text,
   contact_phone text,
+  booking_email text,
+  website_url text,
+  description text,
+  check_in_time time,
+  check_out_time time,
   default_currency text not null default 'PHP',
+  downpayment_type public.downpayment_type not null default 'percent',
   default_downpayment_percent numeric(5,2) not null default 50 check (default_downpayment_percent >= 0 and default_downpayment_percent <= 100),
+  default_downpayment_amount numeric(12,2) not null default 0 check (default_downpayment_amount >= 0),
   house_rules text not null default 'Please present a valid ID at check-in. Check-in and check-out times follow the property policy. Payment proof is required for reservation security.',
   booking_terms text not null default 'Online bookings remain tentative until the down payment is confirmed by the hotel.',
   active boolean not null default true,
@@ -132,6 +140,9 @@ create table public.payments (
   reservation_id uuid not null references public.reservations(id) on delete cascade,
   amount numeric(12,2) not null check (amount > 0),
   method public.payment_method not null default 'other',
+  payer_name text,
+  payment_reference text,
+  payment_details text not null,
   proof_path text not null,
   proof_original_name text,
   status public.payment_status not null default 'submitted',
@@ -314,19 +325,23 @@ create policy "authenticated staff can read payment proofs" on storage.objects
   using (bucket_id = 'payment-proofs');
 
 -- Initial hotels. Rename them inside the app if needed.
-insert into public.hotels (name, slug, default_downpayment_percent, house_rules, booking_terms)
+insert into public.hotels (name, slug, downpayment_type, default_downpayment_percent, default_downpayment_amount, house_rules, booking_terms)
 values
   (
     'Navarro Hotel',
     'navarro-hotel',
+    'percent',
     50,
+    0,
     'House rules: payment proof is mandatory; confirmed down payment secures the booking; present a valid ID at check-in; no unregistered guests without front desk approval.',
     'Bookings are tentative until down payment is confirmed by the hotel.'
   ),
   (
     'Tagosilangan',
     'tagosilangan',
+    'percent',
     50,
+    0,
     'House rules: payment proof is mandatory; confirmed down payment secures the booking; present a valid ID at check-in; observe resort quiet hours and posted property rules.',
     'Bookings are tentative until down payment is confirmed by the hotel.'
   )

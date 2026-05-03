@@ -18,10 +18,14 @@ export async function POST(request: Request) {
   const reservationId = String(form.get('reservation_id') || '');
   const amount = Number(form.get('amount') || 0);
   const method = String(form.get('method') || 'other');
+  const payerName = String(form.get('payer_name') || '').trim() || null;
+  const paymentReference = String(form.get('payment_reference') || '').trim() || null;
+  const paymentDetails = String(form.get('payment_details') || '').trim();
   const proof = form.get('proof');
 
   if (!reservationId) return jsonError('Reservation is required.');
   if (!Number.isFinite(amount) || amount <= 0) return jsonError('Payment amount must be greater than zero.');
+  if (!paymentDetails) return jsonError('Payment information / reference details are required.');
   if (!(proof instanceof File) || proof.size === 0) return jsonError('Payment proof is mandatory.');
 
   const { data: reservation, error: reservationError } = await supabaseAdmin
@@ -49,6 +53,9 @@ export async function POST(request: Request) {
       reservation_id: reservationId,
       amount,
       method,
+      payer_name: payerName,
+      payment_reference: paymentReference,
+      payment_details: paymentDetails,
       proof_path: path,
       proof_original_name: proof.name,
       status: 'submitted'
@@ -56,7 +63,10 @@ export async function POST(request: Request) {
     .select('*')
     .single();
 
-  if (paymentError) return jsonError(paymentError.message, 400);
+  if (paymentError) {
+    await supabaseAdmin.storage.from('payment-proofs').remove([path]);
+    return jsonError(paymentError.message, 400);
+  }
 
   await supabaseAdmin
     .from('reservations')

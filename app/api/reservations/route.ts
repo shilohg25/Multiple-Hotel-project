@@ -3,8 +3,6 @@ import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff } from '@/lib/api';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { hasReservationConflict } from '@/lib/availability';
-import { sendHouseRulesEmail } from '@/lib/email';
-import type { Guest, Hotel, Reservation } from '@/types/app';
 
 export async function POST(request: Request) {
   const auth = await requireApiStaff();
@@ -23,11 +21,8 @@ export async function POST(request: Request) {
   if (!guestName) return jsonError('Guest name is required.');
   if (!checkIn || !checkOut || checkOut <= checkIn) return jsonError('Valid check-in and check-out dates are required.');
 
-  const { data: hotelRaw, error: hotelError } = await supabaseAdmin.from('hotels').select('*').eq('id', hotelId).single();
-  if (hotelError || !hotelRaw) return jsonError('Hotel not found.', 404);
-
   const conflict = await hasReservationConflict({ roomId, checkIn, checkOut });
-  if (conflict) return jsonError('This room already has a secured booking for the selected dates.');
+  if (conflict) return jsonError('This room already has a secured booking for the selected dates. Tentative reservations can overlap, but secured bookings cannot.');
 
   const { data: guestRaw, error: guestError } = await supabaseAdmin
     .from('guests')
@@ -65,21 +60,13 @@ export async function POST(request: Request) {
 
   if (reservationError || !reservationRaw) return jsonError(reservationError?.message || 'Failed to create reservation.');
 
-  const hotel = hotelRaw as Hotel;
-  const guest = guestRaw as Guest;
-  const reservation = reservationRaw as Reservation;
-
-  if (guest.email) {
-    await sendHouseRulesEmail({ hotel, guest, reservation });
-  }
-
   await supabaseAdmin.from('audit_logs').insert({
     hotel_id: hotelId,
-    reservation_id: reservation.id,
+    reservation_id: reservationRaw.id,
     actor_id: staff.userId,
     action: 'reservation.created',
     details: { status: 'tentative' }
   });
 
-  return NextResponse.json({ reservation });
+  return NextResponse.json({ reservation: reservationRaw });
 }

@@ -1,93 +1,149 @@
-# Hotel Booking App
+# Multiple Hotel Booking App
 
-A ready-to-use Next.js + Supabase web app for hotel reservations, payment proof tracking, online booking requests, staff login, multi-hotel management, and a Gantt-style booking board.
+Ready-to-use Next.js + Supabase web app for a hotel business with staff login, public booking requests, payment proof review, multi-hotel management, a drag booking board, and daily sales/cash-count tracking.
 
-## Recommended stack
+## Stack
 
-This version uses **Next.js App Router + Supabase**.
+- **Next.js App Router** for protected staff pages, public booking pages, server routes, and interactive React components.
+- **Supabase** for Postgres, Auth, Storage, and database APIs.
+- **Custom Gantt-style reservation board** to avoid paid scheduler dependencies.
+- **GitHub Codespaces / GitHub Launcher friendly** Node setup.
 
-Why this stack fits the requirement:
+## Business rules implemented
 
-- Next.js supports a single web app with public booking pages, protected staff pages, server routes, and React client components.
-- Supabase provides Postgres database, Auth, Storage for payment proofs, and APIs.
-- The app can run in GitHub Codespaces or any Node hosting environment.
-- The Gantt booking board is custom-built, so it avoids a paid scheduler dependency.
+- The app supports **2 hotels now and more hotels later**.
+- Owner can add hotels from the app.
+- Hotel contact information is available but **not mandatory yet**:
+  - address
+  - phone
+  - contact email
+  - booking email
+  - website
+  - description
+  - check-in/check-out times
+- Staff roles are limited to:
+  - `owner`
+  - `manager`
+  - `front_desk`
+- Public online booking requires:
+  - guest full name
+  - guest email
+  - guest phone
+  - check-in/check-out
+  - payment information/details box
+  - amount paid
+  - payer name
+  - mandatory payment proof upload
+- Public booking does **not** ask for a specific payment channel yet. The guest writes payment information in the required payment details box.
+- Staff-side payment records support payment method options:
+  - cash
+  - GCash
+  - bank transfer
+  - card
+  - online gateway
+  - Booking.com
+  - Trip.com
+  - other
+- Tentative dates **do not block availability**.
+- Payment-submitted dates **do not block availability**.
+- Dates are blocked only when payment is confirmed and the reservation becomes `secured`.
+- Tentative and payment-submitted inquiries still appear on the board so staff can follow up.
+- Paid/secured bookings cannot overlap other secured or checked-in bookings for the same room.
+- Email automation is **not used**. Instead, the reservation page has editable manual email drafts.
+- Booking confirmation drafts are enabled only after the booking is secured.
+- Daily sales/cash-count screen is included.
 
-Other possible stacks:
+## Main features
 
-| Option | Good for | Tradeoff |
-|---|---|---|
-| Next.js + Supabase | Best balance for this project | Requires Node/React setup |
-| React/Vite + Supabase | Simpler frontend | Needs separate server for secure email/admin actions |
-| Laravel/Filament + Postgres | Strong admin/back-office workflows | Heavier setup; less natural for public React booking UX |
-| Django + Postgres | Strong internal system | More backend-heavy; less friendly for drag calendar UI |
-
-## Features included
-
-- Staff login using Supabase Auth.
-- Owner can add hotels.
-- Multiple hotels supported from the database design.
-- Add and manage rooms per hotel.
-- Staff reservation creation.
-- Public online booking page per hotel: `/book/navarro-hotel`, `/book/tagosilangan`, etc.
-- Payment proof upload to Supabase Storage.
-- Payment proof is mandatory for online booking and staff payment recording.
+- Supabase Auth login.
+- Protected dashboard.
+- Multi-hotel management.
+- Room management per hotel.
+- Staff-created tentative reservations.
+- Public booking page per hotel:
+  - `/book/navarro-hotel`
+  - `/book/tagosilangan`
+  - `/book/[hotelSlug]`
+- Payment proof upload to a private Supabase Storage bucket.
+- Payment review and confirmation.
 - Status workflow:
-  - `tentative`: reservation exists but no confirmed down payment.
-  - `payment_submitted`: proof uploaded and waiting for staff review.
-  - `secured`: down payment confirmed.
-  - `checked_in`, `checked_out`, `cancelled`, `no_show` are available for operations.
-- Gantt-style room board with drag-to-move booking blocks.
-- Secured reservation overlap blocking at database level.
-- House rules email after guest email is captured.
-- Booking confirmation email after down payment is confirmed.
-- Audit log table for important actions.
-- Optional schema tables for daily sales and cash count workflows from the Excel calculation sample.
+  - `tentative`
+  - `payment_submitted`
+  - `secured`
+  - `checked_in`
+  - `checked_out`
+  - `cancelled`
+  - `no_show`
+- Drag booking board at `/reservations`:
+  - drag horizontally to change dates
+  - drag vertically to change rooms
+  - conflicts are checked against secured/checked-in reservations only
+- Reservation detail page with:
+  - balance calculation
+  - payment proof list
+  - manual house-rules email draft
+  - manual booking-confirmation email draft
+- Daily sales/cash count page at `/sales`:
+  - daily ledger entries
+  - collectibles/unpaid entries
+  - cash denomination count
+  - cash variance vs cash sales
 
 ## Project structure
 
 ```text
 app/
   (protected)/dashboard       Staff dashboard
-  (protected)/reservations    Gantt booking board
-  (protected)/payments        Payment list
-  (protected)/rooms           Room management
   (protected)/hotels          Hotel management
+  (protected)/rooms           Room management
+  (protected)/reservations    Gantt booking board and reservation details
+  (protected)/payments        Payment proof list
+  (protected)/sales           Daily sales and cash count
   book/[hotelSlug]            Public online booking page
   api/                        Server routes
-components/                   Reusable UI and forms
-lib/                          Supabase, auth, email, date, money helpers
+components/                   UI components and forms
+lib/                          Supabase, auth, date, money, booking helpers
 supabase/migrations/          Database schema
-supabase/seed.sql             Optional sample room inventory
+supabase/seed.sql             Optional sample hotels/rooms
+supabase/create-*.sql          Owner/staff profile helpers
 ```
 
-## Setup in Supabase
+## Supabase setup
 
 1. Create a Supabase project.
 2. Open the Supabase SQL editor.
-3. Run `supabase/migrations/0001_schema.sql`.
-4. Optional: run `supabase/seed.sql` to create sample rooms based on the Excel files.
-5. In Supabase Auth, create your first staff user.
+3. Run:
+
+```sql
+supabase/migrations/0001_schema.sql
+```
+
+4. Optional: run:
+
+```sql
+supabase/seed.sql
+```
+
+5. In Supabase Auth, create your first user.
 6. Copy that user's UUID.
-7. Edit and run `supabase/create-owner-profile.sql` to make that user the owner.
-8. Confirm that Storage has a private bucket named `payment-proofs`.
+7. Edit `supabase/create-owner-profile.sql` and replace the placeholder UUID.
+8. Run `supabase/create-owner-profile.sql`.
+9. Confirm Storage has a private bucket named `payment-proofs`. The migration creates it.
 
 ## Environment variables
 
-Copy `.env.example` to `.env.local` and fill in your values:
+Copy `.env.example` to `.env.local`:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY
-RESEND_API_KEY=YOUR_RESEND_API_KEY
-EMAIL_FROM="Reservations <reservations@yourdomain.com>"
 APP_BASE_URL=http://localhost:3000
 ```
 
-Email sending is safe to test without `RESEND_API_KEY`; emails are logged as skipped. To actually send emails, add a valid Resend API key or adapt `lib/email.ts` to your preferred email provider.
+No email API key is required. Email drafts use `mailto:` links and copy-to-clipboard.
 
-## Run locally
+## Run locally or in GitHub Launcher
 
 ```bash
 npm install
@@ -100,68 +156,92 @@ Open:
 http://localhost:3000
 ```
 
-Public booking pages:
+Public booking pages after running the seed:
 
 ```text
 http://localhost:3000/book/navarro-hotel
 http://localhost:3000/book/tagosilangan
 ```
 
-## GitHub / Codespaces testing
+## GitHub Codespaces / Launcher
 
 The project includes `.devcontainer/devcontainer.json`.
 
-1. Push this folder to your GitHub repository.
-2. Open it in GitHub Codespaces.
-3. Add the environment variables in Codespaces secrets or create `.env.local` inside the Codespace.
+1. Open the repo in GitHub Launcher or Codespaces.
+2. Add `.env.local` using the variables above.
+3. Run `npm install`.
 4. Run `npm run dev`.
-5. The forwarded port `3000` opens the app preview.
+5. Open the forwarded port `3000`.
 
 ## Payment workflow
 
-1. A public guest submits a booking and uploads proof.
-2. The reservation status becomes `payment_submitted`.
-3. Staff opens the reservation detail page.
-4. Owner, manager, or accounting confirms the payment.
-5. If confirmed payments meet or exceed the required down payment, status becomes `secured`.
-6. Booking confirmation email is sent automatically if guest email exists.
+1. Guest submits an online booking request and uploads proof.
+2. Reservation status becomes `payment_submitted`.
+3. The booking appears on the Gantt board for follow-up.
+4. The room/date is **not blocked** yet.
+5. Owner or manager reviews the payment proof.
+6. If confirmed payments meet the required down payment, status becomes `secured`.
+7. The secured booking now blocks the dates.
+8. Staff opens the confirmation email draft, edits if needed, sends from their email app, and marks it as sent.
 
-## House rules email workflow
+## Tentative booking rule
 
-- Public booking: sent immediately after booking creation because email is required.
-- Staff-created booking: sent when email is included in the reservation record.
-- Email log is stored in `email_logs`.
+Tentative and payment-submitted inquiries are intentionally allowed to overlap. This matches the rule that unpaid inquiries can be overwritten by paid inquiries.
 
-## Gantt booking board
+Database-level conflict prevention applies only to:
 
-The reservation board is available at `/reservations`. It supports:
+```text
+secured
+checked_in
+```
 
-- Hotel switching.
-- Previous/next date range navigation.
-- Room rows.
-- Date columns.
-- Dragging booking blocks horizontally to change dates.
-- Dragging booking blocks vertically to move rooms.
-- Database conflict prevention for secured bookings.
+## Manual email draft workflow
 
-## Important business settings to update
+The app does not call an email API.
 
-After first run, update each hotel's settings:
+On each reservation detail page, staff can generate:
 
-- Correct hotel name.
-- Address and contact details.
-- Default down payment percent.
-- House rules.
-- Booking terms.
-- Room list and rates.
+- house rules draft
+- booking confirmation draft
 
-## Questions still needed for final production configuration
+Actions available:
 
-1. What are the official hotel names, addresses, phone numbers, and booking email addresses?
-2. What exact down payment rule should be used: fixed percent, fixed amount, or first-night amount?
-3. Which payment channels do you accept: GCash, bank transfer, card, payment gateway, Booking.com, Trip.com, cash?
-4. Should online bookings be allowed to overlap tentative bookings or should all tentative bookings also block availability?
-5. What are the exact house rules and check-in/check-out times for each hotel?
-6. Which staff roles do you want: owner, manager, front desk, accounting only, or more?
-7. Should guests receive SMS/WhatsApp notifications in addition to email?
-8. Should the daily sales/cash-count screen be built next from the `ledger_entries` and `cash_counts` tables?
+- open prefilled email draft through `mailto:`
+- copy the draft to clipboard
+- mark the draft as sent inside the app
+
+The booking confirmation draft is disabled until the reservation status is secured.
+
+## Daily sales / cash count workflow
+
+The `/sales` screen supports:
+
+- selecting hotel and date
+- adding room sales, deposits, add-ons, collectibles, and other ledger entries
+- marking entries as collectible/unpaid
+- entering bill/coin counts
+- comparing counted cash against cash sales
+
+Confirmed payment records also create ledger entries automatically.
+
+## Staff profile setup
+
+The first owner profile is created with `supabase/create-owner-profile.sql`.
+
+For additional users:
+
+1. Create the user in Supabase Auth.
+2. Insert a row into `public.profiles` with one of these roles:
+   - `owner`
+   - `manager`
+   - `front_desk`
+3. For manager/front desk users, set `hotel_id` to the hotel they should access.
+4. Owners can access all hotels.
+
+## Current limits
+
+- No automatic email API yet by request.
+- No external payment gateway yet by request.
+- Public booking payment method is not collected yet; guests enter payment information in the required details box.
+- House rules are placeholder text until final rules are provided.
+- Hotel contact information is optional until final official details are provided.

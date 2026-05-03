@@ -2,14 +2,13 @@ import { NextResponse } from 'next/server';
 import { canAccessHotel, canManagePayments } from '@/lib/auth';
 import { jsonError, requireApiStaff } from '@/lib/api';
 import { supabaseAdmin } from '@/lib/supabase-admin';
-import { sendBookingConfirmationEmail } from '@/lib/email';
 import type { Guest, Hotel, Reservation } from '@/types/app';
 
 export async function PATCH(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiStaff();
   if (!auth.ok) return auth.response;
   const staff = auth.staff;
-  if (!canManagePayments(staff.profile)) return jsonError('Payment confirmation requires owner, manager, or accounting access.', 403);
+  if (!canManagePayments(staff.profile)) return jsonError('Payment confirmation requires owner or manager access.', 403);
 
   const { id } = await params;
   const { data: payment, error: paymentError } = await supabaseAdmin
@@ -40,22 +39,32 @@ export async function PATCH(_request: Request, { params }: { params: Promise<{ i
   let statusUpdated = false;
 
   if (confirmedTotal >= Number(reservation.downpayment_required || 0)) {
-    const { data: updatedReservation, error: reservationUpdateError } = await supabaseAdmin
+    const { error: reservationUpdateError } = await supabaseAdmin
       .from('reservations')
       .update({ status: 'secured' })
-      .eq('id', reservation.id)
-      .select('*, guests(*), hotels(*)')
-      .single();
+      .eq('id', reservation.id);
 
-    if (reservationUpdateError) return jsonError(reservationUpdateError.message, 400);
+    if (reservationUpdateError) {
+      await supabaseAdmin.from('payments').update({ status: 'submitted', confirmed_at: null, confirmed_by: null }).eq('id', id);
+      return jsonError(
+        `${reservationUpdateError.message}. Another secured booking may already block this room/date. Tentative records can overlap, but secured bookings cannot.`,
+        400
+      );
+    }
     statusUpdated = true;
-
-    await sendBookingConfirmationEmail({
-      hotel: updatedReservation.hotels as Hotel,
-      guest: updatedReservation.guests as Guest,
-      reservation: updatedReservation as Reservation
-    });
   }
+
+  await supabaseAdmin.from('ledger_entries').insert({
+    hotel_id: reservation.hotel_id,
+    reservation_id: reservation.id,
+    entry_date: new Date().toISOString().slice(0, 10),
+    category: 'room_payment',
+    description: `Confirmed payment for ${reservation.guests?.full_name || 'guest'} (${id})`,
+    amount: Number(payment.amount || 0),
+    payment_method: payment.method || 'other',
+    is_collectible: false,
+    created_by: staff.userId
+  });
 
   await supabaseAdmin.from('audit_logs').insert({
     hotel_id: reservation.hotel_id,

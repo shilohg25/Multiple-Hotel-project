@@ -1,4 +1,6 @@
-export type Role = 'owner' | 'manager' | 'front_desk' | 'accounting';
+export type Role = 'owner' | 'manager' | 'front_desk';
+
+export type DownpaymentType = 'percent' | 'fixed' | 'first_night' | 'manual';
 
 export type Hotel = {
   id: string;
@@ -7,8 +9,15 @@ export type Hotel = {
   address: string | null;
   contact_email: string | null;
   contact_phone: string | null;
+  booking_email: string | null;
+  website_url: string | null;
+  description: string | null;
+  check_in_time: string | null;
+  check_out_time: string | null;
   default_currency: string;
+  downpayment_type: DownpaymentType;
   default_downpayment_percent: number;
+  default_downpayment_amount: number;
   house_rules: string;
   booking_terms: string;
   active: boolean;
@@ -95,6 +104,9 @@ export type Payment = {
   reservation_id: string;
   amount: number;
   method: PaymentMethod;
+  payer_name: string | null;
+  payment_reference: string | null;
+  payment_details: string;
   proof_path: string;
   proof_original_name: string | null;
   status: PaymentStatus;
@@ -102,4 +114,26 @@ export type Payment = {
   confirmed_at: string | null;
   rejection_reason: string | null;
   reservations?: Reservation | null;
+};
+
+export type LedgerEntry = {
+  id: string;
+  hotel_id: string;
+  reservation_id: string | null;
+  entry_date: string;
+  category: string;
+  description: string | null;
+  amount: number;
+  payment_method: PaymentMethod;
+  is_collectible: boolean;
+  created_at: string;
+};
+
+export type CashCount = {
+  id: string;
+  hotel_id: string;
+  count_date: string;
+  denomination: number;
+  quantity: number;
+  created_at: string;
 };

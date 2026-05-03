@@ -4,12 +4,14 @@ import { useMemo, useState } from 'react';
 import type { Hotel, Room } from '@/types/app';
 import { currency } from '@/lib/money';
 import { diffDays } from '@/lib/date';
+import { calculateDownpayment, downpaymentLabel } from '@/lib/downpayment';
 
 export function PublicBookingForm({ hotel, rooms }: { hotel: Hotel; rooms: Room[] }) {
   const [roomId, setRoomId] = useState(rooms[0]?.id || '');
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
   const [surcharge, setSurcharge] = useState('0');
+  const [manualDownpayment, setManualDownpayment] = useState('0');
   const [message, setMessage] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -17,10 +19,16 @@ export function PublicBookingForm({ hotel, rooms }: { hotel: Hotel; rooms: Room[
   const room = useMemo(() => rooms.find((item) => item.id === roomId) || rooms[0], [rooms, roomId]);
   const nights = checkIn && checkOut ? Math.max(1, diffDays(checkIn, checkOut)) : 1;
   const total = Number(room?.base_rate || 0) * nights + Number(surcharge || 0);
-  const requiredDownpayment = total * (Number(hotel.default_downpayment_percent || 0) / 100);
+  const requiredDownpayment = calculateDownpayment({
+    hotel,
+    total,
+    nightlyRate: Number(room?.base_rate || 0),
+    manualAmount: Number(manualDownpayment || 0)
+  });
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!room) return;
     setMessage('');
     setSuccess(false);
     setLoading(true);
@@ -40,8 +48,12 @@ export function PublicBookingForm({ hotel, rooms }: { hotel: Hotel; rooms: Room[
       return;
     }
     setSuccess(true);
-    setMessage('Booking request submitted. It remains tentative until your down payment is confirmed by the hotel. House rules were emailed if your email address is valid.');
+    setMessage('Booking request submitted. It is visible for follow-up, but dates are not blocked until the hotel confirms the down payment. Hotel staff can send house rules and confirmation through editable email drafts.');
     event.currentTarget.reset();
+    setCheckIn('');
+    setCheckOut('');
+    setSurcharge('0');
+    setManualDownpayment('0');
   }
 
   if (!room) {
@@ -52,7 +64,7 @@ export function PublicBookingForm({ hotel, rooms }: { hotel: Hotel; rooms: Room[
     <form onSubmit={onSubmit} className="card space-y-5 p-6">
       <div>
         <h2 className="text-2xl font-black">Online booking request</h2>
-        <p className="mt-1 text-sm text-slate-500">Down payment proof is required. The hotel confirms payments manually before securing bookings.</p>
+        <p className="mt-1 text-sm text-slate-500">Down payment information and proof upload are required. The hotel confirms payments manually before securing bookings.</p>
       </div>
       {message ? <div className={`rounded-lg px-3 py-2 text-sm ${success ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{message}</div> : null}
 
@@ -94,25 +106,30 @@ export function PublicBookingForm({ hotel, rooms }: { hotel: Hotel; rooms: Room[
             <option value="true">Yes</option>
           </select>
         </div>
+        {hotel.downpayment_type === 'manual' ? (
+          <div className="space-y-2 md:col-span-2">
+            <label>Required down payment amount</label>
+            <input name="manual_downpayment_amount" type="number" min="0" step="0.01" value={manualDownpayment} onChange={(event) => setManualDownpayment(event.target.value)} className="w-full" />
+          </div>
+        ) : null}
         <div className="space-y-2">
-          <label>Payment method</label>
-          <select name="payment_method" className="w-full">
-            <option value="gcash">GCash</option>
-            <option value="bank_transfer">Bank transfer</option>
-            <option value="card">Card / online payment</option>
-            <option value="other">Other</option>
-          </select>
+          <label>Payer name</label>
+          <input name="payer_name" required className="w-full" placeholder="Name shown on payment proof" />
         </div>
         <div className="space-y-2">
           <label>Amount paid</label>
           <input name="payment_amount" type="number" min="1" step="0.01" required className="w-full" />
         </div>
         <div className="space-y-2 md:col-span-2">
+          <label>Payment information / reference</label>
+          <textarea name="payment_details" rows={3} required className="w-full" placeholder="Enter sender details, reference number, date/time paid, payment channel, or any payment notes." />
+        </div>
+        <div className="space-y-2 md:col-span-2">
           <label>Payment proof</label>
           <input name="proof" type="file" accept="image/*,application/pdf" required className="w-full" />
         </div>
         <div className="space-y-2 md:col-span-2">
-          <label>Notes</label>
+          <label>Booking notes</label>
           <textarea name="notes" rows={3} className="w-full" placeholder="Special requests, extra bed, estimated arrival time" />
         </div>
       </div>
@@ -124,10 +141,11 @@ export function PublicBookingForm({ hotel, rooms }: { hotel: Hotel; rooms: Room[
           <div><p className="text-xs text-slate-500">Estimated total</p><p className="font-bold">{currency(total, hotel.default_currency)}</p></div>
           <div><p className="text-xs text-slate-500">Required down payment</p><p className="font-bold">{currency(requiredDownpayment, hotel.default_currency)}</p></div>
         </div>
+        <p className="mt-3 text-xs text-slate-500">Rule: {downpaymentLabel(hotel.downpayment_type)}.</p>
       </div>
 
       <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
-        Bookings are tentative until the hotel confirms the down payment. Payment proof is mandatory.
+        Bookings are visible for follow-up after submission, but dates are blocked only after the hotel confirms payment.
       </div>
       <button className="btn-primary w-full" disabled={loading} type="submit">{loading ? 'Submitting...' : 'Submit booking request'}</button>
     </form>

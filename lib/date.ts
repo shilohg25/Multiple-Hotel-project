@@ -1,7 +1,7 @@
 const DAY = 24 * 60 * 60 * 1000;
 
 export function toISODate(date: Date): string {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   return d.toISOString().slice(0, 10);
 }
 
