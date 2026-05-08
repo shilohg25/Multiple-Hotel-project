@@ -1,0 +1,5 @@
+import { redirect } from 'next/navigation';
+import { requireStaff, canManagePricingSetup } from '@/lib/auth';
+import { supabaseAdmin } from '@/lib/supabase-admin';
+import { currency } from '@/lib/money';
+export default async function PricingPage(){const staff=await requireStaff();if(!canManagePricingSetup(staff.profile)) redirect('/dashboard');const q=supabaseAdmin.from('rooms').select('id,name,base_rate,hotel_id').order('name');if(staff.profile.role!=='owner'&&staff.profile.hotel_id) q.eq('hotel_id',staff.profile.hotel_id);const {data:rooms}=await q;return <div className='space-y-6'><h1 className='text-3xl font-black'>Pricing</h1><p className='rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900'>Warning: price changes affect new bookings only. Historical reservations keep their posted_room_rate snapshot.</p><div className='card p-4'><table className='w-full text-sm'><thead><tr className='text-left'><th>Room</th><th>Base Rate</th></tr></thead><tbody>{(rooms||[]).map((room)=><tr key={room.id} className='border-t'><td className='py-2'>{room.name}</td><td>{currency(room.base_rate,'PHP')}</td></tr>)}</tbody></table></div></div>}
