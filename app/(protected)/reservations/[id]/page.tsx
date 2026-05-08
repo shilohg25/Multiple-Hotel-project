@@ -30,8 +30,12 @@ export default async function ReservationDetailPage({ params }: { params: Promis
     const { data: signed } = await supabaseAdmin.storage.from('payment-proofs').createSignedUrl(payment.proof_path, 60 * 60);
     return { ...payment, proof_url: signed?.signedUrl || null } as PaymentWithUrl;
   }));
+  const { data: chargesRaw } = await supabaseAdmin.from('reservation_charges').select('*').eq('reservation_id', reservation.id).order('created_at', { ascending: true });
+  const charges = chargesRaw || [];
+  const chargesSubtotal = charges.reduce((sum, charge) => sum + Number(charge.total_amount || 0), 0);
   const confirmedTotal = payments.filter((payment) => payment.status === 'confirmed').reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-  const balance = Number(reservation.total_amount || 0) - confirmedTotal;
+  const folioTotal = Number(reservation.total_amount || 0) + chargesSubtotal;
+  const balance = folioTotal - confirmedTotal;
 
   return (
     <div className="space-y-6">
@@ -74,6 +78,20 @@ export default async function ReservationDetailPage({ params }: { params: Promis
           <Info label="House rules email draft" value={reservation.house_rules_sent_at ? 'Marked sent' : 'Not marked sent'} />
           <Info label="Confirmation email draft" value={reservation.confirmation_sent_at ? 'Marked sent' : 'Not marked sent'} />
           <Info label="Notes" value={reservation.notes || '-'} />
+        </div>
+      </section>
+
+
+      <section className="card p-6">
+        <h2 className="text-lg font-bold">Charges / Folio</h2>
+        <p className="text-xs text-slate-500">Itemized charges for misc services (ex. breakfast, extra bed, chauffeur, laundry). Breakfast can be marked remittance_required for restaurant settlement.</p>
+        <div className="mt-3 space-y-2 text-sm">
+          {charges.length === 0 ? <p className="text-slate-500">No additional charges yet.</p> : charges.map((c:any) => <p key={c.id}>{c.description} · {c.category} · {currency(c.total_amount, reservation.hotels.default_currency)} {c.remittance_required ? '· remittance required' : ''}</p>)}
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <Info label="Room total" value={currency(reservation.total_amount, reservation.hotels.default_currency)} />
+          <Info label="Charges subtotal" value={currency(chargesSubtotal, reservation.hotels.default_currency)} />
+          <Info label="Folio total" value={currency(folioTotal, reservation.hotels.default_currency)} />
         </div>
       </section>
 

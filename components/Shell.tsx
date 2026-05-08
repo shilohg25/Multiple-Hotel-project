@@ -7,6 +7,10 @@ const navItems = [
   { href: '/payments', label: 'Payments' },
   { href: '/sales', label: 'Sales / Cash' },
   { href: '/rooms', label: 'Rooms' },
+  { href: '/pricing', label: 'Pricing' },
+  { href: '/settings/charges', label: 'Charges' },
+  { href: '/remittances', label: 'Remittances' },
+  { href: '/day-tours', label: 'Day Tours' },
   { href: '/hotels', label: 'Hotels' }
 ];
 
