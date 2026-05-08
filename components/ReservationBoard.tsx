@@ -13,10 +13,10 @@ type DraftMove = {
   room_id: string;
 };
 
-const dayWidth = 112;
-const roomLabelWidth = 190;
-const rowHeight = 92;
-const headerHeight = 48;
+const dayWidth = 84;
+const roomLabelWidth = 180;
+const rowHeight = 64;
+const headerHeight = 40;
 
 function rangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string) {
   return aStart < bEnd && aEnd > bStart;
@@ -130,16 +130,30 @@ export function ReservationBoard({
       {notice ? <div className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">{notice}</div> : null}
 
       <div className="card overflow-hidden">
-        <div className="border-b border-slate-200 px-5 py-4">
-          <div className="flex flex-col justify-between gap-2 md:flex-row md:items-center">
+        <div className="border-b border-slate-200 px-4 py-3">
+          <div className="flex flex-col justify-between gap-2 md:flex-row md:items-start">
             <div>
-              <h2 className="text-lg font-bold">Gantt booking board</h2>
-              <p className="text-sm text-slate-500">Drag a booking horizontally to change dates or vertically to move rooms. Secured overlaps are blocked.</p>
+              <h2 className="text-base font-bold leading-tight">Gantt booking board</h2>
+              <p className="mt-0.5 text-xs text-slate-500">Drag a booking horizontally to change dates or vertically to move rooms. Secured overlaps are blocked.</p>
             </div>
-            <p className="text-sm text-slate-500">{formatDate(from)} – {formatDate(toISODate(addDays(to, -1)))}</p>
+            <p className="text-xs text-slate-500">{formatDate(from)} – {formatDate(toISODate(addDays(to, -1)))}</p>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900">
+              <ReservationStatusBadge status="tentative" />
+            </div>
+            <div className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-900">
+              <ReservationStatusBadge status="payment_submitted" />
+            </div>
+            <div className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-900">
+              <ReservationStatusBadge status="secured" />
+            </div>
+            <div className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-900">
+              <ReservationStatusBadge status="checked_in" />
+            </div>
           </div>
         </div>
-        <div className="overflow-auto">
+        <div className="max-h-[72vh] overflow-auto">
           <div
             className="relative select-none"
             style={{ width: roomLabelWidth + days.length * dayWidth, height: headerHeight + Math.max(1, rooms.length) * rowHeight }}
@@ -147,13 +161,13 @@ export function ReservationBoard({
             onPointerUp={onPointerUp}
             onPointerLeave={onPointerUp}
           >
-            <div className="sticky left-0 top-0 z-20 flex items-center border-b border-r border-slate-200 bg-slate-50 px-4 text-sm font-bold" style={{ width: roomLabelWidth, height: headerHeight }}>
+            <div className="sticky left-0 top-0 z-30 flex items-center border-b border-r border-slate-200 bg-slate-50 px-3 text-xs font-bold" style={{ width: roomLabelWidth, height: headerHeight }}>
               Room
             </div>
             {days.map((day, index) => (
               <div
                 key={day}
-                className="absolute top-0 z-10 flex items-center justify-center border-b border-r border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600"
+                className="absolute top-0 z-20 flex items-center justify-center border-b border-r border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-600"
                 style={{ left: roomLabelWidth + index * dayWidth, width: dayWidth, height: headerHeight }}
               >
                 {formatDate(day)}
@@ -162,12 +176,12 @@ export function ReservationBoard({
             {rooms.map((room, index) => (
               <div key={room.id}>
                 <div
-                  className="sticky left-0 z-10 flex items-center border-b border-r border-slate-200 bg-white px-4"
+                  className="sticky left-0 z-20 flex items-center border-b border-r border-slate-200 bg-white px-3"
                   style={{ top: headerHeight + index * rowHeight, width: roomLabelWidth, height: rowHeight }}
                 >
                   <div>
-                    <p className="font-bold">{room.name}</p>
-                    <p className="text-xs text-slate-500">{room.room_type_name || 'Room'} · {currency(room.base_rate, hotel.default_currency)}</p>
+                    <p className="text-sm font-semibold leading-tight">{room.name}</p>
+                    <p className="text-[11px] leading-tight text-slate-500">{room.room_type_name || 'Room'} · {currency(room.base_rate, hotel.default_currency)}</p>
                   </div>
                 </div>
                 {days.map((day, dayIndex) => (
@@ -198,9 +212,9 @@ export function ReservationBoard({
                   const otherCheckOut = otherDraft?.check_out || other.check_out;
                   return otherRoomId === roomId && rangesOverlap(checkIn, checkOut, otherCheckIn, otherCheckOut);
                 }).length % 2;
-              const top = headerHeight + y * rowHeight + 7 + overlapLevel * 44;
+              const top = headerHeight + y * rowHeight + 5 + overlapLevel * 25;
               const width = Math.max(dayWidth - 10, length * dayWidth - 10);
-              const height = 40;
+              const height = 22;
               return (
                 <div
                   key={reservation.id}
@@ -215,17 +229,16 @@ export function ReservationBoard({
                       originalRoomIndex
                     });
                   }}
-                  className={`absolute z-30 cursor-grab rounded-xl border px-3 py-1 text-xs shadow-sm active:cursor-grabbing ${reservationColor(reservation.status)}`}
+                  className={`absolute z-30 cursor-grab rounded-lg border px-2 py-0.5 text-[11px] shadow-sm active:cursor-grabbing ${reservationColor(reservation.status)}`}
                   style={{ left, top, width, height }}
                   title="Drag to move"
                 >
-                  <div className="truncate font-bold">{reservation.guests?.full_name || 'Guest'}</div>
-                  <div className="truncate opacity-90">
-                    {checkIn} → {checkOut} ·{' '}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate font-semibold">{reservation.guests?.full_name || 'Guest'}</span>
                     <Link
                       href={`/reservations/${reservation.id}`}
                       onPointerDown={(event) => event.stopPropagation()}
-                      className="font-semibold underline"
+                      className="shrink-0 font-semibold underline"
                     >
                       Open
                     </Link>
@@ -235,13 +248,6 @@ export function ReservationBoard({
             })}
           </div>
         </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-4">
-        <div className="card p-4"><ReservationStatusBadge status="tentative" /> <p className="mt-2 text-sm text-slate-500">No confirmed down payment yet.</p></div>
-        <div className="card p-4"><ReservationStatusBadge status="payment_submitted" /> <p className="mt-2 text-sm text-slate-500">Proof uploaded, needs review.</p></div>
-        <div className="card p-4"><ReservationStatusBadge status="secured" /> <p className="mt-2 text-sm text-slate-500">Down payment confirmed.</p></div>
-        <div className="card p-4"><ReservationStatusBadge status="checked_in" /> <p className="mt-2 text-sm text-slate-500">Guest is in house.</p></div>
       </div>
     </div>
   );
