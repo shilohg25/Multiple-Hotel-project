@@ -187,19 +187,12 @@ export function ReservationBoard({
               />
               <p className="text-xs text-slate-500">Showing {visibleRooms.length} of {rooms.length} rooms</p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900">
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium text-slate-500">Status legend</span>
               <ReservationStatusBadge status="tentative" />
-            </div>
-            <div className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-900">
               <ReservationStatusBadge status="payment_submitted" />
-            </div>
-            <div className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-900">
               <ReservationStatusBadge status="secured" />
-            </div>
-            <div className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-900">
               <ReservationStatusBadge status="checked_in" />
-            </div>
             </div>
           </div>
         </div>
