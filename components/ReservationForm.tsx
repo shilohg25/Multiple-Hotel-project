@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Hotel, Room } from '@/types/app';
 import { diffDays } from '@/lib/date';
@@ -9,7 +9,11 @@ import { calculateDownpayment, downpaymentLabel } from '@/lib/downpayment';
 
 export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Room[] }) {
   const router = useRouter();
-  const [hotelId, setHotelId] = useState(hotels[0]?.id || '');
+  const firstHotelWithRooms = useMemo(
+    () => hotels.find((item) => rooms.some((room) => room.hotel_id === item.id && room.active)),
+    [hotels, rooms]
+  );
+  const [hotelId, setHotelId] = useState(firstHotelWithRooms?.id || hotels[0]?.id || '');
   const [roomId, setRoomId] = useState('');
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
@@ -21,6 +25,23 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
   const hotel = hotels.find((item) => item.id === hotelId) || hotels[0];
   const visibleRooms = useMemo(() => rooms.filter((room) => room.hotel_id === hotelId && room.active), [rooms, hotelId]);
   const selectedRoom = visibleRooms.find((room) => room.id === roomId) || visibleRooms[0];
+  const hasAnyRooms = Boolean(firstHotelWithRooms);
+
+  useEffect(() => {
+    if (!hotelId && hotels[0]?.id) {
+      setHotelId(firstHotelWithRooms?.id || hotels[0].id);
+      return;
+    }
+    if (!hotel) {
+      setHotelId(firstHotelWithRooms?.id || hotels[0]?.id || '');
+      setRoomId('');
+      return;
+    }
+    if (!visibleRooms.length && firstHotelWithRooms && hotel.id !== firstHotelWithRooms.id) {
+      setHotelId(firstHotelWithRooms.id);
+      setRoomId('');
+    }
+  }, [firstHotelWithRooms, hotel, hotelId, hotels, visibleRooms.length]);
   const nights = checkIn && checkOut ? Math.max(1, diffDays(checkIn, checkOut)) : 1;
   const total = Number(selectedRoom?.base_rate || 0) * nights + Number(surcharge || 0);
   const downpayment = hotel
@@ -58,8 +79,27 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
     router.push(`/reservations/${json.reservation.id}`);
   }
 
+  if (!hotels.length) {
+    return <div className="card p-6 text-sm text-slate-500">Create at least one hotel before adding reservations.</div>;
+  }
+
+  if (!hasAnyRooms) {
+    return (
+      <div className="card p-6 text-sm text-slate-500">
+        <p>Create at least one room before adding reservations.</p>
+        <div className="mt-4 space-y-2">
+          <label>Hotel</label>
+          <select name="hotel_id" value={hotelId} onChange={(event) => setHotelId(event.target.value)} className="w-full">
+            {hotels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </div>
+        <p className="mt-4">This hotel has no rooms yet. Add rooms first or choose another hotel.</p>
+      </div>
+    );
+  }
+
   if (!hotel || !selectedRoom) {
-    return <div className="card p-6 text-sm text-slate-500">Create at least one hotel and room before adding reservations.</div>;
+    return <div className="card p-6 text-sm text-slate-500">Create at least one room before adding reservations.</div>;
   }
 
   return (
