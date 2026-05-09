@@ -28,18 +28,25 @@ export function PaymentPanel({
     event.preventDefault();
     setMessage('');
     setLoading(true);
-    const form = new FormData(event.currentTarget);
-    form.set('reservation_id', reservationId);
-    const response = await fetch('/api/payments', { method: 'POST', body: form });
-    setLoading(false);
-    const json = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setMessage(json.error || 'Payment upload failed');
-      return;
+    const formElement = event.currentTarget;
+
+    try {
+      const form = new FormData(formElement);
+      form.set('reservation_id', reservationId);
+      const response = await fetch('/api/payments', { method: 'POST', body: form });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(json.error || 'Payment upload failed');
+        return;
+      }
+      formElement.reset();
+      setMessage('Payment proof submitted for confirmation. Dates are still not blocked until payment is confirmed.');
+      router.refresh();
+    } catch {
+      setMessage('Payment upload failed');
+    } finally {
+      setLoading(false);
     }
-    event.currentTarget.reset();
-    setMessage('Payment proof submitted for confirmation. Dates are still not blocked until payment is confirmed.');
-    router.refresh();
   }
 
   async function confirmPayment(id: string) {
