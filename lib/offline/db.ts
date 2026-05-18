@@ -18,6 +18,7 @@ export type OfflineQueueItem<TPayload = Record<string, unknown>> = {
   error: string | null;
   serverId: string | null;
   retryCount: number;
+  reviewedAt?: string | null;
 };
 
 export type OfflinePrintSnapshot = {

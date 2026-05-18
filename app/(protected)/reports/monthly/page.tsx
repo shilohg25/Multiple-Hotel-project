@@ -50,8 +50,14 @@ export default async function MonthlyReportPage({ searchParams }: { searchParams
       <section className="grid gap-4 md:grid-cols-4">
         <Card label="Room revenue" value={currency(totals.roomRevenue, hotel.default_currency)} />
         <Card label="Service charges" value={currency(totals.serviceCharges, hotel.default_currency)} />
+        <Card label="Breakfast charges" value={currency(totals.breakfastCharges, hotel.default_currency)} />
         <Card label="Day tour sales" value={currency(totals.dayTourSales, hotel.default_currency)} />
+      </section>
+      <section className="grid gap-4 md:grid-cols-4">
         <Card label="Confirmed payments" value={currency(totals.confirmedPayments, hotel.default_currency)} />
+        <Card label="Cancelled / no-show" value={totals.cancelledNoShow} />
+        <Card label="Remittance due" value={currency(totals.remittanceDue, hotel.default_currency)} />
+        <Card label="Occupancy signal" value={`${totalsByDay.filter((day) => day.roomRevenue > 0).length} active day(s)`} />
       </section>
       <section className="card overflow-hidden">
         <div className="overflow-x-auto">

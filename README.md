@@ -146,6 +146,17 @@ How sync works:
 - Payment proof drafts sync as submitted only and still need online confirmation.
 - Server conflict checks run before accepting synced reservations.
 - Conflicts or risky duplicates become Needs Review instead of syncing silently.
+- Needs Review means staff must inspect the item, then retry, delete the local draft, or mark it reviewed.
+- Bookings cannot be secured offline because the server must confirm payment and validate current room availability.
+- Public customer forms are not treated as fully offline because random customer devices may not have the staff app shell or current data cached.
+
+## Vercel Notes
+
+- This is a dynamic Next.js app for Vercel.
+- Supabase is the source of truth for reservations, payments, charges, reports, and sync validation.
+- Do not use GitHub Pages for deployment.
+- Run the Supabase migrations in order before testing new database-backed pages.
+- Set all required Vercel environment variables, then redeploy after any env change.
 
 ## Test Checklist
 

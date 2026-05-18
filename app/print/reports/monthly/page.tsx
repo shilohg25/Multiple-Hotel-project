@@ -23,8 +23,14 @@ export default async function MonthlyReportPrintPage({ searchParams }: { searchP
       <section className="grid gap-4 md:grid-cols-4">
         <Box label="Room revenue" value={currency(totals.roomRevenue, hotel.default_currency)} />
         <Box label="Service charges" value={currency(totals.serviceCharges, hotel.default_currency)} />
+        <Box label="Breakfast charges" value={currency(totals.breakfastCharges, hotel.default_currency)} />
+        <Box label="Confirmed payments" value={currency(totals.confirmedPayments, hotel.default_currency)} />
+      </section>
+      <section className="grid gap-4 md:grid-cols-4">
         <Box label="Day tour sales" value={currency(totals.dayTourSales, hotel.default_currency)} />
         <Box label="Remittance due" value={currency(totals.remittanceDue, hotel.default_currency)} />
+        <Box label="Cancelled / no-show" value={String(totals.cancelledNoShow)} />
+        <Box label="Occupancy signal" value={`${totalsByDay.filter((day) => day.roomRevenue > 0).length} active day(s)`} />
       </section>
       <table className="print-table">
         <thead><tr><th>Date</th><th>Room revenue</th><th>Services</th><th>Breakfast</th><th>Day tours</th><th>Payments</th><th>Cancelled/no-show</th></tr></thead>

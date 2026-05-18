@@ -30,6 +30,7 @@ export default async function PaymentReceiptPrintPage({ params }: { params: Prom
         <p>Status: {payment.status}</p>
         <p>Confirmed at: {payment.confirmed_at ? new Date(payment.confirmed_at).toLocaleString() : '-'}</p>
         <p>Confirmed by: {payment.profiles?.full_name || '-'}</p>
+        <p>Payment proof reference: {payment.proof_original_name || shortId(payment.proof_path)}</p>
       </section>
       <section className="print-card text-sm">
         This is a payment acknowledgement from the hotel system. Official tax receipt handling can be added later if required by local rules.

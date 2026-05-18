@@ -9,7 +9,7 @@ import { PrintFooter } from '@/components/print/PrintFooter';
 export default async function CheckoutPrintPage({ params }: { params: Promise<{ id: string }> }) {
   const staff = await requireStaff();
   const { id } = await params;
-  const { reservation, charges, additionalChargesTotal, confirmedPaymentsTotal, grandTotal, balanceDue } = await getReservationPrintData(id, staff);
+  const { reservation, charges, payments, additionalChargesTotal, confirmedPaymentsTotal, grandTotal, balanceDue } = await getReservationPrintData(id, staff);
   const printedAt = new Date();
 
   return (
@@ -30,6 +30,24 @@ export default async function CheckoutPrintPage({ params }: { params: Promise<{ 
           {charges.map((charge) => <tr key={charge.id}><td>{charge.description}</td><td>{charge.category.replaceAll('_', ' ')}</td><td>{currency(charge.total_amount, reservation.hotels.default_currency)}</td></tr>)}
         </tbody>
       </table>
+      <section>
+        <h2 className="mb-2 text-lg font-bold">Payments</h2>
+        <table className="print-table">
+          <thead><tr><th>Amount</th><th>Method</th><th>Reference</th><th>Status</th><th>Confirmed at</th></tr></thead>
+          <tbody>
+            {payments.map((payment) => (
+              <tr key={payment.id}>
+                <td>{currency(payment.amount, reservation.hotels.default_currency)}</td>
+                <td>{payment.method.replaceAll('_', ' ')}</td>
+                <td>{payment.payment_reference || '-'}</td>
+                <td>{payment.status}</td>
+                <td>{payment.confirmed_at ? new Date(payment.confirmed_at).toLocaleString() : '-'}</td>
+              </tr>
+            ))}
+            {!payments.length ? <tr><td colSpan={5}>No payments recorded.</td></tr> : null}
+          </tbody>
+        </table>
+      </section>
       <section className="print-card ml-auto max-w-sm">
         <Summary label="Room total" value={currency(reservation.total_amount, reservation.hotels.default_currency)} />
         <Summary label="Additional charges" value={currency(additionalChargesTotal, reservation.hotels.default_currency)} />

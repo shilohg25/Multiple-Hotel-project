@@ -144,7 +144,7 @@ export function PaymentPanel({
                       </div>
                     ) : (
                       <a className="btn-secondary print-hidden" href={`/print/payments/${payment.id}/receipt`}>
-                        {payment.status === 'confirmed' ? 'Print Receipt' : 'Print Submission'}
+                        {payment.status === 'confirmed' ? 'Print Payment Acknowledgement' : 'Print Payment Submission'}
                       </a>
                     )}
                   </td>

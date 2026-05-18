@@ -28,7 +28,7 @@ export default async function PendingPaymentsPrintPage() {
       <div className="print-hidden flex gap-2"><PrintButton /><Link href="/dashboard" className="btn-secondary">Back to dashboard</Link></div>
       <PrintHeader hotelName="Hotel Operations" reportTitle="Pending Payment Proof Report" printedAt={printedAt} />
       <table className="print-table">
-        <thead><tr><th>Reservation</th><th>Guest</th><th>Hotel</th><th>Room</th><th>Amount</th><th>Submitted</th><th>Status</th></tr></thead>
+        <thead><tr><th>Reservation</th><th>Guest</th><th>Hotel</th><th>Room</th><th>Dates</th><th>Amount</th><th>Submitted</th><th>Status</th></tr></thead>
         <tbody>
           {payments.map((payment) => (
             <tr key={payment.id}>
@@ -36,12 +36,13 @@ export default async function PendingPaymentsPrintPage() {
               <td>{payment.reservations?.guests?.full_name || 'Guest'}<br />{payment.reservations?.guests?.phone || ''}</td>
               <td>{payment.reservations?.hotels?.name || '-'}</td>
               <td>{payment.reservations?.rooms?.name || '-'}</td>
+              <td>{payment.reservations?.check_in || '-'} to {payment.reservations?.check_out || '-'}</td>
               <td>{currency(payment.amount, payment.reservations?.hotels?.default_currency || 'PHP')}</td>
               <td>{new Date(payment.paid_at).toLocaleString()}</td>
               <td>{payment.status}</td>
             </tr>
           ))}
-          {!payments.length ? <tr><td colSpan={7}>No pending payment proofs.</td></tr> : null}
+          {!payments.length ? <tr><td colSpan={8}>No pending payment proofs.</td></tr> : null}
         </tbody>
       </table>
       <PrintFooter printedAt={printedAt} staffName={staff.profile.full_name} />

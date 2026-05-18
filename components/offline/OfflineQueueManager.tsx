@@ -6,6 +6,8 @@ import {
   deleteQueueItem,
   getPrintSnapshots,
   getQueueItems,
+  updateQueueItem,
+  updateQueueItemStatus,
   type OfflinePrintSnapshot,
   type OfflineQueueItem
 } from '@/lib/offline/db';
@@ -43,6 +45,7 @@ export function OfflineQueueManager() {
     () => snapshots.find((snapshot) => snapshot.id === selectedSnapshotId) || null,
     [selectedSnapshotId, snapshots]
   );
+  const needsReviewItems = useMemo(() => queue.filter((item) => item.status === 'needs_review'), [queue]);
 
   async function load() {
     try {
@@ -81,6 +84,30 @@ export function OfflineQueueManager() {
     await load();
   }
 
+  async function retryQueueItem(item: OfflineQueueItem) {
+    setMessage('');
+    setSyncing(true);
+    try {
+      await updateQueueItemStatus({ ...item, reviewedAt: null }, 'pending', { error: null });
+      const result = await syncOfflineQueue();
+      setMessage(`Sync complete: ${result.synced} synced, ${result.failed} failed, ${result.needsReview} need review.`);
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Retry failed.');
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function markReviewed(item: OfflineQueueItem) {
+    await updateQueueItem({
+      ...item,
+      reviewedAt: new Date().toISOString(),
+      error: item.error ? `Reviewed locally. ${item.error}` : 'Reviewed locally.'
+    });
+    await load();
+  }
+
   async function removeSnapshot(id: string) {
     if (!window.confirm('Delete this saved print snapshot from this browser?')) return;
     await deletePrintSnapshot(id);
@@ -115,6 +142,26 @@ export function OfflineQueueManager() {
           <h2 className="text-lg font-bold">Sync queue</h2>
           <p className="mt-1 text-sm text-slate-500">Conflicts and duplicate-looking items stay visible as Needs Review.</p>
         </div>
+        {needsReviewItems.length ? (
+          <div className="border-b border-amber-200 bg-amber-50 px-5 py-4">
+            <h3 className="font-bold text-amber-950">Needs Review</h3>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              {needsReviewItems.map((item) => (
+                <div key={item.id} className="rounded-lg border border-amber-200 bg-white p-3 text-sm">
+                  <p className="font-semibold capitalize">{item.type.replaceAll('_', ' ')}</p>
+                  <p className="mt-1 text-amber-900">{item.error || 'Server validation needs staff review.'}</p>
+                  {item.reviewedAt ? <p className="mt-1 text-xs text-slate-500">Marked reviewed {new Date(item.reviewedAt).toLocaleString()}</p> : null}
+                  <PayloadSummary item={item} />
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button className="btn-secondary" type="button" disabled={syncing} onClick={() => void retryQueueItem(item)}>Retry Sync</button>
+                    <button className="btn-secondary" type="button" onClick={() => void removeQueueItem(item)}>Delete Local Draft</button>
+                    <button className="btn-secondary" type="button" onClick={() => void markReviewed(item)}>Mark Reviewed</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div className="overflow-x-auto">
           <table className="min-w-[760px] w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
@@ -122,6 +169,7 @@ export function OfflineQueueManager() {
                 <th className="px-5 py-3">Type</th>
                 <th className="px-5 py-3">Status</th>
                 <th className="px-5 py-3">Created</th>
+                <th className="px-5 py-3">Server ID</th>
                 <th className="px-5 py-3">Error</th>
                 <th className="px-5 py-3">Payload</th>
                 <th className="px-5 py-3">Action</th>
@@ -133,8 +181,10 @@ export function OfflineQueueManager() {
                   <td className="px-5 py-3 font-semibold">{item.type.replaceAll('_', ' ')}</td>
                   <td className="px-5 py-3">
                     <span className={`rounded-full px-2 py-1 text-xs font-bold capitalize ${statusClass(item.status)}`}>{item.status.replace('_', ' ')}</span>
+                    {item.reviewedAt ? <p className="mt-1 text-xs text-slate-500">Reviewed</p> : null}
                   </td>
                   <td className="px-5 py-3 text-slate-600">{new Date(item.createdAt).toLocaleString()}</td>
+                  <td className="px-5 py-3 text-slate-600">{item.serverId || '-'}</td>
                   <td className="max-w-xs px-5 py-3 text-slate-600">{item.error || '-'}</td>
                   <td className="px-5 py-3">
                     <details>
@@ -143,11 +193,19 @@ export function OfflineQueueManager() {
                     </details>
                   </td>
                   <td className="px-5 py-3">
-                    <button className="btn-secondary" type="button" onClick={() => void removeQueueItem(item)}>Delete local</button>
+                    <div className="flex flex-wrap gap-2">
+                      {item.status === 'needs_review' ? (
+                        <>
+                          <button className="btn-secondary" type="button" disabled={syncing} onClick={() => void retryQueueItem(item)}>Retry</button>
+                          <button className="btn-secondary" type="button" onClick={() => void markReviewed(item)}>Mark reviewed</button>
+                        </>
+                      ) : null}
+                      <button className="btn-secondary" type="button" onClick={() => void removeQueueItem(item)}>Delete local</button>
+                    </div>
                   </td>
                 </tr>
               ))}
-              {!queue.length ? <tr><td className="px-5 py-6 text-slate-500" colSpan={6}>No offline drafts in this browser.</td></tr> : null}
+              {!queue.length ? <tr><td className="px-5 py-6 text-slate-500" colSpan={7}>No offline drafts in this browser.</td></tr> : null}
             </tbody>
           </table>
         </div>
@@ -204,4 +262,19 @@ export function OfflineQueueManager() {
       ) : null}
     </div>
   );
+}
+
+function PayloadSummary({ item }: { item: OfflineQueueItem }) {
+  const payload = (item.payload || {}) as Record<string, unknown>;
+  const fields = [
+    payload.guest_name ? `Guest: ${String(payload.guest_name)}` : null,
+    payload.reservation_id ? `Reservation: ${String(payload.reservation_id)}` : null,
+    payload.check_in && payload.check_out ? `Dates: ${String(payload.check_in)} to ${String(payload.check_out)}` : null,
+    payload.room_id ? `Room ID: ${String(payload.room_id)}` : null,
+    payload.count_date ? `Cash count date: ${String(payload.count_date)}` : null,
+    payload.description ? `Description: ${String(payload.description)}` : null
+  ].filter(Boolean);
+
+  if (!fields.length) return null;
+  return <p className="mt-2 text-xs text-slate-600">{fields.join(' | ')}</p>;
 }

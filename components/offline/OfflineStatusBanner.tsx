@@ -58,7 +58,7 @@ export function OfflineStatusBanner() {
           <span className="font-semibold">{online ? 'Online' : 'Offline mode'}:</span>{' '}
           {online
             ? `${pendingCount} item${pendingCount === 1 ? '' : 's'} pending sync.`
-            : 'drafts can be saved locally. Confirmed bookings and payments require sync.'}
+            : 'drafts can be saved locally. Confirmed bookings and payment confirmation require sync.'}
           {message ? <span className="ml-2">{message}</span> : null}
         </div>
         <div className="flex flex-wrap gap-2">
