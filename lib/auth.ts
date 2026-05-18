@@ -1,12 +1,17 @@
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from './supabase-server';
 import { supabaseAdmin } from './supabase-admin';
+import { getEnvErrorPath, getMissingEnvVars, PROTECTED_SERVER_ENV_VARS } from './env';
 import type { Profile } from '@/types/app';
 
 export type StaffContext = {
   userId: string;
   profile: Profile;
 };
+
+export function getMissingProtectedEnvVars(): string[] {
+  return getMissingEnvVars(PROTECTED_SERVER_ENV_VARS);
+}
 
 export async function getStaffContext(): Promise<StaffContext | null> {
   const supabase = await createSupabaseServerClient();
@@ -31,7 +36,18 @@ export async function getStaffContext(): Promise<StaffContext | null> {
 }
 
 export async function requireStaff(): Promise<StaffContext> {
-  const staff = await getStaffContext();
+  const missingEnv = getMissingProtectedEnvVars();
+  if (missingEnv.length) {
+    redirect(getEnvErrorPath(missingEnv));
+  }
+
+  let staff: StaffContext | null = null;
+  try {
+    staff = await getStaffContext();
+  } catch {
+    redirect(getEnvErrorPath(['NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_ANON_KEY'], 'invalid'));
+  }
+
   if (!staff) redirect('/login');
   return staff;
 }

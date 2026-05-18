@@ -1,6 +1,6 @@
 # Multiple Hotel Booking App
 
-This is a dynamic Next.js + Supabase hotel booking app. It uses Next.js App Router, protected staff pages, API routes, Supabase Auth, Supabase Postgres, and Supabase Storage for payment proof uploads.
+This is a dynamic Next.js + Supabase hotel booking app for Vercel. It uses Next.js App Router, protected staff pages, API routes, Supabase Auth, Supabase Postgres, and Supabase Storage for payment proof uploads.
 
 ## Do Not Use GitHub Pages
 
@@ -38,14 +38,7 @@ npm run dev
 5. Set Build Command to `npm run build`.
 6. Set Install Command to `npm install`.
 7. Leave Output Directory blank/default.
-8. Add these environment variables:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-APP_BASE_URL=https://multiple-hotel-project.vercel.app
-```
+8. Add the required environment variables.
 
 Use the actual Vercel production URL for `APP_BASE_URL`. A custom domain can be used later.
 
@@ -53,15 +46,11 @@ Use the actual Vercel production URL for `APP_BASE_URL`. A custom domain can be 
 
 Add every variable in Vercel:
 
-Vercel → Project → Settings → Environment Variables
+Vercel -> Project -> Settings -> Environment Variables
 
-1. Open Vercel.
-2. Go to Project.
-3. Go to Settings.
-4. Go to Environment Variables.
-5. Add each variable to Production, Preview, and Development.
-6. Save.
-7. Redeploy the latest deployment.
+1. Add each variable to Production, Preview, and Development.
+2. Save.
+3. Redeploy the latest deployment.
 
 Required variables:
 
@@ -72,7 +61,7 @@ SUPABASE_SERVICE_ROLE_KEY=
 APP_BASE_URL=https://multiple-hotel-project.vercel.app
 ```
 
-`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are needed by middleware and login.
+`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are needed for login, middleware on protected routes, and Supabase browser/server auth.
 
 `SUPABASE_SERVICE_ROLE_KEY` is needed by server-side protected staff/admin reads. Never expose it in client components.
 
@@ -121,7 +110,11 @@ https://multiple-hotel-project.vercel.app
 
 ## Troubleshooting
 
+`/api/health` is the first URL to test after deployment. It returns booleans for whether each required environment variable is present without exposing secret values.
+
 `MIDDLEWARE_INVOCATION_FAILED` usually means `NEXT_PUBLIC_SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_ANON_KEY` is missing or invalid in Vercel.
+
+HTTP 405 on `/login` can happen when middleware or deployment routing interferes with the normal Next.js login page. `/login` is intentionally not matched by middleware.
 
 If middleware works but protected pages fail, check `SUPABASE_SERVICE_ROLE_KEY` in Vercel.
 
@@ -133,6 +126,7 @@ After changing Vercel environment variables, redeploy the latest deployment.
 
 After deployment or local startup, test:
 
+- `/api/health`
 - `/login`
 - `/dashboard`
 - `/hotels`

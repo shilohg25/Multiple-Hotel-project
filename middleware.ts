@@ -86,13 +86,6 @@ export async function middleware(request: NextRequest) {
     return redirectToLogin(request);
   }
 
-  if (request.nextUrl.pathname === '/login' && userId) {
-    const home = request.nextUrl.clone();
-    home.pathname = '/dashboard';
-    home.search = '';
-    return NextResponse.redirect(home);
-  }
-
   return response;
 }
 
@@ -108,7 +101,6 @@ export const config = {
     '/settings/:path*',
     '/pricing/:path*',
     '/remittances/:path*',
-    '/day-tours/:path*',
-    '/login'
+    '/day-tours/:path*'
   ]
 };

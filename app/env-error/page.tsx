@@ -27,9 +27,10 @@ export default async function EnvErrorPage({ searchParams }: { searchParams?: Pr
       <section className="card w-full space-y-6 p-6">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wide text-red-600">Setup required</p>
-          <h1 className="mt-2 text-3xl font-black tracking-tight">Environment variables are missing.</h1>
+          <h1 className="mt-2 text-3xl font-black tracking-tight">Environment setup required</h1>
           <p className="mt-3 text-slate-600">
-            Add them in Vercel Project Settings → Environment Variables, then redeploy.
+            The app is missing required environment variables. Add them in Vercel Project Settings - Environment
+            Variables, then redeploy.
           </p>
         </div>
 
@@ -54,18 +55,18 @@ export default async function EnvErrorPage({ searchParams }: { searchParams?: Pr
         <div className="space-y-3 text-sm text-slate-600">
           <p>
             <span className="font-semibold text-slate-900">NEXT_PUBLIC_SUPABASE_URL</span> and{' '}
-            <span className="font-semibold text-slate-900">NEXT_PUBLIC_SUPABASE_ANON_KEY</span> are needed by
-            middleware and login.
+            <span className="font-semibold text-slate-900">NEXT_PUBLIC_SUPABASE_ANON_KEY</span> are needed for login
+            and Supabase browser/server auth.
           </p>
           <p>
-            <span className="font-semibold text-slate-900">SUPABASE_SERVICE_ROLE_KEY</span> is needed by
-            server-side protected staff and admin reads. Keep it server-only.
+            <span className="font-semibold text-slate-900">SUPABASE_SERVICE_ROLE_KEY</span> is server-only and
+            required for protected admin/staff reads.
           </p>
           <p>
-            <span className="font-semibold text-slate-900">APP_BASE_URL</span> should be{' '}
-            <span className="font-mono text-xs">https://multiple-hotel-project.vercel.app</span> in production.
+            <span className="font-semibold text-slate-900">APP_BASE_URL</span> should be the Vercel app URL, such as{' '}
+            <span className="font-mono text-xs">https://multiple-hotel-project.vercel.app</span>.
           </p>
-          <p>After adding variables, redeploy because old Vercel deployments do not receive new env values.</p>
+          <p>Do not show or share actual secret values. After adding variables, redeploy the Vercel app.</p>
         </div>
       </section>
     </main>
