@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { ReservationCharge, ServiceItem } from '@/types/app';
 import { currency } from '@/lib/money';
+import { queueOfflineItem } from '@/lib/offline/db';
 import { serviceCategoryOptions } from '@/lib/service-categories';
 
 export function ReservationFolio({
@@ -42,6 +43,7 @@ export function ReservationFolio({
   const [remittanceNote, setRemittanceNote] = useState(selectedService?.remittance_note || '');
   const [notes, setNotes] = useState('');
   const [message, setMessage] = useState('');
+  const [offlineDraft, setOfflineDraft] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -67,19 +69,21 @@ export function ReservationFolio({
     setLoading(true);
 
     try {
+      const payload = {
+        reservation_id: reservationId,
+        service_item_id: serviceItemId,
+        description,
+        category,
+        quantity: Number(quantity || 1),
+        unit_price: Number(unitPrice || 0),
+        remittance_required: remittanceRequired,
+        remittance_note: remittanceNote,
+        notes
+      };
       const response = await fetch(`/api/reservations/${reservationId}/charges`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          service_item_id: serviceItemId,
-          description,
-          category,
-          quantity: Number(quantity || 1),
-          unit_price: Number(unitPrice || 0),
-          remittance_required: remittanceRequired,
-          remittance_note: remittanceNote,
-          notes
-        })
+        body: JSON.stringify(payload)
       });
       const json = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -93,7 +97,32 @@ export function ReservationFolio({
       setMessage('Charge added to folio.');
       router.refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Failed to add charge.');
+      setOfflineDraft({
+        reservation_id: reservationId,
+        service_item_id: serviceItemId,
+        description,
+        category,
+        quantity: Number(quantity || 1),
+        unit_price: Number(unitPrice || 0),
+        remittance_required: remittanceRequired,
+        remittance_note: remittanceNote,
+        notes
+      });
+      setMessage('Network unavailable. You can save this charge locally and sync it later.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveOfflineDraft() {
+    if (!offlineDraft) return;
+    setLoading(true);
+    try {
+      await queueOfflineItem('charge_draft', offlineDraft);
+      setOfflineDraft(null);
+      setMessage('Saved locally. Sync when internet returns. Existing service prices are snapshotted in this draft.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to save offline charge draft.');
     } finally {
       setLoading(false);
     }
@@ -272,6 +301,11 @@ export function ReservationFolio({
                 <span className="ml-2 font-bold">{currency(draftTotal, currencyCode)}</span>
               </div>
               <button className="btn-primary w-full" type="submit" disabled={loading}>{loading ? 'Adding...' : 'Add charge'}</button>
+              {offlineDraft ? (
+                <button className="btn-secondary w-full" type="button" disabled={loading} onClick={() => void saveOfflineDraft()}>
+                  Save offline charge draft
+                </button>
+              ) : null}
             </form>
           ) : null}
         </div>

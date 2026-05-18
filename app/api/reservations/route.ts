@@ -3,6 +3,7 @@ import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff } from '@/lib/api';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { hasReservationConflict } from '@/lib/availability';
+import { getProcessedOfflineRequest, recordProcessedOfflineRequest } from '@/lib/idempotency';
 
 export async function POST(request: Request) {
   const auth = await requireApiStaff();
@@ -15,6 +16,12 @@ export async function POST(request: Request) {
   const guestName = String(payload.guest_name || '').trim();
   const checkIn = String(payload.check_in || '');
   const checkOut = String(payload.check_out || '');
+  const clientRequestId = String(payload.client_request_id || payload.offline_id || '').trim() || null;
+
+  const processed = await getProcessedOfflineRequest(clientRequestId, 'reservation.create');
+  if (processed?.server_id) {
+    return NextResponse.json({ reservation: { id: processed.server_id }, duplicate: true });
+  }
 
   if (!hotelId || !canAccessHotel(staff.profile, hotelId)) return jsonError('Hotel access denied.', 403);
   if (!roomId) return jsonError('Room is required.');
@@ -59,6 +66,14 @@ export async function POST(request: Request) {
     .single();
 
   if (reservationError || !reservationRaw) return jsonError(reservationError?.message || 'Failed to create reservation.');
+
+  await recordProcessedOfflineRequest({
+    clientRequestId,
+    requestType: 'reservation.create',
+    serverTable: 'reservations',
+    serverId: reservationRaw.id,
+    createdBy: staff.userId
+  });
 
   await supabaseAdmin.from('audit_logs').insert({
     hotel_id: hotelId,

@@ -4,9 +4,11 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Payment } from '@/types/app';
 import { currency } from '@/lib/money';
+import { queueOfflineItem } from '@/lib/offline/db';
 import { PaymentStatusBadge } from './StatusBadge';
 
 type PaymentWithUrl = Payment & { proof_url?: string | null };
+const maxOfflineProofSize = 10 * 1024 * 1024;
 
 export function PaymentPanel({
   reservationId,
@@ -21,6 +23,7 @@ export function PaymentPanel({
 }) {
   const router = useRouter();
   const [message, setMessage] = useState('');
+  const [offlineDraft, setOfflineDraft] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
   const confirmedTotal = payments.filter((payment) => payment.status === 'confirmed').reduce((sum, payment) => sum + Number(payment.amount), 0);
 
@@ -52,7 +55,38 @@ export function PaymentPanel({
       setMessage('Payment proof submitted for confirmation. Dates are still not blocked until payment is confirmed.');
       router.refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Payment upload failed');
+      const form = new FormData(formElement);
+      form.set('reservation_id', reservationId);
+      setOfflineDraft(Object.fromEntries(form.entries()));
+      setMessage('Network unavailable. You can save this proof locally and sync it later; it will still require staff confirmation online.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveOfflineDraft() {
+    if (!offlineDraft) return;
+    const proof = offlineDraft.proof;
+    if (!(proof instanceof File) || proof.size === 0) {
+      setMessage('Payment proof file is required before saving an offline payment draft.');
+      return;
+    }
+    if (proof.size > maxOfflineProofSize) {
+      setMessage('Payment proof is too large for offline storage. Maximum size is 10 MB.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await queueOfflineItem('payment_draft', {
+        ...offlineDraft,
+        proof,
+        proofName: proof.name
+      });
+      setOfflineDraft(null);
+      setMessage('Saved locally. Sync when internet returns. Offline payment drafts are submitted only; they are never auto-confirmed.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to save offline payment draft.');
     } finally {
       setLoading(false);
     }
@@ -104,8 +138,15 @@ export function PaymentPanel({
                   </td>
                   <td className="px-5 py-3">
                     {payment.status === 'submitted' && canConfirm ? (
-                      <button className="btn-primary" type="button" onClick={() => void confirmPayment(payment.id)}>Confirm</button>
-                    ) : <span className="text-slate-500">-</span>}
+                      <div className="flex flex-wrap gap-2">
+                        <button className="btn-primary" type="button" onClick={() => void confirmPayment(payment.id)}>Confirm</button>
+                        <a className="btn-secondary print-hidden" href={`/print/payments/${payment.id}/receipt`}>Print Submission</a>
+                      </div>
+                    ) : (
+                      <a className="btn-secondary print-hidden" href={`/print/payments/${payment.id}/receipt`}>
+                        {payment.status === 'confirmed' ? 'Print Receipt' : 'Print Submission'}
+                      </a>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -154,6 +195,11 @@ export function PaymentPanel({
             <input name="proof" type="file" accept="image/*,application/pdf" required className="w-full" />
           </div>
           <button className="btn-primary w-full" type="submit" disabled={loading}>{loading ? 'Uploading...' : 'Submit proof'}</button>
+          {offlineDraft ? (
+            <button className="btn-secondary w-full" type="button" disabled={loading} onClick={() => void saveOfflineDraft()}>
+              Save offline payment draft
+            </button>
+          ) : null}
         </form>
       </section>
     </div>

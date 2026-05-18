@@ -2,6 +2,7 @@ import { requireStaff, canAccessHotel, canManageRemittances } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { RemittanceManager } from '@/components/RemittanceManager';
 import type { Hotel, Outlet, Remittance, ReservationCharge } from '@/types/app';
+import Link from 'next/link';
 
 type SearchParams = { hotel?: string; outlet?: string; from?: string; to?: string };
 
@@ -58,6 +59,7 @@ export default async function RemittancesPage({ searchParams }: { searchParams?:
         <h1 className="text-3xl font-black tracking-tight">Remittances</h1>
         <p className="mt-1 text-slate-500">Breakfast and service-charge remittance foundation for future outlet reporting.</p>
       </div>
+      <Link href={`/print/reports/remittances?hotel=${selectedHotel.id}&from=${periodStart}&to=${periodEnd}&outlet=${selectedOutletId}`} className="btn-secondary print-hidden">Print Remittance Report</Link>
       <RemittanceManager
         hotels={hotels}
         selectedHotel={selectedHotel}

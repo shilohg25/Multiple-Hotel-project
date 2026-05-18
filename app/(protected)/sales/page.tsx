@@ -2,6 +2,7 @@ import { requireStaff, canAccessHotel } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { SalesCashManager } from '@/components/SalesCashManager';
 import type { CashCount, Hotel, LedgerEntry } from '@/types/app';
+import Link from 'next/link';
 
 type SearchParams = { hotel?: string; date?: string };
 
@@ -86,6 +87,7 @@ export default async function SalesPage({ searchParams }: { searchParams?: Promi
         <h1 className="text-3xl font-black tracking-tight">Sales / Cash count</h1>
         <p className="mt-1 text-slate-500">Daily ledger, collectibles, and cash count for front desk closing.</p>
       </div>
+      <Link href={`/print/reports/daily?hotel=${selectedHotel.id}&date=${selectedDate}`} className="btn-secondary print-hidden">Print Daily Report</Link>
       <SalesCashManager
         hotels={hotels}
         selectedHotel={selectedHotel}

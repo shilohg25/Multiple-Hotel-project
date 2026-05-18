@@ -6,6 +6,7 @@ import type { Hotel, Room } from '@/types/app';
 import { diffDays } from '@/lib/date';
 import { currency } from '@/lib/money';
 import { calculateDownpayment, downpaymentLabel } from '@/lib/downpayment';
+import { queueOfflineItem } from '@/lib/offline/db';
 
 export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Room[] }) {
   const router = useRouter();
@@ -23,6 +24,7 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
   const [surcharge, setSurcharge] = useState('0');
   const [manualDownpayment, setManualDownpayment] = useState('0');
   const [message, setMessage] = useState('');
+  const [offlineDraft, setOfflineDraft] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
 
   const hotel = useMemo(() => hotels.find((item) => item.id === hotelId), [hotelId, hotels]);
@@ -95,19 +97,40 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
     form.set('total_amount', String(total));
     form.set('downpayment_required', String(downpayment));
     form.set('surcharge_amount', String(Number(surcharge || 0)));
+    const payload = Object.fromEntries(form.entries());
 
-    const response = await fetch('/api/reservations', {
-      method: 'POST',
-      body: JSON.stringify(Object.fromEntries(form.entries())),
-      headers: { 'Content-Type': 'application/json' }
-    });
-    setLoading(false);
-    const json = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setMessage(json.error || 'Failed to save reservation');
-      return;
+    try {
+      const response = await fetch('/api/reservations', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(json.error || 'Failed to save reservation');
+        return;
+      }
+      router.push(`/reservations/${json.reservation.id}`);
+    } catch {
+      setOfflineDraft(payload);
+      setMessage('Network unavailable. You can save this reservation locally as a tentative draft and sync it later.');
+    } finally {
+      setLoading(false);
     }
-    router.push(`/reservations/${json.reservation.id}`);
+  }
+
+  async function saveOfflineDraft() {
+    if (!offlineDraft) return;
+    setLoading(true);
+    try {
+      await queueOfflineItem('reservation_draft', { ...offlineDraft, status: 'tentative' });
+      setOfflineDraft(null);
+      setMessage('Saved locally. Sync when internet returns. Offline drafts never secure or block room dates.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to save offline draft.');
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (!hotels.length) {
@@ -224,6 +247,11 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
 
       <div className="lg:col-span-2">
         <button className="btn-primary" disabled={loading} type="submit">{loading ? 'Saving...' : 'Create tentative reservation'}</button>
+        {offlineDraft ? (
+          <button className="btn-secondary ml-2" disabled={loading} type="button" onClick={() => void saveOfflineDraft()}>
+            Save offline draft
+          </button>
+        ) : null}
       </div>
     </form>
   );

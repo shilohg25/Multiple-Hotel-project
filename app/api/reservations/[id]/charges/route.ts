@@ -3,6 +3,7 @@ import { canAccessHotel, canAddReservationCharges } from '@/lib/auth';
 import { jsonError, requireApiStaff } from '@/lib/api';
 import { normalizeServiceCategory } from '@/lib/service-categories';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { getProcessedOfflineRequest, recordProcessedOfflineRequest } from '@/lib/idempotency';
 
 function optionalText(value: unknown) {
   const text = String(value ?? '').trim();
@@ -45,6 +46,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const { id } = await params;
   const payload = await request.json();
+  const clientRequestId = String(payload.client_request_id || payload.offline_id || '').trim() || null;
+
+  const processed = await getProcessedOfflineRequest(clientRequestId, 'reservation_charge.create');
+  if (processed?.server_id) {
+    return NextResponse.json({ charge: { id: processed.server_id }, duplicate: true });
+  }
 
   const { data: reservation, error: reservationError } = await supabaseAdmin
     .from('reservations')
@@ -95,6 +102,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   });
 
   if (error || !charge) return jsonError(error?.message || 'Failed to add charge.', 400);
+
+  await recordProcessedOfflineRequest({
+    clientRequestId,
+    requestType: 'reservation_charge.create',
+    serverTable: 'reservation_charges',
+    serverId: charge.id,
+    createdBy: staff.userId
+  });
 
   await supabaseAdmin.from('audit_logs').insert({
     hotel_id: reservation.hotel_id,

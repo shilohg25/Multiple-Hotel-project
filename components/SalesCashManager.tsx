@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { CashCount, Hotel, LedgerEntry, PaymentMethod } from '@/types/app';
 import { currency } from '@/lib/money';
+import { queueOfflineItem } from '@/lib/offline/db';
 
 const denominations = [1000, 500, 200, 100, 50, 20, 10, 5, 1, 0.25];
 const paymentMethods: PaymentMethod[] = ['cash', 'gcash', 'bank_transfer', 'card', 'online_gateway', 'booking_dot_com', 'trip_dot_com', 'other'];
@@ -32,6 +33,7 @@ export function SalesCashManager({
 }) {
   const router = useRouter();
   const [message, setMessage] = useState('');
+  const [offlineCashDraft, setOfflineCashDraft] = useState<Record<string, unknown> | null>(null);
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [cashLoading, setCashLoading] = useState(false);
 
@@ -86,19 +88,40 @@ export function SalesCashManager({
       denomination,
       quantity: Number(form.get(`denom_${denomination}`) || 0)
     }));
-    const response = await fetch('/api/cash-counts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hotel_id: selectedHotel.id, count_date: selectedDate, counts })
-    });
-    setCashLoading(false);
-    const json = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setMessage(json.error || 'Unable to save cash count.');
-      return;
+    const payload = { hotel_id: selectedHotel.id, count_date: selectedDate, counts };
+    try {
+      const response = await fetch('/api/cash-counts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(json.error || 'Unable to save cash count.');
+        return;
+      }
+      setMessage('Cash count saved.');
+      router.refresh();
+    } catch {
+      setOfflineCashDraft(payload);
+      setMessage('Network unavailable. You can save this cash count locally and sync it later.');
+    } finally {
+      setCashLoading(false);
     }
-    setMessage('Cash count saved.');
-    router.refresh();
+  }
+
+  async function saveOfflineCashCount() {
+    if (!offlineCashDraft) return;
+    setCashLoading(true);
+    try {
+      await queueOfflineItem('cash_count_draft', offlineCashDraft);
+      setOfflineCashDraft(null);
+      setMessage('Saved locally. Sync when internet returns. Duplicate date/hotel cash counts may need review.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to save offline cash count draft.');
+    } finally {
+      setCashLoading(false);
+    }
   }
 
   return (
@@ -229,6 +252,11 @@ export function SalesCashManager({
           ))}
           <div className="md:col-span-5">
             <button className="btn-primary" disabled={cashLoading} type="submit">{cashLoading ? 'Saving...' : 'Save cash count'}</button>
+            {offlineCashDraft ? (
+              <button className="btn-secondary ml-2" disabled={cashLoading} type="button" onClick={() => void saveOfflineCashCount()}>
+                Save offline cash count
+              </button>
+            ) : null}
           </div>
         </form>
       </section>

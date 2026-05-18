@@ -74,6 +74,13 @@ export default async function DashboardPage() {
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-2">
+        <Link href="/reports/daily" className="btn-secondary">Daily Report</Link>
+        <Link href="/reports/monthly" className="btn-secondary">Monthly Report</Link>
+        <Link href="/print/reports/pending-payments" className="btn-secondary">Pending Payments</Link>
+        <Link href="/print/reports/tentative-followups" className="btn-secondary">Tentative Follow-ups</Link>
+      </div>
+
       <div className="grid gap-4 md:grid-cols-4">
         <StatCard label="Active hotels" value={hotels.length} />
         <StatCard label="Today check-ins" value={todayCheckIns} helper="Arrivals" />

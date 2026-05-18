@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { Profile } from '@/types/app';
+import { OfflineStatusBanner } from '@/components/offline/OfflineStatusBanner';
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard' },
@@ -7,9 +8,11 @@ const navItems = [
   { href: '/board', label: 'Board' },
   { href: '/payments', label: 'Payments' },
   { href: '/sales', label: 'Sales / Cash' },
+  { href: '/reports/daily', label: 'Reports' },
   { href: '/rooms', label: 'Rooms' },
   { href: '/remittances', label: 'Remittances' },
   { href: '/day-tours', label: 'Day Tours' },
+  { href: '/offline', label: 'Offline Queue' },
   { href: '/hotels', label: 'Hotels' }
 ];
 
@@ -20,7 +23,7 @@ export function Shell({ children, profile }: { children: React.ReactNode; profil
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
+      <header className="print-hidden sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
           <Link href="/dashboard" className="text-lg font-black tracking-tight">
             Hotel Ops
@@ -42,6 +45,7 @@ export function Shell({ children, profile }: { children: React.ReactNode; profil
           </div>
         </div>
       </header>
+      <OfflineStatusBanner />
       <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
     </div>
   );

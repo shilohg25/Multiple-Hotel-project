@@ -51,6 +51,7 @@ Run migrations in order from `supabase/migrations`:
 2. `0002_pricing_charges_remittance_day_tours.sql` if you are using the older foundation migration
 3. `0002_services_and_pricing.sql` if already part of your existing setup
 4. `0002_services_pricing_folio_daytours.sql`
+5. `0003_offline_and_printing.sql`
 
 The newest migration is additive and safe for the current workflow. It creates or ensures:
 
@@ -61,6 +62,7 @@ The newest migration is additive and safe for the current workflow. It creates o
 - remittances
 - day tour packages/bookings/payments
 - helper reporting views
+- offline sync request tracking
 
 Create the first owner:
 
@@ -96,6 +98,55 @@ Payment proof is mandatory before payment review. Staff must confirm payment bef
 - There is no payment gateway.
 - Day tours do not block room inventory.
 
+## Printing
+
+The app uses browser print so staff can print on paper or save as PDF from the browser. It does not generate official tax receipts yet.
+
+Available print pages:
+
+- Guest Folio / Checkout Statement
+- Booking Confirmation
+- Check-in Form
+- Payment Acknowledgement
+- Daily Report
+- Monthly Report
+- Remittance Report
+- Pending Payment Proof Report
+- Tentative Follow-up Report
+
+Use these labels for customer documents: Guest Folio, Checkout Statement, Payment Acknowledgement, and Booking Confirmation. Official tax receipt handling can be added later if required by local rules.
+
+## Offline MVP
+
+Offline support is staff-side only and intentionally lean.
+
+What works offline:
+
+- Save staff reservation drafts locally.
+- Save reservation charge drafts locally.
+- Save payment proof drafts locally if the file can be stored in the browser.
+- Save daily cash count drafts locally.
+- Save print snapshots from reservation and report pages.
+- Print saved snapshots from `/offline`.
+
+What does not work offline:
+
+- Confirm payments.
+- Secure bookings.
+- Guarantee room/date availability.
+- Receive new public customer bookings into a staff browser.
+- Sync if browser storage is cleared.
+
+How sync works:
+
+- Go to `/offline` or use the Offline Queue banner.
+- Click Sync Now when the device is online.
+- The server remains the source of truth.
+- Offline reservation drafts sync as tentative only.
+- Payment proof drafts sync as submitted only and still need online confirmation.
+- Server conflict checks run before accepting synced reservations.
+- Conflicts or risky duplicates become Needs Review instead of syncing silently.
+
 ## Test Checklist
 
 Use this order after local startup or Vercel deployment:
@@ -112,6 +163,10 @@ Use this order after local startup or Vercel deployment:
 - `/settings/staff`
 - `/reservations/new`
 - reservation detail folio
+- reservation print links
+- `/reports/daily`
+- `/reports/monthly`
+- `/offline`
 - `/payments`
 - `/board`
 - `/sales`

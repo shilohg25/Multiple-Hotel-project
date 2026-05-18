@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff } from '@/lib/api';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { getProcessedOfflineRequest, recordProcessedOfflineRequest } from '@/lib/idempotency';
 
 export const runtime = 'nodejs';
 
@@ -22,6 +23,12 @@ export async function POST(request: Request) {
   const paymentReference = String(form.get('payment_reference') || '').trim() || null;
   const paymentDetails = String(form.get('payment_details') || '').trim();
   const proof = form.get('proof');
+  const clientRequestId = String(form.get('client_request_id') || form.get('offline_id') || '').trim() || null;
+
+  const processed = await getProcessedOfflineRequest(clientRequestId, 'payment.create');
+  if (processed?.server_id) {
+    return NextResponse.json({ payment: { id: processed.server_id }, duplicate: true });
+  }
 
   if (!reservationId) return jsonError('Reservation is required.');
   if (!Number.isFinite(amount) || amount <= 0) return jsonError('Payment amount must be greater than zero.');
@@ -67,6 +74,14 @@ export async function POST(request: Request) {
     await supabaseAdmin.storage.from('payment-proofs').remove([path]);
     return jsonError(paymentError.message, 400);
   }
+
+  await recordProcessedOfflineRequest({
+    clientRequestId,
+    requestType: 'payment.create',
+    serverTable: 'payments',
+    serverId: payment.id,
+    createdBy: staff.userId
+  });
 
   await supabaseAdmin
     .from('reservations')
