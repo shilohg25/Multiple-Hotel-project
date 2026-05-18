@@ -1,2 +1,74 @@
-import { redirect } from 'next/navigation';import { requireStaff, canManagePricingSetup } from '@/lib/auth';import { supabaseAdmin } from '@/lib/supabase-admin';
-export default async function P(){const staff=await requireStaff();if(!canManagePricingSetup(staff.profile)) redirect('/dashboard');const q=supabaseAdmin.from('remittances').select('id,period_start,period_end,amount_due,amount_paid,status').order('created_at',{ascending:false});if(staff.profile.role!=='owner'&&staff.profile.hotel_id) q.eq('from_hotel_id',staff.profile.hotel_id);const {data}=await q;return <div><h1 className='text-3xl font-black mb-4'>Remittances</h1><div className='card p-4 space-y-2'>{(data||[]).map((r)=><p key={r.id}>{r.period_start} to {r.period_end} · due {r.amount_due} · paid {r.amount_paid} · {r.status}</p>)}</div></div>}
+import { requireStaff, canAccessHotel, canManageRemittances } from '@/lib/auth';
+import { supabaseAdmin } from '@/lib/supabase-admin';
+import { RemittanceManager } from '@/components/RemittanceManager';
+import type { Hotel, Outlet, Remittance, ReservationCharge } from '@/types/app';
+
+type SearchParams = { hotel?: string; outlet?: string; from?: string; to?: string };
+
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function monthStartISO() {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+}
+
+export default async function RemittancesPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
+  const params = (await searchParams) || {};
+  const staff = await requireStaff();
+  const { data: hotelsRaw } = await supabaseAdmin.from('hotels').select('*').eq('active', true).order('name');
+  const hotels = ((hotelsRaw || []) as Hotel[]).filter((hotel) => canAccessHotel(staff.profile, hotel.id));
+  const selectedHotel = hotels.find((hotel) => hotel.id === params.hotel) || hotels[0];
+
+  if (!selectedHotel) {
+    return <div className="card p-6 text-sm text-slate-500">Create a hotel before using remittances.</div>;
+  }
+
+  const periodStart = params.from || monthStartISO();
+  const periodEnd = params.to || todayISO();
+  const selectedOutletId = params.outlet || '';
+
+  const [{ data: outletsRaw }, { data: remittancesRaw }, { data: dueItemsRaw }] = await Promise.all([
+    supabaseAdmin.from('outlets').select('*').eq('hotel_id', selectedHotel.id).eq('active', true).order('name'),
+    supabaseAdmin
+      .from('remittances')
+      .select('*, outlets:to_outlet_id(id,name,outlet_type)')
+      .eq('from_hotel_id', selectedHotel.id)
+      .gte('period_end', periodStart)
+      .lte('period_start', periodEnd)
+      .order('created_at', { ascending: false }),
+    supabaseAdmin
+      .from('reservation_charges')
+      .select('*')
+      .eq('hotel_id', selectedHotel.id)
+      .eq('remittance_required', true)
+      .gte('created_at', `${periodStart}T00:00:00.000Z`)
+      .lte('created_at', `${periodEnd}T23:59:59.999Z`)
+      .order('created_at', { ascending: false })
+  ]);
+
+  const outlets = (outletsRaw || []) as Outlet[];
+  const remittances = ((remittancesRaw || []) as Remittance[]).filter((item) => !selectedOutletId || item.to_outlet_id === selectedOutletId);
+  const dueItems = (dueItemsRaw || []) as ReservationCharge[];
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-black tracking-tight">Remittances</h1>
+        <p className="mt-1 text-slate-500">Breakfast and service-charge remittance foundation for future outlet reporting.</p>
+      </div>
+      <RemittanceManager
+        hotels={hotels}
+        selectedHotel={selectedHotel}
+        outlets={outlets}
+        remittances={remittances}
+        dueItems={dueItems}
+        periodStart={periodStart}
+        periodEnd={periodEnd}
+        selectedOutletId={selectedOutletId}
+        canManage={canManageRemittances(staff.profile)}
+      />
+    </div>
+  );
+}

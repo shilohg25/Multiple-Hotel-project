@@ -5,6 +5,7 @@ import {
   canAccessHotel,
   canManagePayments,
   canAddReservationCharges,
+  canManageReservationCharges,
   canDeleteReservationCharges
 } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
@@ -113,6 +114,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
         charges={charges}
         serviceItems={serviceItems}
         canAdd={canAddReservationCharges(staff.profile)}
+        canManage={canManageReservationCharges(staff.profile)}
         canDelete={canDeleteReservationCharges(staff.profile)}
       />
 

@@ -14,6 +14,7 @@ export function ReservationFolio({
   charges,
   serviceItems,
   canAdd,
+  canManage,
   canDelete
 }: {
   reservationId: string;
@@ -23,6 +24,7 @@ export function ReservationFolio({
   charges: ReservationCharge[];
   serviceItems: ServiceItem[];
   canAdd: boolean;
+  canManage: boolean;
   canDelete: boolean;
 }) {
   const router = useRouter();
@@ -118,6 +120,40 @@ export function ReservationFolio({
     }
   }
 
+  async function editCharge(charge: ReservationCharge) {
+    const quantityValue = window.prompt('Quantity', String(Number(charge.quantity || 1)));
+    if (quantityValue === null) return;
+    const unitPriceValue = window.prompt('Unit price', String(Number(charge.unit_price || 0)));
+    if (unitPriceValue === null) return;
+    const notesValue = window.prompt('Notes', charge.notes || '') ?? (charge.notes || '');
+
+    setMessage('');
+    try {
+      const response = await fetch(`/api/reservations/${reservationId}/charges/${charge.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          description: charge.description,
+          category: charge.category,
+          quantity: Number(quantityValue || 1),
+          unit_price: Number(unitPriceValue || 0),
+          remittance_required: charge.remittance_required,
+          remittance_note: charge.remittance_note,
+          notes: notesValue
+        })
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(json.error || 'Failed to update charge.');
+        return;
+      }
+      setMessage('Charge updated.');
+      router.refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Failed to update charge.');
+    }
+  }
+
   return (
     <section className="card overflow-hidden">
       <div className="border-b border-slate-200 px-5 py-4">
@@ -137,7 +173,7 @@ export function ReservationFolio({
                   <th className="px-4 py-3">Unit price</th>
                   <th className="px-4 py-3">Total</th>
                   <th className="px-4 py-3">Notes</th>
-                  {canDelete ? <th className="px-4 py-3">Action</th> : null}
+                  {canManage || canDelete ? <th className="px-4 py-3">Action</th> : null}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -152,18 +188,25 @@ export function ReservationFolio({
                     <td className="px-4 py-3 text-slate-600">{currency(charge.unit_price, currencyCode)}</td>
                     <td className="px-4 py-3 font-semibold">{currency(charge.total_amount, currencyCode)}</td>
                     <td className="px-4 py-3 text-slate-600">{charge.notes || '-'}</td>
-                    {canDelete ? (
-                      <td className="px-4 py-3">
-                        <button className="btn-secondary" type="button" disabled={deletingId === charge.id} onClick={() => void deleteCharge(charge.id)}>
-                          {deletingId === charge.id ? 'Deleting...' : 'Delete'}
-                        </button>
+                    {canManage || canDelete ? (
+                      <td className="space-x-2 px-4 py-3">
+                        {canManage ? (
+                          <button className="btn-secondary" type="button" onClick={() => void editCharge(charge)}>
+                            Edit
+                          </button>
+                        ) : null}
+                        {canDelete ? (
+                          <button className="btn-secondary" type="button" disabled={deletingId === charge.id} onClick={() => void deleteCharge(charge.id)}>
+                            {deletingId === charge.id ? 'Deleting...' : 'Delete'}
+                          </button>
+                        ) : null}
                       </td>
                     ) : null}
                   </tr>
                 ))}
                 {!charges.length ? (
                   <tr>
-                    <td className="px-4 py-6 text-slate-500" colSpan={canDelete ? 7 : 6}>No additional charges yet.</td>
+                    <td className="px-4 py-6 text-slate-500" colSpan={canManage || canDelete ? 7 : 6}>No additional charges yet.</td>
                   </tr>
                 ) : null}
               </tbody>

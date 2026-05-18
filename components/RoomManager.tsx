@@ -22,9 +22,10 @@ export function RoomManager({ hotels, rooms }: { hotels: Hotel[]; rooms: Room[] 
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const formElement = event.currentTarget;
     setMessage('');
     setLoading(true);
-    const form = new FormData(event.currentTarget);
+    const form = new FormData(formElement);
     form.set('hotel_id', selectedHotel.id);
     const response = await fetch('/api/rooms', {
       method: 'POST',
@@ -37,7 +38,7 @@ export function RoomManager({ hotels, rooms }: { hotels: Hotel[]; rooms: Room[] 
       setMessage(json.error || 'Failed to save room');
       return;
     }
-    event.currentTarget.reset();
+    formElement.reset();
     setMessage('Room saved.');
     router.refresh();
   }

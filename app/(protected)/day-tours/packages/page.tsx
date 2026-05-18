@@ -1,2 +1,39 @@
-import { redirect } from 'next/navigation';import { requireStaff, canManagePricingSetup } from '@/lib/auth';import { supabaseAdmin } from '@/lib/supabase-admin';
-export default async function P(){const staff=await requireStaff();if(!canManagePricingSetup(staff.profile)) redirect('/dashboard');const q=supabaseAdmin.from('day_tour_packages').select('id,name,adult_price,child_price,capacity_per_day,active').order('name');if(staff.profile.role!=='owner'&&staff.profile.hotel_id) q.eq('hotel_id',staff.profile.hotel_id);const {data}=await q;return <div><h1 className='text-3xl font-black mb-4'>Day Tour Packages</h1><div className='card p-4 space-y-2'>{(data||[]).map((r)=><p key={r.id}>{r.name} · adult {r.adult_price} · child {r.child_price}</p>)}</div></div>}
+import { requireStaff, canAccessHotel, canManageDayTourPackages } from '@/lib/auth';
+import { supabaseAdmin } from '@/lib/supabase-admin';
+import { DayTourPackageManager } from '@/components/DayTourPackageManager';
+import type { DayTourPackage, Hotel, Outlet } from '@/types/app';
+
+type SearchParams = { hotel?: string };
+
+export default async function DayTourPackagesPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
+  const params = (await searchParams) || {};
+  const staff = await requireStaff();
+  const { data: hotelsRaw } = await supabaseAdmin.from('hotels').select('*').eq('active', true).order('name');
+  const hotels = ((hotelsRaw || []) as Hotel[]).filter((hotel) => canAccessHotel(staff.profile, hotel.id));
+  const selectedHotel = hotels.find((hotel) => hotel.id === params.hotel) || hotels[0];
+
+  if (!selectedHotel) {
+    return <div className="card p-6 text-sm text-slate-500">Create a hotel before adding day tour packages.</div>;
+  }
+
+  const [{ data: packagesRaw }, { data: outletsRaw }] = await Promise.all([
+    supabaseAdmin.from('day_tour_packages').select('*, outlets:remittance_outlet_id(id,name)').eq('hotel_id', selectedHotel.id).order('name'),
+    supabaseAdmin.from('outlets').select('*').eq('hotel_id', selectedHotel.id).eq('active', true).order('name')
+  ]);
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-black tracking-tight">Day Tour Packages</h1>
+        <p className="mt-1 text-slate-500">Basic package setup for day tour operations and future restaurant remittance.</p>
+      </div>
+      <DayTourPackageManager
+        hotels={hotels}
+        selectedHotel={selectedHotel}
+        packages={(packagesRaw || []) as DayTourPackage[]}
+        outlets={(outletsRaw || []) as Outlet[]}
+        canManage={canManageDayTourPackages(staff.profile)}
+      />
+    </div>
+  );
+}

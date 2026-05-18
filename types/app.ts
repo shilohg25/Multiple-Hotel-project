@@ -187,3 +187,101 @@ export type PriceChangeLog = {
   service_items?: Pick<ServiceItem, 'id' | 'name'> | null;
   profiles?: Pick<Profile, 'id' | 'full_name'> | null;
 };
+
+export type Outlet = {
+  id: string;
+  hotel_id: string | null;
+  name: string;
+  slug: string;
+  outlet_type: 'hotel' | 'restaurant' | 'other' | string;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Remittance = {
+  id: string;
+  from_hotel_id: string;
+  to_outlet_id: string | null;
+  period_start: string;
+  period_end: string;
+  amount_due: number;
+  amount_paid: number;
+  status: 'pending' | 'partial' | 'remitted' | 'cancelled' | string;
+  paid_at: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  outlets?: Pick<Outlet, 'id' | 'name' | 'outlet_type'> | null;
+};
+
+export type RemittanceItem = {
+  id: string;
+  remittance_id: string;
+  reservation_charge_id: string | null;
+  day_tour_booking_id: string | null;
+  description: string | null;
+  amount: number;
+  created_at: string;
+};
+
+export type DayTourPackage = {
+  id: string;
+  hotel_id: string;
+  name: string;
+  description: string | null;
+  adult_price: number;
+  child_price: number;
+  capacity_per_day: number | null;
+  breakfast_included: boolean;
+  lunch_included: boolean;
+  restaurant_remittance_per_guest: number;
+  remittance_outlet_id: string | null;
+  active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  outlets?: Pick<Outlet, 'id' | 'name'> | null;
+};
+
+export type DayTourBooking = {
+  id: string;
+  hotel_id: string;
+  package_id: string | null;
+  guest_name: string;
+  guest_email: string | null;
+  guest_phone: string | null;
+  tour_date: string;
+  adult_count: number;
+  child_count: number;
+  total_amount: number;
+  downpayment_required: number;
+  status: 'tentative' | 'payment_submitted' | 'secured' | 'completed' | 'cancelled' | 'no_show' | string;
+  payment_details: string | null;
+  proof_path: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  day_tour_packages?: Pick<DayTourPackage, 'id' | 'name' | 'capacity_per_day'> | null;
+};
+
+export type DayTourPayment = {
+  id: string;
+  day_tour_booking_id: string;
+  hotel_id: string;
+  amount: number;
+  method: string;
+  payer_name: string | null;
+  payment_reference: string | null;
+  payment_details: string;
+  proof_path: string;
+  proof_original_name: string | null;
+  status: 'submitted' | 'confirmed' | 'rejected' | string;
+  confirmed_at: string | null;
+  confirmed_by: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+  updated_at: string;
+};

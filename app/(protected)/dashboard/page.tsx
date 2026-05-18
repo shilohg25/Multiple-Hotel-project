@@ -8,12 +8,13 @@ import type { Hotel, Payment, Reservation } from '@/types/app';
 
 export default async function DashboardPage() {
   const staff = await requireStaff();
+  const today = new Date().toISOString().slice(0, 10);
 
   const { data: hotelsRaw } = await supabaseAdmin.from('hotels').select('*').eq('active', true).order('name');
   const hotels = ((hotelsRaw || []) as Hotel[]).filter((hotel) => canAccessHotel(staff.profile, hotel.id));
   const hotelIds = hotels.map((hotel) => hotel.id);
 
-  const [{ data: reservationsRaw }, { data: paymentsRaw }] = await Promise.all([
+  const [{ data: reservationsRaw }, { data: paymentsRaw }, { data: todayReservationsRaw }, { data: chargesRaw }] = await Promise.all([
     hotelIds.length
       ? supabaseAdmin
           .from('reservations')
@@ -27,7 +28,23 @@ export default async function DashboardPage() {
       .select('*, reservations(*, guests(full_name,email), hotels(name,default_currency))')
       .eq('status', 'submitted')
       .order('created_at', { ascending: false })
-      .limit(10)
+      .limit(10),
+    hotelIds.length
+      ? supabaseAdmin
+          .from('reservations')
+          .select('id,status,check_in,check_out,total_amount')
+          .in('hotel_id', hotelIds)
+          .or(`check_in.eq.${today},check_out.eq.${today}`)
+      : Promise.resolve({ data: [] }),
+    hotelIds.length
+      ? supabaseAdmin
+          .from('reservation_charges')
+          .select('total_amount,remittance_required')
+          .in('hotel_id', hotelIds)
+          .eq('remittance_required', true)
+          .gte('created_at', `${today}T00:00:00.000Z`)
+          .lte('created_at', `${today}T23:59:59.999Z`)
+      : Promise.resolve({ data: [] })
   ]);
 
   const reservations = (reservationsRaw || []) as Reservation[];
@@ -39,6 +56,10 @@ export default async function DashboardPage() {
   const secured = reservations.filter((reservation) => reservation.status === 'secured').length;
   const tentative = reservations.filter((reservation) => reservation.status === 'tentative' || reservation.status === 'payment_submitted').length;
   const revenue = reservations.reduce((sum, reservation) => sum + Number(reservation.total_amount || 0), 0);
+  const todayReservations = (todayReservationsRaw || []) as Reservation[];
+  const todayCheckIns = todayReservations.filter((reservation) => reservation.check_in === today).length;
+  const todayCheckOuts = todayReservations.filter((reservation) => reservation.check_out === today).length;
+  const remittanceDue = (chargesRaw || []).reduce((sum, charge) => sum + Number(charge.total_amount || 0), 0);
 
   return (
     <div className="space-y-6">
@@ -55,9 +76,16 @@ export default async function DashboardPage() {
 
       <div className="grid gap-4 md:grid-cols-4">
         <StatCard label="Active hotels" value={hotels.length} />
+        <StatCard label="Today check-ins" value={todayCheckIns} helper="Arrivals" />
+        <StatCard label="Today check-outs" value={todayCheckOuts} helper="Departures" />
+        <StatCard label="Pending payment proofs" value={payments.length} helper="Need review" />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-4">
         <StatCard label="Secured bookings" value={secured} helper="Recent records" />
         <StatCard label="Tentative / review" value={tentative} helper="Need payment confirmation" />
         <StatCard label="Recent booking value" value={currency(revenue, hotels[0]?.default_currency || 'PHP')} />
+        <StatCard label="Remittance due today" value={currency(remittanceDue, hotels[0]?.default_currency || 'PHP')} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">

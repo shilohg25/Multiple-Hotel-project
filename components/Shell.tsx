@@ -4,6 +4,7 @@ import type { Profile } from '@/types/app';
 const navItems = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/reservations', label: 'Reservations' },
+  { href: '/board', label: 'Board' },
   { href: '/payments', label: 'Payments' },
   { href: '/sales', label: 'Sales / Cash' },
   { href: '/rooms', label: 'Rooms' },

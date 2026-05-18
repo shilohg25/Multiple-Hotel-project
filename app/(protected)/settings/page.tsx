@@ -16,6 +16,26 @@ const ownerCards = [
     href: '/settings/price-history',
     title: 'Price Change History',
     description: 'Review room and service price changes by hotel.'
+  },
+  {
+    href: '/settings/staff',
+    title: 'Staff Profiles',
+    description: 'Assign app roles and hotel access for existing Supabase Auth users.'
+  },
+  {
+    href: '/hotels',
+    title: 'Hotels',
+    description: 'Create and review hotel properties, booking terms, and house rules.'
+  },
+  {
+    href: '/rooms',
+    title: 'Rooms',
+    description: 'Add room inventory before managing prices or accepting bookings.'
+  },
+  {
+    href: '/api/health',
+    title: 'System Health',
+    description: 'Check whether required deployment environment variables are present.'
   }
 ];
 
@@ -29,7 +49,7 @@ export default async function SettingsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-black tracking-tight">Settings</h1>
-        <p className="mt-1 text-slate-500">Owner controls for pricing and hotel service catalogs.</p>
+        <p className="mt-1 text-slate-500">Owner controls for pricing, staff access, hotel setup, and system health.</p>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
         {cards.map((card) => (

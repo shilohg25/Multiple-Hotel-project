@@ -14,9 +14,10 @@ export function HotelManager({ hotels, role }: { hotels: Hotel[]; role: Role }) 
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const formElement = event.currentTarget;
     setMessage('');
     setLoading(true);
-    const form = new FormData(event.currentTarget);
+    const form = new FormData(formElement);
     const response = await fetch('/api/hotels', {
       method: 'POST',
       body: JSON.stringify(Object.fromEntries(form.entries())),
@@ -28,7 +29,7 @@ export function HotelManager({ hotels, role }: { hotels: Hotel[]; role: Role }) 
       setMessage(json.error || 'Failed to save hotel');
       return;
     }
-    event.currentTarget.reset();
+    formElement.reset();
     setDownpaymentType('percent');
     setMessage('Hotel saved. Optional hotel information can be edited later.');
     router.refresh();

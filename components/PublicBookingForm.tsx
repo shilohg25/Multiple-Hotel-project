@@ -29,10 +29,11 @@ export function PublicBookingForm({ hotel, rooms }: { hotel: Hotel; rooms: Room[
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!room) return;
+    const formElement = event.currentTarget;
     setMessage('');
     setSuccess(false);
     setLoading(true);
-    const form = new FormData(event.currentTarget);
+    const form = new FormData(formElement);
     form.set('hotel_id', hotel.id);
     form.set('room_id', room.id);
     form.set('posted_room_rate', String(room.base_rate));
@@ -49,7 +50,7 @@ export function PublicBookingForm({ hotel, rooms }: { hotel: Hotel; rooms: Room[
     }
     setSuccess(true);
     setMessage('Booking request submitted. It is visible for follow-up, but dates are not blocked until the hotel confirms the down payment. Hotel staff can send house rules and confirmation through editable email drafts.');
-    event.currentTarget.reset();
+    formElement.reset();
     setCheckIn('');
     setCheckOut('');
     setSurcharge('0');

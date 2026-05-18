@@ -111,3 +111,15 @@ export function canManageReservationCharges(profile: Profile): boolean {
 export function canDeleteReservationCharges(profile: Profile): boolean {
   return profile.role === 'owner';
 }
+
+export function canManageRemittances(profile: Profile): boolean {
+  return profile.role === 'owner' || profile.role === 'manager';
+}
+
+export function canManageDayTourPackages(profile: Profile): boolean {
+  return profile.role === 'owner' || profile.role === 'manager';
+}
+
+export function canManageStaff(profile: Profile): boolean {
+  return profile.role === 'owner';
+}
