@@ -9,30 +9,49 @@ export type StaffContext = {
   profile: Profile;
 };
 
+type StaffLookup =
+  | { status: 'anonymous' }
+  | { status: 'missing_profile'; userId: string }
+  | { status: 'staff'; staff: StaffContext };
+
 export function getMissingProtectedEnvVars(): string[] {
   return getMissingEnvVars(PROTECTED_SERVER_ENV_VARS);
 }
 
-export async function getStaffContext(): Promise<StaffContext | null> {
+export async function getStaffLookup(): Promise<StaffLookup> {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user }
   } = await supabase.auth.getUser();
 
-  if (!user) return null;
+  if (!user) return { status: 'anonymous' };
 
   const { data: profile, error } = await supabaseAdmin
     .from('profiles')
     .select('id, full_name, role, hotel_id')
     .eq('id', user.id)
-    .single();
+    .maybeSingle();
 
-  if (error || !profile) return null;
+  if (error) {
+    throw new Error(`Staff profile lookup failed: ${error.message}`);
+  }
+
+  if (!profile) {
+    return { status: 'missing_profile', userId: user.id };
+  }
 
   return {
-    userId: user.id,
-    profile: profile as Profile
+    status: 'staff',
+    staff: {
+      userId: user.id,
+      profile: profile as Profile
+    }
   };
+}
+
+export async function getStaffContext(): Promise<StaffContext | null> {
+  const lookup = await getStaffLookup();
+  return lookup.status === 'staff' ? lookup.staff : null;
 }
 
 export async function requireStaff(): Promise<StaffContext> {
@@ -41,15 +60,16 @@ export async function requireStaff(): Promise<StaffContext> {
     redirect(getEnvErrorPath(missingEnv));
   }
 
-  let staff: StaffContext | null = null;
+  let lookup: StaffLookup;
   try {
-    staff = await getStaffContext();
+    lookup = await getStaffLookup();
   } catch {
-    redirect(getEnvErrorPath(['NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_ANON_KEY'], 'invalid'));
+    redirect(getEnvErrorPath(PROTECTED_SERVER_ENV_VARS, 'invalid'));
   }
 
-  if (!staff) redirect('/login');
-  return staff;
+  if (lookup.status === 'anonymous') redirect('/login');
+  if (lookup.status === 'missing_profile') redirect('/account-pending');
+  return lookup.staff;
 }
 
 export async function requireOwner(): Promise<StaffContext> {

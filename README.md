@@ -90,6 +90,26 @@ Create the first owner:
 3. Edit `supabase/create-owner-profile.sql` with the UUID.
 4. Run the SQL to create the owner profile in the `profiles` table.
 
+If a user can log in but reaches `/account-pending`, their Supabase Auth user exists but their staff profile is missing. Create a profile with one of these roles: `owner`, `manager`, or `front_desk`.
+
+Owner profile SQL example:
+
+```sql
+insert into public.profiles (id, full_name, role, hotel_id)
+select
+  u.id,
+  'Owner',
+  'owner'::public.app_role,
+  null
+from auth.users u
+where lower(u.email) = lower('YOUR_EMAIL_HERE')
+on conflict (id) do update
+set
+  full_name = excluded.full_name,
+  role = 'owner'::public.app_role,
+  hotel_id = null;
+```
+
 The app uses the `payment-proofs` Supabase Storage bucket. Do not delete existing data, reset the database, or expose `SUPABASE_SERVICE_ROLE_KEY` in client components.
 
 ## Environment Variables
@@ -116,6 +136,8 @@ https://multiple-hotel-project.vercel.app
 
 HTTP 405 on `/login` can happen when middleware or deployment routing interferes with the normal Next.js login page. `/login` is intentionally not matched by middleware.
 
+Redirect loops after login usually mean the user exists in Supabase Auth but has no matching row in `public.profiles`. The app sends that user to `/account-pending`.
+
 If middleware works but protected pages fail, check `SUPABASE_SERVICE_ROLE_KEY` in Vercel.
 
 After changing Vercel environment variables, redeploy the latest deployment.
@@ -128,6 +150,7 @@ After deployment or local startup, test:
 
 - `/api/health`
 - `/login`
+- `/account-pending`
 - `/dashboard`
 - `/hotels`
 - `/rooms`
