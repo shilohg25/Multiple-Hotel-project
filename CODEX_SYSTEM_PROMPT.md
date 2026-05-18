@@ -1,4 +1,4 @@
-You are working in the repository `shilohg25/Multiple-Hotel-project`.
+You are working in the Multiple Hotel project repository.
 
 Goal: implement a ready-to-use Next.js + Supabase hotel booking web app for a multi-hotel business.
 

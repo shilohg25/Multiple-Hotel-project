@@ -26,24 +26,33 @@ export function PaymentPanel({
 
   async function uploadPayment(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    const formElement = event.currentTarget;
+
     setMessage('');
     setLoading(true);
-    const formElement = event.currentTarget;
 
     try {
       const form = new FormData(formElement);
       form.set('reservation_id', reservationId);
-      const response = await fetch('/api/payments', { method: 'POST', body: form });
+
+      const response = await fetch('/api/payments', {
+        method: 'POST',
+        body: form
+      });
+
       const json = await response.json().catch(() => ({}));
+
       if (!response.ok) {
         setMessage(json.error || 'Payment upload failed');
         return;
       }
+
       formElement.reset();
       setMessage('Payment proof submitted for confirmation. Dates are still not blocked until payment is confirmed.');
       router.refresh();
-    } catch {
-      setMessage('Payment upload failed');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Payment upload failed');
     } finally {
       setLoading(false);
     }

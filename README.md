@@ -1,122 +1,22 @@
-# Multiple Hotel Booking App (Dynamic Next.js + Supabase)
+# Multiple Hotel Booking App
 
-This repository is a **real dynamic Next.js app** for hotel booking operations.
+This is a dynamic Next.js + Supabase hotel booking app. It uses Next.js App Router, protected staff pages, API routes, Supabase Auth, Supabase Postgres, and Supabase Storage for payment proof uploads.
 
-- ✅ Uses **Next.js App Router** + **TypeScript**
-- ✅ Uses **Supabase Auth + Postgres + Storage**
-- ✅ Runs in **GitHub Launcher/Codespaces** or hosts like **Vercel**
-- ❌ **Not** built for GitHub Pages
-- ❌ **No** static export (`output: "export"` is not used)
+## Do Not Use GitHub Pages
 
----
+Do not use this old GitHub Pages/static hosting URL:
 
-## What the app includes
-
-- Multi-hotel support (starts with **Navarro Hotel** and **Tagosilangan**)
-- Staff roles: `owner`, `manager`, `front_desk`
-- Login page and protected staff pages
-- Public booking pages with **required payment proof upload**
-- Reservation statuses:
-  - `tentative`
-  - `payment_submitted`
-  - `secured`
-  - `checked_in`
-  - `checked_out`
-  - `cancelled`
-  - `no_show`
-- Payment review page for staff (confirm/reject payment, add notes)
-- Gantt-style reservation board
-- Manual email draft tools (copy + mailto, no email API)
-- Daily sales/cash-count screen
-
----
-
-## Important rule: date blocking
-
-- `tentative` and `payment_submitted` bookings are visible but **do not block** dates.
-- Only `secured` and `checked_in` bookings block dates.
-
----
-
-## Required routes
-
-- `/`
-- `/login`
-- `/dashboard`
-- `/hotels`
-- `/rooms`
-- `/reservations`
-- `/reservations/new`
-- `/payments`
-- `/board` (redirects to reservation board)
-- `/sales`
-- `/settings`
-- `/book`
-- `/book/[hotelSlug]`
-
----
-
-## 1) Run in GitHub Launcher / Codespaces (recommended)
-
-1. Open this repo in **GitHub Launcher** or **Codespaces**.
-2. Wait for setup to finish (`postCreateCommand` runs `npm install`).
-3. Create `.env.local` from `.env.example`.
-4. Run:
-
-```bash
-npm run dev
+```text
+https://shilohg25.github.io/Multiple-Hotel-project/
 ```
 
-5. Open the forwarded **Port 3000** URL (label: **Hotel Booking App**).
+That setup was for static hosting. This app needs a real dynamic Next.js host such as Vercel.
 
-> Do not use localhost in your own browser when testing in Launcher/Codespaces. Use the forwarded GitHub URL for port 3000.
+## Development Workflow
 
----
-
-## 2) Environment variables
-
-Copy `.env.example` to `.env.local` and fill values:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-APP_BASE_URL=
-```
-
-For Codespaces/Launcher testing, `APP_BASE_URL` can be blank until you know the forwarded URL.
-
----
-
-## 3) Supabase setup (SQL order)
-
-In Supabase SQL Editor, run files in this order:
-
-1. `supabase/migrations/0001_schema.sql`
-2. `supabase/seed.sql` (adds Navarro Hotel + Tagosilangan)
-3. `supabase/create-owner-profile.sql` (after editing with your auth user UUID)
-
-Optional later:
-- `supabase/create-staff-profile-example.sql`
-
-Storage bucket used by app:
-- `payment-proofs`
-
----
-
-## 4) Create first owner user
-
-1. In Supabase Auth, create a user (email + password).
-2. Copy the user UUID.
-3. Paste UUID into `supabase/create-owner-profile.sql`.
-4. Run the SQL.
-5. Login at `/login` with that email/password.
-
-If a profile is missing, the app shows a setup message.
-
----
-
-## 5) NPM commands
+1. Open the cloned repo in VS Code.
+2. Make changes with Codex inside VS Code.
+3. Run:
 
 ```bash
 npm install
@@ -125,40 +25,94 @@ npm run build
 npm run dev
 ```
 
-App runs on:
-- `0.0.0.0:3000`
+4. Commit changes in GitHub Desktop.
+5. Push to GitHub.
+6. Vercel auto-deploys from GitHub.
 
----
+## Vercel Setup
 
-## 6) Quick test checklist
+1. Go to Vercel.
+2. Choose Add New Project.
+3. Import `shilohg25/Multiple-Hotel-project`.
+4. Set Framework Preset to `Next.js`.
+5. Set Build Command to `npm run build`.
+6. Set Install Command to `npm install`.
+7. Leave Output Directory blank/default.
+8. Add these environment variables:
 
-### Public booking test
-1. Open `/book` then choose a hotel, or open `/book/navarro-hotel`.
-2. Fill all required fields.
-3. Upload payment proof file (required).
-4. Submit.
-5. Confirm record appears as `payment_submitted` in staff pages.
+```env
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+APP_BASE_URL=https://multiple-hotel-project.vercel.app
+```
 
-### Payment confirmation test
-1. Login as staff.
-2. Open `/payments`.
-3. Open payment proof.
-4. Confirm payment.
-5. Confirm reservation status changes to `secured`.
+Use the actual Vercel production URL for `APP_BASE_URL`. A custom domain can be used later.
 
-### Board test
-1. Open `/board` or `/reservations`.
-2. Confirm `tentative` and `payment_submitted` are visible but lighter.
-3. Confirm only `secured`/`checked_in` block dates.
+## Supabase Setup
 
-### Daily sales/cash-count test
-1. Open `/sales`.
-2. Create a record for a date/hotel.
-3. Edit the record.
-4. Verify totals and variance values update.
+Run the schema migration only if it has not already been run:
 
----
+```text
+supabase/migrations/0001_schema.sql
+```
 
-## Deployment note
+Run seed data only if hotels or rooms are missing:
 
-Deploy this as a **Node-capable dynamic app** (example: Vercel). Do not deploy as GitHub Pages static site.
+```text
+supabase/seed.sql
+```
+
+Create the first owner:
+
+1. Create the owner user in Supabase Auth.
+2. Copy that user's UUID.
+3. Edit `supabase/create-owner-profile.sql` with the UUID.
+4. Run the SQL to create the owner profile in the `profiles` table.
+
+The app uses the `payment-proofs` Supabase Storage bucket. Do not delete existing data, reset the database, or expose `SUPABASE_SERVICE_ROLE_KEY` in client components.
+
+## Environment Variables
+
+Copy `.env.example` to `.env.local` for local development and fill in the values.
+
+`NEXT_PUBLIC_SUPABASE_URL` is the public Supabase project URL and is safe for browser use.
+
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` is the public anon key and is safe for browser use when RLS is enabled.
+
+`SUPABASE_SERVICE_ROLE_KEY` is server-only. Use it only in server routes and server modules.
+
+`APP_BASE_URL` is the deployed app URL, for example:
+
+```text
+https://multiple-hotel-project.vercel.app
+```
+
+## Testing Checklist
+
+After deployment or local startup, test:
+
+- `/login`
+- `/dashboard`
+- `/hotels`
+- `/rooms`
+- `/reservations`
+- `/reservations/new`
+- `/payments`
+- `/board`
+- `/sales`
+- `/book`
+- `/book/navarro-hotel`
+- `/book/tagosilangan`
+
+## Business Rules
+
+- Tentative bookings do not block dates.
+- Payment-submitted bookings do not block dates.
+- Only secured and checked-in bookings block dates.
+- Payment proof is mandatory for payment submission.
+- Public booking submissions become `payment_submitted`, not `secured`.
+- Staff must confirm payment before a booking becomes `secured`.
+- Staff roles are `owner`, `manager`, and `front_desk`.
+- Email tools create manual drafts only. There is no email API yet.
+- There is no payment gateway yet.

@@ -3,6 +3,8 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { PublicBookingForm } from '@/components/PublicBookingForm';
 import type { Hotel, Room } from '@/types/app';
 
+export const dynamic = 'force-dynamic';
+
 export default async function PublicBookingPage({ params }: { params: Promise<{ hotelSlug: string }> }) {
   const { hotelSlug } = await params;
   const { data: hotelRaw, error } = await supabaseAdmin

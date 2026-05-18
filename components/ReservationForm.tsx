@@ -9,12 +9,15 @@ import { calculateDownpayment, downpaymentLabel } from '@/lib/downpayment';
 
 export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Room[] }) {
   const router = useRouter();
+  const activeRooms = useMemo(() => rooms.filter((room) => room.active), [rooms]);
   const firstHotelWithRooms = useMemo(
-    () => hotels.find((item) => rooms.some((room) => room.hotel_id === item.id && room.active)),
-    [hotels, rooms]
+    () => hotels.find((item) => activeRooms.some((room) => room.hotel_id === item.id)),
+    [activeRooms, hotels]
   );
-  const [hotelId, setHotelId] = useState(firstHotelWithRooms?.id || hotels[0]?.id || '');
+
+  const [hotelId, setHotelId] = useState(() => firstHotelWithRooms?.id || hotels[0]?.id || '');
   const [roomId, setRoomId] = useState('');
+  const [hotelWasSelected, setHotelWasSelected] = useState(false);
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
   const [surcharge, setSurcharge] = useState('0');
@@ -22,26 +25,48 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const hotel = hotels.find((item) => item.id === hotelId) || hotels[0];
-  const visibleRooms = useMemo(() => rooms.filter((room) => room.hotel_id === hotelId && room.active), [rooms, hotelId]);
-  const selectedRoom = visibleRooms.find((room) => room.id === roomId) || visibleRooms[0];
+  const hotel = useMemo(() => hotels.find((item) => item.id === hotelId), [hotelId, hotels]);
+  const visibleRooms = useMemo(() => activeRooms.filter((room) => room.hotel_id === hotelId), [activeRooms, hotelId]);
+  const selectedRoom = useMemo(() => visibleRooms.find((room) => room.id === roomId) || visibleRooms[0], [roomId, visibleRooms]);
   const hasAnyRooms = Boolean(firstHotelWithRooms);
 
   useEffect(() => {
-    if (!hotelId && hotels[0]?.id) {
+    if (!hotels.length) {
+      if (hotelId) setHotelId('');
+      if (roomId) setRoomId('');
+      return;
+    }
+
+    const selectedHotelExists = hotels.some((item) => item.id === hotelId);
+    if (!selectedHotelExists) {
       setHotelId(firstHotelWithRooms?.id || hotels[0].id);
-      return;
-    }
-    if (!hotel) {
-      setHotelId(firstHotelWithRooms?.id || hotels[0]?.id || '');
       setRoomId('');
+      setHotelWasSelected(false);
       return;
     }
-    if (!visibleRooms.length && firstHotelWithRooms && hotel.id !== firstHotelWithRooms.id) {
+
+    if (!visibleRooms.length && firstHotelWithRooms && !hotelWasSelected) {
       setHotelId(firstHotelWithRooms.id);
       setRoomId('');
+      return;
     }
-  }, [firstHotelWithRooms, hotel, hotelId, hotels, visibleRooms.length]);
+
+    if (visibleRooms.length && (!roomId || !visibleRooms.some((room) => room.id === roomId))) {
+      setRoomId(visibleRooms[0].id);
+      return;
+    }
+
+    if (!visibleRooms.length && roomId) {
+      setRoomId('');
+    }
+  }, [firstHotelWithRooms, hotelId, hotelWasSelected, hotels, roomId, visibleRooms]);
+
+  function handleHotelChange(nextHotelId: string) {
+    setHotelId(nextHotelId);
+    setRoomId('');
+    setHotelWasSelected(true);
+  }
+
   const nights = checkIn && checkOut ? Math.max(1, diffDays(checkIn, checkOut)) : 1;
   const total = Number(selectedRoom?.base_rate || 0) * nights + Number(surcharge || 0);
   const downpayment = hotel
@@ -55,6 +80,12 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (!hotel || !selectedRoom) {
+      setMessage('Choose a hotel and room before saving the reservation.');
+      return;
+    }
+
     setMessage('');
     setLoading(true);
     const form = new FormData(event.currentTarget);
@@ -84,22 +115,21 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
   }
 
   if (!hasAnyRooms) {
+    return <div className="card p-6 text-sm text-slate-500">Create at least one room before adding reservations.</div>;
+  }
+
+  if (!hotel || !visibleRooms.length) {
     return (
-      <div className="card p-6 text-sm text-slate-500">
-        <p>Create at least one room before adding reservations.</p>
-        <div className="mt-4 space-y-2">
+      <div className="card space-y-4 p-6 text-sm text-slate-500">
+        <div className="space-y-2">
           <label>Hotel</label>
-          <select name="hotel_id" value={hotelId} onChange={(event) => setHotelId(event.target.value)} className="w-full">
+          <select name="hotel_id" value={hotelId} onChange={(event) => handleHotelChange(event.target.value)} className="w-full">
             {hotels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
         </div>
-        <p className="mt-4">This hotel has no rooms yet. Add rooms first or choose another hotel.</p>
+        <p>This hotel has no rooms yet. Add rooms first or choose another hotel.</p>
       </div>
     );
-  }
-
-  if (!hotel || !selectedRoom) {
-    return <div className="card p-6 text-sm text-slate-500">Create at least one room before adding reservations.</div>;
   }
 
   return (
@@ -108,14 +138,14 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
 
       <div className="space-y-2">
         <label>Hotel</label>
-        <select name="hotel_id" value={hotelId} onChange={(event) => { setHotelId(event.target.value); setRoomId(''); }} className="w-full">
+        <select name="hotel_id" value={hotelId} onChange={(event) => handleHotelChange(event.target.value)} className="w-full">
           {hotels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
       </div>
       <div className="space-y-2">
         <label>Room</label>
         <select name="room_id" value={selectedRoom.id} onChange={(event) => setRoomId(event.target.value)} className="w-full">
-          {visibleRooms.map((room) => <option key={room.id} value={room.id}>{room.name} · {room.room_type_name || 'Room'}</option>)}
+          {visibleRooms.map((room) => <option key={room.id} value={room.id}>{room.name} - {room.room_type_name || 'Room'}</option>)}
         </select>
       </div>
 

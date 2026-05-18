@@ -1,12 +1,31 @@
-import { createClient } from '@supabase/supabase-js';
-import { getEnv } from './env';
+import 'server-only';
 
-const supabaseUrl = getEnv('NEXT_PUBLIC_SUPABASE_URL', 'http://127.0.0.1:54321');
-const supabaseServiceRoleKey = getEnv('SUPABASE_SERVICE_ROLE_KEY', 'missing-service-role-key');
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { requireEnv } from './env';
 
-export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false
+let adminClient: SupabaseClient | null = null;
+
+function getSupabaseAdminClient() {
+  if (!adminClient) {
+    adminClient = createClient(
+      requireEnv('NEXT_PUBLIC_SUPABASE_URL'),
+      requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
+  }
+
+  return adminClient;
+}
+
+export const supabaseAdmin = new Proxy({} as SupabaseClient, {
+  get(_target, prop) {
+    const client = getSupabaseAdminClient();
+    const value = Reflect.get(client, prop, client);
+    return typeof value === 'function' ? value.bind(client) : value;
   }
 });

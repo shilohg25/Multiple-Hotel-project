@@ -1,18 +1,19 @@
 import Link from 'next/link';
-import { createSupabaseServerClient } from '@/lib/supabase-server';
+import { supabaseAdmin } from '@/lib/supabase-admin';
 
 type HotelRow = {
   name: string;
   slug: string;
-  is_active: boolean;
+  active: boolean;
 };
 
+export const dynamic = 'force-dynamic';
+
 export default async function BookIndexPage() {
-  const supabase = await createSupabaseServerClient();
-  const { data } = await supabase
+  const { data } = await supabaseAdmin
     .from('hotels')
-    .select('name,slug,is_active')
-    .eq('is_active', true)
+    .select('name,slug,active')
+    .eq('active', true)
     .order('name');
 
   const hotels = (data ?? []) as HotelRow[];
