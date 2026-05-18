@@ -72,6 +72,8 @@ Create the first owner:
 
 If a user can log in but sees `/profile-missing`, their Auth user exists but `public.profiles` has no row for them.
 
+To audit whether hotels/properties have rooms/units, run `supabase/check-hotel-room-counts.sql` in Supabase SQL Editor. It only reports counts; it does not create or delete data.
+
 ## Storage
 
 The app uses the `payment-proofs` Supabase Storage bucket for reservation and day tour proof uploads.

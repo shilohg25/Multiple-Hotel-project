@@ -168,7 +168,15 @@ export function ReservationBoard({
 
       {notice ? <div className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">{notice}</div> : null}
 
-      <div className="card overflow-hidden">
+      {!rooms.length ? (
+        <div className="card p-6">
+          <h2 className="text-lg font-bold">This hotel/property has no rooms or units yet.</h2>
+          <p className="mt-2 text-sm text-slate-500">Add at least one active room/unit before using the booking board for this property.</p>
+          <Link href={`/rooms?hotel=${hotel.id}&focus=add`} className="btn-primary mt-4">Add rooms/units</Link>
+        </div>
+      ) : null}
+
+      {rooms.length ? <div className="card overflow-hidden">
         <div className="border-b border-slate-200 px-4 py-3">
           <div className="flex flex-col justify-between gap-2 md:flex-row md:items-start">
             <div>
@@ -291,7 +299,7 @@ export function ReservationBoard({
             })}
           </div>
         </div>
-      </div>
+      </div> : null}
     </div>
   );
 }

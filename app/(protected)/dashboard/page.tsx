@@ -14,7 +14,7 @@ export default async function DashboardPage() {
   const hotels = ((hotelsRaw || []) as Hotel[]).filter((hotel) => canAccessHotel(staff.profile, hotel.id));
   const hotelIds = hotels.map((hotel) => hotel.id);
 
-  const [{ data: reservationsRaw }, { data: paymentsRaw }, { data: todayReservationsRaw }, { data: chargesRaw }] = await Promise.all([
+  const [{ data: reservationsRaw }, { data: paymentsRaw }, { data: todayReservationsRaw }, { data: chargesRaw }, { data: roomsRaw }] = await Promise.all([
     hotelIds.length
       ? supabaseAdmin
           .from('reservations')
@@ -44,6 +44,12 @@ export default async function DashboardPage() {
           .eq('remittance_required', true)
           .gte('created_at', `${today}T00:00:00.000Z`)
           .lte('created_at', `${today}T23:59:59.999Z`)
+      : Promise.resolve({ data: [] }),
+    hotelIds.length
+      ? supabaseAdmin
+          .from('rooms')
+          .select('hotel_id,active')
+          .in('hotel_id', hotelIds)
       : Promise.resolve({ data: [] })
   ]);
 
@@ -60,6 +66,11 @@ export default async function DashboardPage() {
   const todayCheckIns = todayReservations.filter((reservation) => reservation.check_in === today).length;
   const todayCheckOuts = todayReservations.filter((reservation) => reservation.check_out === today).length;
   const remittanceDue = (chargesRaw || []).reduce((sum, charge) => sum + Number(charge.total_amount || 0), 0);
+  const activeRoomCountByHotel = new Map<string, number>();
+  (roomsRaw || []).forEach((room) => {
+    if (room.active) activeRoomCountByHotel.set(room.hotel_id, (activeRoomCountByHotel.get(room.hotel_id) || 0) + 1);
+  });
+  const hotelsNeedingRooms = hotels.filter((hotel) => (activeRoomCountByHotel.get(hotel.id) || 0) === 0);
 
   return (
     <div className="space-y-6">
@@ -80,6 +91,18 @@ export default async function DashboardPage() {
         <Link href="/print/reports/pending-payments" className="btn-secondary">Pending Payments</Link>
         <Link href="/print/reports/tentative-followups" className="btn-secondary">Tentative Follow-ups</Link>
       </div>
+
+      {staff.profile.role === 'owner' && hotelsNeedingRooms.length ? (
+        <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
+          <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+            <div>
+              <h2 className="font-bold">Setup needed: Some hotels/properties have no active rooms/units.</h2>
+              <p className="mt-1 text-sm">{hotelsNeedingRooms.map((hotel) => hotel.name).join(', ')}</p>
+            </div>
+            <Link href={`/rooms?hotel=${hotelsNeedingRooms[0].id}&focus=add`} className="btn-primary">Add rooms/units</Link>
+          </div>
+        </section>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-4">
         <StatCard label="Active hotels" value={hotels.length} />

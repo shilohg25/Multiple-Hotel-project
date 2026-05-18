@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { Hotel, Room } from '@/types/app';
 import { currency } from '@/lib/money';
@@ -176,7 +177,12 @@ export function SettingsPricingManager({ hotels, rooms }: { hotels: Hotel[]; roo
               })}
               {!visibleRooms.length ? (
                 <tr>
-                  <td className="px-5 py-6 text-slate-500" colSpan={6}>No rooms for this hotel yet.</td>
+                  <td className="px-5 py-6 text-slate-500" colSpan={6}>
+                    <div className="space-y-3">
+                      <p>This hotel/property has no rooms/units yet.</p>
+                      <Link href={`/rooms?hotel=${selectedHotel.id}&focus=add`} className="btn-primary">Add rooms/units</Link>
+                    </div>
+                  </td>
                 </tr>
               ) : null}
             </tbody>

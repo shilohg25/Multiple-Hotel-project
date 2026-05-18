@@ -29,8 +29,8 @@ const ownerCards = [
   },
   {
     href: '/rooms',
-    title: 'Rooms',
-    description: 'Add room inventory before managing prices or accepting bookings.'
+    title: 'Rooms / Units',
+    description: 'Add and manage bookable rooms, rental units, cottages, villas, or glamping units.'
   },
   {
     href: '/api/health',

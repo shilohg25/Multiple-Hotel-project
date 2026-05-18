@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { Hotel, Room } from '@/types/app';
 import { diffDays } from '@/lib/date';
@@ -138,7 +139,12 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
   }
 
   if (!hasAnyRooms) {
-    return <div className="card p-6 text-sm text-slate-500">Create at least one room before adding reservations.</div>;
+    return (
+      <div className="card space-y-4 p-6 text-sm text-slate-500">
+        <p>Create at least one room/unit before adding reservations.</p>
+        <Link href="/rooms" className="btn-primary">Go to Rooms / Units</Link>
+      </div>
+    );
   }
 
   if (!hotel || !visibleRooms.length) {
@@ -150,7 +156,8 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
             {hotels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
         </div>
-        <p>This hotel has no rooms yet. Add rooms first or choose another hotel.</p>
+        <p>{hotel?.name || 'This hotel/property'} has no active rooms/units yet. Add rooms/units first or choose another hotel.</p>
+        {hotel ? <Link href={`/rooms?hotel=${hotel.id}&focus=add`} className="btn-primary">Add rooms/units for this hotel</Link> : null}
       </div>
     );
   }

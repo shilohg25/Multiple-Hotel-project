@@ -17,11 +17,11 @@ export default async function RoomsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-black tracking-tight">Rooms</h1>
-        <p className="mt-1 text-slate-500">Manage room inventory for each hotel.</p>
+        <h1 className="text-3xl font-black tracking-tight">Rooms / Units</h1>
+        <p className="mt-1 text-slate-500">Manage rooms, units, villas, cottages, or rental spaces for each hotel/property.</p>
       </div>
       <Suspense fallback={<div className="card p-6">Loading rooms...</div>}>
-        <RoomManager hotels={hotels} rooms={rooms} />
+        <RoomManager hotels={hotels} rooms={rooms} role={staff.profile.role} />
       </Suspense>
     </div>
   );

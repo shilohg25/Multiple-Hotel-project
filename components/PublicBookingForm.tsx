@@ -58,7 +58,12 @@ export function PublicBookingForm({ hotel, rooms }: { hotel: Hotel; rooms: Room[
   }
 
   if (!room) {
-    return <div className="card p-6 text-sm text-slate-500">No rooms are currently available for online booking.</div>;
+    return (
+      <div className="card p-6">
+        <h2 className="text-xl font-bold">This property is not accepting online room bookings yet.</h2>
+        <p className="mt-2 text-sm text-slate-500">Please contact the hotel directly.</p>
+      </div>
+    );
   }
 
   return (
@@ -83,9 +88,9 @@ export function PublicBookingForm({ hotel, rooms }: { hotel: Hotel; rooms: Room[
           <input name="guest_phone" required className="w-full" />
         </div>
         <div className="space-y-2">
-          <label>Room</label>
+          <label>Room / unit</label>
           <select name="room_id" value={room.id} onChange={(event) => setRoomId(event.target.value)} className="w-full">
-            {rooms.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.room_type_name || 'Room'} · {currency(item.base_rate, hotel.default_currency)}</option>)}
+            {rooms.map((item) => <option key={item.id} value={item.id}>{item.name} - {item.room_type_name || 'Room'} - {currency(item.base_rate, hotel.default_currency)}</option>)}
           </select>
         </div>
         <div className="space-y-2">

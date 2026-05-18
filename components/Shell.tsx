@@ -9,7 +9,7 @@ const navItems = [
   { href: '/payments', label: 'Payments' },
   { href: '/sales', label: 'Sales / Cash' },
   { href: '/reports/daily', label: 'Reports' },
-  { href: '/rooms', label: 'Rooms' },
+  { href: '/rooms', label: 'Rooms / Units' },
   { href: '/remittances', label: 'Remittances' },
   { href: '/day-tours', label: 'Day Tours' },
   { href: '/offline', label: 'Offline Queue' },

@@ -46,6 +46,14 @@ export async function POST(request: Request) {
     .select('*')
     .single();
 
-  if (insertError) return jsonError(insertError.message, 400);
+  if (insertError) {
+    if (
+      insertError.code === '23505' &&
+      (insertError.message.includes('hotels_slug_key') || insertError.message.toLowerCase().includes('slug'))
+    ) {
+      return jsonError('A hotel with this slug already exists. Use a different slug or manage the existing hotel.', 409);
+    }
+    return jsonError(insertError.message, 400);
+  }
   return NextResponse.json({ hotel: data });
 }
