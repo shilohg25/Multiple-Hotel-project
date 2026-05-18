@@ -91,3 +91,23 @@ export function canManagePayments(profile: Profile): boolean {
 export function canManagePricingSetup(profile: Profile): boolean {
   return profile.role === 'owner' || profile.role === 'manager';
 }
+
+export function canManagePricing(profile: Profile): boolean {
+  return profile.role === 'owner';
+}
+
+export function canManageServiceCatalog(profile: Profile): boolean {
+  return profile.role === 'owner';
+}
+
+export function canAddReservationCharges(profile: Profile): boolean {
+  return profile.role === 'owner' || profile.role === 'manager' || profile.role === 'front_desk';
+}
+
+export function canManageReservationCharges(profile: Profile): boolean {
+  return profile.role === 'owner' || profile.role === 'manager';
+}
+
+export function canDeleteReservationCharges(profile: Profile): boolean {
+  return profile.role === 'owner';
+}

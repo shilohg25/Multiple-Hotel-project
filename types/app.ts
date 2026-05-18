@@ -137,3 +137,53 @@ export type CashCount = {
   quantity: number;
   created_at: string;
 };
+
+export type ServiceItem = {
+  id: string;
+  hotel_id: string;
+  name: string;
+  category: string;
+  description: string | null;
+  default_price: number;
+  active: boolean;
+  remittance_required: boolean;
+  remittance_note: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ReservationCharge = {
+  id: string;
+  reservation_id: string;
+  hotel_id: string;
+  service_item_id: string | null;
+  description: string;
+  category: string;
+  quantity: number;
+  unit_price: number;
+  total_amount: number;
+  remittance_required: boolean;
+  remittance_note: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  service_items?: Pick<ServiceItem, 'id' | 'name'> | null;
+};
+
+export type PriceChangeLog = {
+  id: string;
+  hotel_id: string | null;
+  room_id: string | null;
+  service_item_id: string | null;
+  changed_type: 'room_price' | 'service_price';
+  old_value: number | null;
+  new_value: number | null;
+  changed_by: string | null;
+  notes: string | null;
+  created_at: string;
+  rooms?: Pick<Room, 'id' | 'name'> | null;
+  service_items?: Pick<ServiceItem, 'id' | 'name'> | null;
+  profiles?: Pick<Profile, 'id' | 'full_name'> | null;
+};

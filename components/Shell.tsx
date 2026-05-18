@@ -7,14 +7,16 @@ const navItems = [
   { href: '/payments', label: 'Payments' },
   { href: '/sales', label: 'Sales / Cash' },
   { href: '/rooms', label: 'Rooms' },
-  { href: '/pricing', label: 'Pricing' },
-  { href: '/settings/charges', label: 'Charges' },
   { href: '/remittances', label: 'Remittances' },
   { href: '/day-tours', label: 'Day Tours' },
   { href: '/hotels', label: 'Hotels' }
 ];
 
 export function Shell({ children, profile }: { children: React.ReactNode; profile: Profile }) {
+  const visibleNavItems = profile.role === 'owner'
+    ? [...navItems.slice(0, -1), { href: '/settings', label: 'Settings' }, navItems[navItems.length - 1]]
+    : navItems;
+
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
@@ -23,7 +25,7 @@ export function Shell({ children, profile }: { children: React.ReactNode; profil
             Hotel Ops
           </Link>
           <nav className="hidden items-center gap-1 md:flex">
-            {navItems.map((item) => (
+            {visibleNavItems.map((item) => (
               <Link key={item.href} href={item.href} className="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
                 {item.label}
               </Link>
@@ -31,7 +33,7 @@ export function Shell({ children, profile }: { children: React.ReactNode; profil
           </nav>
           <div className="flex items-center gap-3">
             <span className="hidden text-xs text-slate-500 sm:inline">
-              {profile.full_name || 'Staff'} · {profile.role.replace('_', ' ')}
+              {profile.full_name || 'Staff'} - {profile.role.replace('_', ' ')}
             </span>
             <form action="/api/auth/signout" method="post">
               <button className="btn-secondary" type="submit">Sign out</button>
