@@ -49,6 +49,37 @@ APP_BASE_URL=https://multiple-hotel-project.vercel.app
 
 Use the actual Vercel production URL for `APP_BASE_URL`. A custom domain can be used later.
 
+## Vercel Environment Variables
+
+Add every variable in Vercel:
+
+Vercel → Project → Settings → Environment Variables
+
+1. Open Vercel.
+2. Go to Project.
+3. Go to Settings.
+4. Go to Environment Variables.
+5. Add each variable to Production, Preview, and Development.
+6. Save.
+7. Redeploy the latest deployment.
+
+Required variables:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+APP_BASE_URL=https://multiple-hotel-project.vercel.app
+```
+
+`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are needed by middleware and login.
+
+`SUPABASE_SERVICE_ROLE_KEY` is needed by server-side protected staff/admin reads. Never expose it in client components.
+
+`APP_BASE_URL` should be the production Vercel URL, for example `https://multiple-hotel-project.vercel.app`.
+
+After adding or changing Vercel environment variables, redeploy. Old Vercel deployments do not receive newly added environment values automatically.
+
 ## Supabase Setup
 
 Run the schema migration only if it has not already been run:
@@ -74,7 +105,7 @@ The app uses the `payment-proofs` Supabase Storage bucket. Do not delete existin
 
 ## Environment Variables
 
-Copy `.env.example` to `.env.local` for local development and fill in the values.
+Copy `.env.example` to `.env.local` for local development and fill in the values. Never commit `.env.local`.
 
 `NEXT_PUBLIC_SUPABASE_URL` is the public Supabase project URL and is safe for browser use.
 
@@ -87,6 +118,16 @@ Copy `.env.example` to `.env.local` for local development and fill in the values
 ```text
 https://multiple-hotel-project.vercel.app
 ```
+
+## Troubleshooting
+
+`MIDDLEWARE_INVOCATION_FAILED` usually means `NEXT_PUBLIC_SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_ANON_KEY` is missing or invalid in Vercel.
+
+If middleware works but protected pages fail, check `SUPABASE_SERVICE_ROLE_KEY` in Vercel.
+
+After changing Vercel environment variables, redeploy the latest deployment.
+
+`favicon.ico` 404 warnings are harmless. This repo includes an app icon so browsers have a basic favicon.
 
 ## Testing Checklist
 
