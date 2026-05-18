@@ -61,7 +61,7 @@ SUPABASE_SERVICE_ROLE_KEY=
 APP_BASE_URL=https://multiple-hotel-project.vercel.app
 ```
 
-`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are needed for login, middleware on protected routes, and Supabase browser/server auth.
+`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are needed for login and Supabase browser/server auth.
 
 `SUPABASE_SERVICE_ROLE_KEY` is needed by server-side protected staff/admin reads. Never expose it in client components.
 
@@ -90,7 +90,7 @@ Create the first owner:
 3. Edit `supabase/create-owner-profile.sql` with the UUID.
 4. Run the SQL to create the owner profile in the `profiles` table.
 
-If a user can log in but reaches `/account-pending`, their Supabase Auth user exists but their staff profile is missing. Create a profile with one of these roles: `owner`, `manager`, or `front_desk`.
+If a user can log in but reaches `/profile-missing`, their Supabase Auth user exists but their staff profile is missing. Create a profile with one of these roles: `owner`, `manager`, or `front_desk`.
 
 Owner profile SQL example:
 
@@ -132,11 +132,11 @@ https://multiple-hotel-project.vercel.app
 
 `/api/health` is the first URL to test after deployment. It returns booleans for whether each required environment variable is present without exposing secret values.
 
-`MIDDLEWARE_INVOCATION_FAILED` usually means `NEXT_PUBLIC_SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_ANON_KEY` is missing or invalid in Vercel.
+Protected staff pages are guarded by `app/(protected)/layout.tsx` and `requireStaff()`. There is no middleware file in this app.
 
-HTTP 405 on `/login` can happen when middleware or deployment routing interferes with the normal Next.js login page. `/login` is intentionally not matched by middleware.
+HTTP 405 on `/login` after sign-out usually means the sign-out POST redirect was followed as a POST. The sign-out route returns HTTP 303 so the browser follows the redirect as a GET.
 
-Redirect loops after login usually mean the user exists in Supabase Auth but has no matching row in `public.profiles`. The app sends that user to `/account-pending`.
+Redirect loops after login usually mean the user exists in Supabase Auth but has no matching row in `public.profiles`. The app sends that user to `/profile-missing`.
 
 If middleware works but protected pages fail, check `SUPABASE_SERVICE_ROLE_KEY` in Vercel.
 
@@ -150,7 +150,7 @@ After deployment or local startup, test:
 
 - `/api/health`
 - `/login`
-- `/account-pending`
+- `/profile-missing`
 - `/dashboard`
 - `/hotels`
 - `/rooms`

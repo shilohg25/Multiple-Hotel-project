@@ -1,5 +1,5 @@
 import { ProfileMissingNotice } from '@/components/ProfileMissingNotice';
 
-export default function AccountPendingPage() {
+export default function ProfileMissingPage() {
   return <ProfileMissingNotice />;
 }

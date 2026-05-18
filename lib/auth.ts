@@ -68,7 +68,7 @@ export async function requireStaff(): Promise<StaffContext> {
   }
 
   if (lookup.status === 'anonymous') redirect('/login');
-  if (lookup.status === 'missing_profile') redirect('/account-pending');
+  if (lookup.status === 'missing_profile') redirect('/profile-missing');
   return lookup.staff;
 }
 
