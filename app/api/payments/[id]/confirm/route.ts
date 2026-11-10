@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel, canManagePayments } from '@/lib/auth';
 import { businessToday } from '@/lib/date';
+import { paymentReceiptDate } from '@/lib/payment-confirm';
 import { lockedDayMessage } from '@/lib/day-lock';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { unavailableDatabaseFunction } from '@/lib/supabase-errors';
@@ -28,9 +29,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (!canAccessHotel(staff.profile, reservation.hotel_id)) return jsonError('Hotel access denied.', 403);
   if (!payment.proof_path) return jsonError('Payment proof is mandatory before confirmation.');
 
+  const today = businessToday(reservation.hotels?.timezone);
   const receivedText = String(payload?.received_on || payment.received_on || '').trim();
   const receivedOn = /^\d{4}-\d{2}-\d{2}$/.test(receivedText) ? receivedText : null;
-  const entryDate = receivedOn || businessToday(reservation.hotels?.timezone);
+  const receipt = paymentReceiptDate(receivedOn, today);
+  if (!receipt.ok) return jsonError(receipt.error, 400);
+  const entryDate = receipt.date;
   const locked = await lockedDayMessage(reservation.hotel_id, entryDate, null);
   if (locked) return jsonError(locked, 409);
 
