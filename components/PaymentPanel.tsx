@@ -45,6 +45,13 @@ export function PaymentPanel({
     try {
       const form = new FormData(formElement);
       form.set('reservation_id', reservationId);
+      if (method === 'card') {
+        const base = Number(amount || 0);
+        const guestPays = guestCardCharge(base, cardSurchargePercent);
+        form.set('amount', String(guestPays));
+        const details = String(form.get('payment_details') || '');
+        form.set('payment_details', `${details}\nCard surcharge ${cardSurchargePercent}% on ${base.toFixed(2)} recorded as ${guestPays.toFixed(2)}.`.trim());
+      }
 
       const response = await fetch('/api/payments', {
         method: 'POST',
