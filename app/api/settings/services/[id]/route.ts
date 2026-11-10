@@ -42,6 +42,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       category: normalizeServiceCategory(payload.category),
       description: optionalText(payload.description),
       default_price: defaultPrice,
+      charge_unit: String(payload.charge_unit || 'each'),
+      outlet_owed_amount: Number(payload.outlet_owed_amount || 0),
+      outlet_owed_unit: String(payload.outlet_owed_unit || 'none'),
       remittance_required: Boolean(payload.remittance_required),
       remittance_note: optionalText(payload.remittance_note),
       active: Boolean(payload.active)

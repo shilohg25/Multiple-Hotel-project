@@ -45,6 +45,8 @@ export type Hotel = {
   check_in_time: string | null;
   check_out_time: string | null;
   default_currency: string;
+  breakfast_rate_per_room?: number;
+  breakfast_outlet_portion_per_head?: number;
   downpayment_type: DownpaymentType;
   default_downpayment_percent: number;
   default_downpayment_amount: number;
@@ -178,6 +180,9 @@ export type ServiceItem = {
   category: string;
   description: string | null;
   default_price: number;
+  charge_unit?: string;
+  outlet_owed_amount?: number;
+  outlet_owed_unit?: string;
   active: boolean;
   remittance_required: boolean;
   remittance_note: string | null;
