@@ -28,17 +28,17 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
   if (!hotel) return <div className="card p-6">Add a property before using Today.</div>;
 
   const date = params.date || businessToday(hotel.timezone);
-  const { data: outletsRaw } = await supabaseAdmin
+  const outletsResult = await supabaseAdmin
     .from('outlets')
     .select('*')
     .eq('hotel_id', hotel.id)
     .eq('active', true)
     .eq('is_reporting_unit', true)
     .order('name');
-  const outlets = (outletsRaw || []) as Outlet[];
+  const outlets = (Array.isArray(outletsResult.data) ? outletsResult.data : []) as Outlet[];
   const outlet = outlets.find((item) => item.id === params.outlet) || null;
 
-  const [{ data: roomsRaw }, { data: staysRaw }] = await Promise.all([
+  const [roomsResult, staysResult] = await Promise.all([
     supabaseAdmin.from('rooms').select('*').eq('hotel_id', hotel.id).eq('active', true).order('sort_order').order('name'),
     supabaseAdmin
       .from('reservations')
@@ -48,9 +48,18 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
       .gte('check_out', date)
       .not('status', 'in', '(cancelled,no_show)')
   ]);
+  if (roomsResult.error || staysResult.error) {
+    return (
+      <section className="card max-w-lg space-y-3 p-6">
+        <h1 className="text-2xl font-black">Today could not load this property</h1>
+        <p className="text-sm text-slate-600">{roomsResult.error?.message || staysResult.error?.message}</p>
+        <p className="text-sm text-slate-600">Reload the page. If this keeps happening, tell a manager. The day was not changed.</p>
+      </section>
+    );
+  }
 
-  const rooms = (roomsRaw || []) as Room[];
-  const stays = ((staysRaw || []) as Array<StaySlice & { guests?: { full_name?: string } | { full_name?: string }[] | null }>).map((stay) => {
+  const rooms = (Array.isArray(roomsResult.data) ? roomsResult.data : []) as Room[];
+  const stays = ((Array.isArray(staysResult.data) ? staysResult.data : []) as Array<StaySlice & { guests?: { full_name?: string } | { full_name?: string }[] | null }>).map((stay) => {
     const guest = Array.isArray(stay.guests) ? stay.guests[0] : stay.guests;
     return { ...stay, guest_name: guest?.full_name || 'Guest' };
   });

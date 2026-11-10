@@ -27,7 +27,7 @@ export function HelpPanel({
               <h2 className="font-bold">{guide.title}</h2>
               <p className="mt-1 text-sm text-slate-600">{guide.summary}</p>
               <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-slate-700">
-                {guide.steps.slice(0, 4).map((step) => <li key={step}>{step}</li>)}
+                {(guide.steps || []).slice(0, 4).map((step) => <li key={step}>{step}</li>)}
               </ol>
             </article>
           ))}
