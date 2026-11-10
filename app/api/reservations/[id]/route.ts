@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff } from '@/lib/api';
+import { breakfastBill } from '@/lib/breakfast-charge';
 import { decideReservationUpdate, RESERVATION_MONEY_FIELDS, type MoneyField, type PolicyStatus } from '@/lib/reservation-policy';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
@@ -65,6 +66,54 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         phone: payload.guest_phone || currentRaw.guests.phone
       })
       .eq('id', currentRaw.guest_id);
+  }
+
+  if (reservationRaw.status === 'checked_in' && reservationRaw.with_breakfast) {
+    const { data: existingBreakfast } = await supabaseAdmin
+      .from('reservation_charges')
+      .select('id')
+      .eq('reservation_id', id)
+      .eq('category', 'breakfast')
+      .limit(1);
+    if (!existingBreakfast?.length) {
+      const { data: hotel } = await supabaseAdmin
+        .from('hotels')
+        .select('breakfast_rate_per_room, breakfast_outlet_portion_per_head')
+        .eq('id', currentRaw.hotel_id)
+        .maybeSingle();
+      const bill = breakfastBill({
+        nights: Number(reservationRaw.nights || 1),
+        guestCount: Number(reservationRaw.guest_count || 1),
+        ratePerRoom: Number(hotel?.breakfast_rate_per_room ?? 500),
+        outletPerHead: Number(hotel?.breakfast_outlet_portion_per_head ?? 250)
+      });
+      const { data: service } = await supabaseAdmin
+        .from('service_items')
+        .select('id')
+        .eq('hotel_id', currentRaw.hotel_id)
+        .eq('category', 'breakfast')
+        .ilike('name', 'Breakfast')
+        .maybeSingle();
+      const charge = {
+        reservation_id: id,
+        hotel_id: currentRaw.hotel_id,
+        service_item_id: service?.id || null,
+        description: `Breakfast ${bill.nights} night(s) at ${bill.guestTotal / bill.nights} per room`,
+        category: 'breakfast',
+        quantity: bill.nights,
+        unit_price: bill.guestTotal / bill.nights,
+        total_amount: bill.guestTotal,
+        remittance_required: true,
+        remittance_note: `Outlet owed ${bill.outletOwed} (${bill.heads} head(s) x ${bill.nights} night(s))`,
+        notes: 'Posted at check-in from the breakfast settings.',
+        created_by: staff.userId
+      };
+      const inserted = await supabaseAdmin.from('reservation_charges').insert(charge).select('id').single();
+      if (inserted.error && String(inserted.error.message || '').includes('total_amount')) {
+        const { total_amount: _ignored, ...withoutTotal } = charge;
+        await supabaseAdmin.from('reservation_charges').insert(withoutTotal);
+      }
+    }
   }
 
   await supabaseAdmin.from('audit_logs').insert({
