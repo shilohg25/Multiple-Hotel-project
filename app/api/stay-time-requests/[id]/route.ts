@@ -26,6 +26,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (!canAccessHotel(auth.staff.profile, current.hotel_id)) return jsonError('Hotel access denied.', 403);
   if (current.status !== 'pending') return jsonError('This request was already reviewed.', 409);
 
+  const { data, error } = await supabaseAdmin
+    .from('stay_time_requests')
+    .update({ status: decision, review_note: reviewNote, reviewed_by: auth.staff.userId, reviewed_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('status', 'pending')
+    .select('*')
+    .maybeSingle();
+  if (error) return jsonError(error.message, 400);
+  if (!data) return jsonError('This request was already reviewed.', 409);
+
   if (decision === 'approved') {
     const amount = hourlyCharge(Number(current.hours), Number(current.hourly_rate));
     const serviceName = current.kind === 'early_check_in' ? 'Early check-in' : 'Late checkout';
@@ -52,18 +62,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       const { total_amount: _ignored, ...withoutTotal } = charge;
       inserted = await supabaseAdmin.from('reservation_charges').insert(withoutTotal).select('id').single();
     }
-    if (inserted.error) return jsonError(inserted.error.message, 400);
+    if (inserted.error) {
+      await supabaseAdmin.from('stay_time_requests').update({ status: 'pending', review_note: null, reviewed_by: null, reviewed_at: null }).eq('id', id);
+      return jsonError(inserted.error.message, 400);
+    }
   }
-
-  const { data, error } = await supabaseAdmin
-    .from('stay_time_requests')
-    .update({ status: decision, review_note: reviewNote, reviewed_by: auth.staff.userId, reviewed_at: new Date().toISOString() })
-    .eq('id', id)
-    .eq('status', 'pending')
-    .select('*')
-    .maybeSingle();
-  if (error) return jsonError(error.message, 400);
-  if (!data) return jsonError('This request was already reviewed.', 409);
 
   await supabaseAdmin.from('audit_logs').insert({
     hotel_id: current.hotel_id,
