@@ -39,9 +39,9 @@ export function summarizeClose(input: CloseFigures): CloseSummary {
   const totalSales = money(input.roomSales + input.addonSales + input.miscSales);
   const nonCash = money(input.gcash + input.maya + input.bank + input.card + input.cheque + input.otherNonCash);
   const cashOnHand = money(totalSales - input.collectibles - nonCash);
-  const expectedCash = money(input.cashSales - input.expenses);
+  const expectedCash = money(cashOnHand - input.returnToFund);
   const expectedDrawer = money(input.rvfFloat + expectedCash);
-  const countedDrawer = money(input.floatCounted + input.drawerCounted);
+  const countedDrawer = money(input.floatCounted + input.drawerCounted + input.bankDeposit);
   const variance = money(countedDrawer - expectedDrawer);
   const status = Math.abs(variance) < 0.009 ? 'balanced' : variance < 0 ? 'short' : 'excess';
   return {
@@ -88,17 +88,18 @@ export function figuresFromLedger(rows: LedgerLike[], rvfFloat: number): CloseFi
     const amount = Number(row.amount || 0);
     const category = String(row.category || '');
     const method = String(row.payment_method || '');
+    const collectible = Boolean(row.is_collectible) || category === 'collectible';
     if (category === 'expense' || category === 'expenses') {
       blank.expenses += amount;
-      continue;
-    }
-    if (row.is_collectible) {
-      blank.collectibles += amount;
       continue;
     }
     if (category === 'room' || category === 'room_payment') blank.roomSales += amount;
     else if (category === 'add_on' || category === 'breakfast' || category === 'extra_bed') blank.addonSales += amount;
     else blank.miscSales += amount;
+    if (collectible) {
+      blank.collectibles += amount;
+      continue;
+    }
     if (method === 'cash') blank.cashSales += amount;
     else if (method === 'gcash') blank.gcash += amount;
     else if (method === 'maya') blank.maya += amount;

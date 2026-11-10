@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel, canManagePayments } from '@/lib/auth';
 import { businessToday } from '@/lib/date';
+import { lockedDayMessage } from '@/lib/day-lock';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { reservationStatusAfterConfirm } from '@/lib/payment-confirm';
 import { supabaseAdmin } from '@/lib/supabase-admin';
@@ -27,6 +28,8 @@ export async function PATCH(_request: Request, { params }: { params: Promise<{ i
   if (!payment.proof_path) return jsonError('Payment proof is mandatory before confirmation.');
 
   const entryDate = businessToday(reservation.hotels?.timezone);
+  const locked = await lockedDayMessage(reservation.hotel_id, entryDate, null);
+  if (locked) return jsonError(locked, 409);
 
   const { data: confirmedRow, error: updatePaymentError } = await supabaseAdmin
     .from('payments')

@@ -5,7 +5,7 @@ import { SalesCashManager } from '@/components/SalesCashManager';
 import type { CashCount, Hotel, LedgerEntry } from '@/types/app';
 import Link from 'next/link';
 
-type SearchParams = { hotel?: string; date?: string };
+type SearchParams = { hotel?: string; date?: string; outlet?: string };
 
 export default async function SalesPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const params = (await searchParams) || {};
@@ -28,12 +28,9 @@ export default async function SalesPage({ searchParams }: { searchParams?: Promi
   const { start: dayStart, end: dayEnd } = localDayBounds(selectedDate, selectedHotel.timezone);
 
   const [{ data: ledgerRaw }, { data: cashRaw }, { data: paymentsRaw }, { data: chargesRaw }, { data: dayToursRaw }, { data: remittancesRaw }] = await Promise.all([
-    supabaseAdmin
-      .from('ledger_entries')
-      .select('*')
-      .eq('hotel_id', selectedHotel.id)
-      .eq('entry_date', selectedDate)
-      .order('created_at', { ascending: false }),
+    (params.outlet
+      ? supabaseAdmin.from('ledger_entries').select('*').eq('hotel_id', selectedHotel.id).eq('entry_date', selectedDate).eq('outlet_id', params.outlet).order('created_at', { ascending: false })
+      : supabaseAdmin.from('ledger_entries').select('*').eq('hotel_id', selectedHotel.id).eq('entry_date', selectedDate).order('created_at', { ascending: false })),
     supabaseAdmin
       .from('cash_counts')
       .select('*')
@@ -91,6 +88,7 @@ export default async function SalesPage({ searchParams }: { searchParams?: Promi
         ledgerEntries={(ledgerRaw || []) as LedgerEntry[]}
         cashCounts={(cashRaw || []) as CashCount[]}
         breakdown={breakdown}
+        outletId={params.outlet || null}
       />
     </div>
   );

@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel, canAddReservationCharges } from '@/lib/auth';
+import { businessToday } from '@/lib/date';
+import { lockedDayMessage } from '@/lib/day-lock';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { normalizeServiceCategory } from '@/lib/service-categories';
 import { supabaseAdmin } from '@/lib/supabase-admin';
@@ -62,6 +64,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     .single();
   if (reservationError || !reservation) return jsonError('Reservation not found.', 404);
   if (!canAccessHotel(staff.profile, reservation.hotel_id)) return jsonError('Hotel access denied.', 403);
+  const { data: hotel } = await supabaseAdmin.from('hotels').select('timezone').eq('id', reservation.hotel_id).maybeSingle();
+  const locked = await lockedDayMessage(reservation.hotel_id, businessToday(hotel?.timezone), null);
+  if (locked) return jsonError(locked, 409);
 
   const serviceItemId = optionalText(payload.service_item_id);
   let serviceItem: Record<string, unknown> | null = null;

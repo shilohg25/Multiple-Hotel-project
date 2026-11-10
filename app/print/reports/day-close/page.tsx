@@ -19,7 +19,9 @@ export default async function DayClosePrintPage({ searchParams }: { searchParams
   let closeQuery = supabaseAdmin.from('day_closes').select('*, profiles:responsible_profile_id(full_name)').eq('hotel_id', hotel.id).eq('business_date', date);
   closeQuery = params.outlet ? closeQuery.eq('outlet_id', params.outlet) : closeQuery.is('outlet_id', null);
   const [{ data: ledgerRaw }, { data: closeRaw }] = await Promise.all([
-    supabaseAdmin.from('ledger_entries').select('category, payment_method, is_collectible, amount').eq('hotel_id', hotel.id).eq('entry_date', date),
+    (params.outlet
+      ? supabaseAdmin.from('ledger_entries').select('category, payment_method, is_collectible, amount').eq('hotel_id', hotel.id).eq('entry_date', date).eq('outlet_id', params.outlet)
+      : supabaseAdmin.from('ledger_entries').select('category, payment_method, is_collectible, amount').eq('hotel_id', hotel.id).eq('entry_date', date).is('outlet_id', null)),
     closeQuery.maybeSingle()
   ]);
   const figures = figuresFromLedger((ledgerRaw || []) as LedgerLike[], Number(hotel.rvf_float_amount ?? 10000));

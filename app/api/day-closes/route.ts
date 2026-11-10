@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { countTotal, figuresFromLedger, summarizeClose, type LedgerLike } from '@/lib/day-close';
+import { verifiedOutletId } from '@/lib/day-lock';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 type CountRow = { denomination?: number; quantity?: number };
@@ -18,7 +19,7 @@ export async function POST(request: Request) {
 
   const payload = await request.json();
   const hotelId = String(payload.hotel_id || '');
-  const outletId = payload.outlet_id ? String(payload.outlet_id) : null;
+  const outletId = await verifiedOutletId(hotelId, payload.outlet_id);
   const businessDate = String(payload.business_date || '');
   const responsibleId = String(payload.responsible_profile_id || '');
   if (!canAccessHotel(auth.staff.profile, hotelId)) return jsonError('Hotel access denied.', 403);
@@ -31,7 +32,9 @@ export async function POST(request: Request) {
   const { data: existing } = await existingQuery.maybeSingle();
   if (existing?.status === 'locked') return jsonError('This day is locked. A manager has to unlock it first.', 409);
 
-  const { data: ledgerRaw } = await supabaseAdmin.from('ledger_entries').select('category, payment_method, is_collectible, amount').eq('hotel_id', hotelId).eq('entry_date', businessDate);
+  let ledgerQuery = supabaseAdmin.from('ledger_entries').select('category, payment_method, is_collectible, amount').eq('hotel_id', hotelId).eq('entry_date', businessDate);
+  ledgerQuery = outletId ? ledgerQuery.eq('outlet_id', outletId) : ledgerQuery.is('outlet_id', null);
+  const { data: ledgerRaw } = await ledgerQuery;
   const figures = figuresFromLedger((ledgerRaw || []) as LedgerLike[], Number(hotel?.rvf_float_amount ?? 10000));
   const floatRows = rowsOf(payload.float_counts);
   const drawerRows = rowsOf(payload.drawer_counts);
