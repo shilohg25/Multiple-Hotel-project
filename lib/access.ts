@@ -16,9 +16,29 @@ export function allows(role: string | null | undefined, capability: Capability):
 
 const DAILY_EXACT = new Set(['/today', '/sales', '/offline', '/reservations/new']);
 
+/** Path only, without a host, query, or trailing slash. */
+export function normalizePathname(value: string | null | undefined): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  let path = raw;
+  if (raw.startsWith('http://') || raw.startsWith('https://')) {
+    try {
+      path = new URL(raw).pathname;
+    } catch {
+      path = raw;
+    }
+  }
+  path = path.split('?')[0].split('#')[0];
+  if (!path.startsWith('/')) path = `/${path}`;
+  if (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1);
+  return path;
+}
+
 export function canOpenPath(role: string | null | undefined, pathname: string): boolean {
+  pathname = normalizePathname(pathname);
   if (!isFrontline(role)) return true;
-  if (DAILY_EXACT.has(pathname)) return true;
+  if (!pathname) return true;
+  if (DAILY_EXACT.has(pathname) || pathname === '/dashboard') return true;
   if (pathname.startsWith('/today/')) return true;
   if (pathname.startsWith('/sales/')) return true;
   if (pathname.startsWith('/print/reports/daily')) return true;
