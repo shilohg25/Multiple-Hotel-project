@@ -35,12 +35,9 @@ function money(value: number) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
 
-/** The bill count and the bank-deposit box are one deposit. Filling both must not add that money twice. */
-export function depositOnce(drawerCounted: number, bankDeposit: number) {
-  const drawer = money(drawerCounted);
-  const bank = money(bankDeposit);
-  if (drawer > 0 && bank > 0) return Math.max(drawer, bank);
-  return money(drawer + bank);
+/** Cash still in the drawer plus money already taken to the bank. These are different piles. */
+export function cashOnHandCounted(drawerCounted: number, bankDeposit: number) {
+  return money(money(drawerCounted) + money(bankDeposit));
 }
 
 export function summarizeClose(input: CloseFigures): CloseSummary {
@@ -49,7 +46,7 @@ export function summarizeClose(input: CloseFigures): CloseSummary {
   const cashOnHand = money(totalSales - input.collectibles - nonCash);
   const expectedCash = money(cashOnHand - input.returnToFund);
   const expectedDrawer = money(input.rvfFloat + expectedCash);
-  const countedDrawer = money(input.floatCounted + depositOnce(input.drawerCounted, input.bankDeposit));
+  const countedDrawer = money(input.floatCounted + cashOnHandCounted(input.drawerCounted, input.bankDeposit));
   const variance = money(countedDrawer - expectedDrawer);
   const status = Math.abs(variance) < 0.009 ? 'balanced' : variance < 0 ? 'short' : 'excess';
   return {

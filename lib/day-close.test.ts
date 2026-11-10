@@ -26,7 +26,7 @@ describe('close the day', () => {
     assert.equal(summary.status, 'balanced');
   });
 
-  it('counts the cash-to-deposit box and the bank deposit once', () => {
+  it('adds cash still in the drawer to money already deposited', () => {
     const summary = summarizeClose({
       roomSales: 10420,
       addonSales: 0,
@@ -42,12 +42,13 @@ describe('close the day', () => {
       cashSales: 3950,
       rvfFloat: 10000,
       floatCounted: 10000,
-      drawerCounted: 1991,
-      bankDeposit: 1991,
+      drawerCounted: 991,
+      bankDeposit: 1000,
       returnToFund: 1959
     });
-    assert.equal(summary.status, 'balanced');
+    assert.equal(summary.expectedCash, 1991);
     assert.equal(summary.variance, 0);
+    assert.equal(summary.status, 'balanced');
   });
 
   it('does not count a collectible category as cash when the flag was left off', () => {
