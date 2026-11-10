@@ -2,6 +2,7 @@ import 'server-only';
 
 import { canAccessHotel, type StaffContext } from './auth';
 import { businessMonth, businessTimeZone, businessToday, localDayBounds, localMonthBounds, timestampInRange } from './date';
+import { expectedCashFromLedger } from './expected-cash';
 import { supabaseAdmin } from './supabase-admin';
 import type { CashCount, Hotel, LedgerEntry, Payment, Remittance, Reservation, ReservationCharge } from '@/types/app';
 
@@ -115,10 +116,10 @@ export async function getDailyReportData(staff: StaffContext, input: { hotelId?:
   const serviceCharges = charges.reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
   const breakfastCharges = charges.filter((item) => item.category === 'breakfast').reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
   const dayTourSales = (dayToursRaw || []).reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
-  const cashReceived = ledgerEntries.filter((item) => item.payment_method === 'cash' && !item.is_collectible).reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const cashReceived = expectedCashFromLedger(ledgerEntries);
   const bankOnlineReceived = ledgerEntries.filter((item) => item.payment_method !== 'cash' && !item.is_collectible).reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const actualEndingCash = cashCounts.reduce((sum, item) => sum + Number(item.denomination || 0) * Number(item.quantity || 0), 0);
-  const expectedCash = roomPayments + cashReceived;
+  const expectedCash = cashReceived;
   const remittanceDue = remittances.reduce((sum, item) => sum + Number(item.amount_due || 0), 0);
   const remittancePaid = remittances.reduce((sum, item) => sum + Number(item.amount_paid || 0), 0);
 
