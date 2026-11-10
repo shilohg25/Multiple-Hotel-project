@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { businessDateForHotel } from '@/lib/business-date';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
+import { lockedDayMessage } from '@/lib/day-lock';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 export async function POST(request: Request) {
@@ -16,6 +17,8 @@ export async function POST(request: Request) {
   const amount = Number(payload.amount || 0);
 
   if (!hotelId || !canAccessHotel(staff.profile, hotelId)) return jsonError('Hotel access denied.', 403);
+  const locked = await lockedDayMessage(hotelId, entryDate, payload.outlet_id || null);
+  if (locked) return jsonError(locked, 409);
   if (!Number.isFinite(amount)) return jsonError('Amount must be a valid number.');
 
   const { data, error } = await supabaseAdmin

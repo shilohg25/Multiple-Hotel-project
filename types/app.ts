@@ -49,6 +49,7 @@ export type Hotel = {
   breakfast_outlet_portion_per_head?: number;
   early_checkin_hourly_rate?: number;
   late_checkout_hourly_rate?: number;
+  rvf_float_amount?: number;
   downpayment_type: DownpaymentType;
   default_downpayment_percent: number;
   default_downpayment_amount: number;
