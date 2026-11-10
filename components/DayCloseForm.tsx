@@ -34,9 +34,13 @@ export function DayCloseForm({
   const [drawerCounts, setDrawerCounts] = useState<CountMap>({});
   const [message, setMessage] = useState('');
   const [unlockReason, setUnlockReason] = useState('');
+  const [bankDeposit, setBankDeposit] = useState(Number(existing?.bank_deposit || 0));
   const floatCounted = countTotal(CASH_DENOMINATIONS.map((denomination) => ({ denomination, quantity: floatCounts[denomination] || 0 })));
   const drawerCounted = countTotal(CASH_DENOMINATIONS.map((denomination) => ({ denomination, quantity: drawerCounts[denomination] || 0 })));
-  const preview = useMemo(() => summarizeClose({ ...figures, floatCounted, drawerCounted }), [figures, floatCounted, drawerCounted]);
+  const preview = useMemo(
+    () => summarizeClose({ ...figures, floatCounted, drawerCounted, bankDeposit }),
+    [figures, floatCounted, drawerCounted, bankDeposit]
+  );
 
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -49,7 +53,7 @@ export function DayCloseForm({
         outlet_id: outletId,
         business_date: businessDate,
         responsible_profile_id: form.get('responsible_profile_id'),
-        bank_deposit: Number(form.get('bank_deposit') || 0),
+        bank_deposit: bankDeposit,
         return_to_fund: Number(form.get('return_to_fund') || 0),
         variance_note: form.get('variance_note'),
         float_counts: CASH_DENOMINATIONS.map((denomination) => ({ denomination, quantity: floatCounts[denomination] || 0 })),
@@ -102,14 +106,14 @@ export function DayCloseForm({
         <CountBox title="RVF float count" counts={floatCounts} onChange={setFloatCounts} disabled={locked} />
         <CountBox title="Cash to deposit" counts={drawerCounts} onChange={setDrawerCounts} disabled={locked} />
       </div>
-      <p className="text-sm text-slate-600">Float counted {currency(floatCounted, currencyCode)}. Deposit cash counted {currency(drawerCounted, currencyCode)}. These are kept separate. Expected drawer is the float plus cash on hand after expenses.</p>
+      <p className="text-sm text-slate-600">Float counted {currency(floatCounted, currencyCode)}. Deposit counted {currency(drawerCounted, currencyCode)}. The bill count and the bank deposit are the same deposit, so the close counts that money once.</p>
 
       <div className="grid gap-3 md:grid-cols-2">
         <label className="space-y-1">Return to fund
           <input name="return_to_fund" type="number" min="0" step="0.01" defaultValue={existing?.return_to_fund ?? figures.returnToFund} className="w-full" disabled={locked} />
         </label>
-        <label className="space-y-1">Bank deposit
-          <input name="bank_deposit" type="number" min="0" step="0.01" defaultValue={existing?.bank_deposit ?? 0} className="w-full" disabled={locked} />
+        <label className="space-y-1">Bank deposit already made
+          <input name="bank_deposit" type="number" min="0" step="0.01" value={bankDeposit || ''} onChange={(event) => setBankDeposit(Number(event.target.value || 0))} className="w-full" disabled={locked} />
         </label>
         <label className="space-y-1 md:col-span-2">Note if short or over
           <textarea name="variance_note" rows={3} defaultValue={existing?.variance_note || ''} className="w-full" disabled={locked} placeholder="Required when the count is not balanced." />

@@ -32,6 +32,8 @@ These three `0002_*.sql` files overlap. The live database has no `supabase_migra
 | 9 | `supabase/migrations/20261110026000_day_close.sql` | `supabase/rollbacks/20261110026000_day_close.rollback.sql` |
 | 10 | `supabase/migrations/20261110026100_ledger_outlet_and_shortage_status.sql` | `supabase/rollbacks/20261110026100_ledger_outlet_and_shortage_status.rollback.sql` |
 
+Before applying row 10 on a database that already has shortage charges, run the read-only query in `supabase/checks/pre_026100_duplicate_shortages.sql`. If it returns any rows, keep one shortage charge per `day_close_id` before applying that migration. The migration file itself is unchanged.
+
 `20261110000200_hotel_timezone.sql` only adds `hotels.timezone` (default `Asia/Manila`). It does not depend on which `0002` file was used.
 
 `20261110011100_reporting_units.sql` adds legal names and a reporting-unit flag. It inserts Sotera Café and Tago Resto. It does not rename older restaurant outlets. It needs the `outlets` table from the folio `0002`.

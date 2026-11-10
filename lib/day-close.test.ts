@@ -26,6 +26,30 @@ describe('close the day', () => {
     assert.equal(summary.status, 'balanced');
   });
 
+  it('counts the cash-to-deposit box and the bank deposit once', () => {
+    const summary = summarizeClose({
+      roomSales: 10420,
+      addonSales: 0,
+      miscSales: 0,
+      expenses: 1959,
+      collectibles: 4770,
+      gcash: 0,
+      maya: 0,
+      bank: 1700,
+      card: 0,
+      cheque: 0,
+      otherNonCash: 0,
+      cashSales: 3950,
+      rvfFloat: 10000,
+      floatCounted: 10000,
+      drawerCounted: 1991,
+      bankDeposit: 1991,
+      returnToFund: 1959
+    });
+    assert.equal(summary.status, 'balanced');
+    assert.equal(summary.variance, 0);
+  });
+
   it('does not count a collectible category as cash when the flag was left off', () => {
     const figures = figuresFromLedger([
       { category: 'collectible', payment_method: 'cash', is_collectible: false, amount: 500 }
