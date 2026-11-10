@@ -103,6 +103,7 @@ export async function POST(request: Request) {
     return jsonError(reservationError?.message || 'Failed to create reservation.');
   }
 
+  // status submitted is not a closed day's cash. The day lock does not reject this insert.
   const { error: paymentError } = await supabaseAdmin.from('payments').insert({
     reservation_id: reservationRaw.id,
     amount: paymentAmount,

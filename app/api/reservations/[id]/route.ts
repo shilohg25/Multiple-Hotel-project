@@ -22,6 +22,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (currentError || !currentRaw) return jsonError('Reservation not found.', 404);
   if (!canAccessHotel(staff.profile, currentRaw.hotel_id)) return jsonError('Hotel access denied.', 403);
 
+  const frontline = staff.profile.role === 'front_desk' || staff.profile.role === 'cashier' || staff.profile.role === 'restaurant_staff';
+  if (frontline) {
+    const blocked = ['booking_source', 'check_in', 'check_out', 'guest_count', 'with_breakfast', 'surcharge_label', 'surcharge_amount', 'mode_of_payment', 'confirmed_by_name', 'notes', 'room_id', 'guest_id', 'posted_room_rate', 'total_amount', 'downpayment_required', 'guest_name', 'guest_email', 'guest_phone'];
+    if (blocked.some((key) => key in payload)) return jsonError('Front desk can only check a guest in or out.', 403);
+  }
+
   const update: Record<string, unknown> = {};
   for (const key of ['booking_source', 'check_in', 'check_out', 'guest_count', 'with_breakfast', 'surcharge_label', 'surcharge_amount', 'mode_of_payment', 'confirmed_by_name', 'notes']) {
     if (key in payload) update[key] = payload[key];
