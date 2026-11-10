@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel, canManageServiceCatalog } from '@/lib/auth';
-import { jsonError, requireApiStaff } from '@/lib/api';
+import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 export async function POST(request: Request) {
   const auth = await requireApiStaff();
   if (!auth.ok) return auth.response;
+  const denied = denyUnless(auth.staff, 'settings');
+  if (denied) return denied;
   if (!canManageServiceCatalog(auth.staff.profile)) return jsonError('Only a manager or owner can edit breakfast settings.', 403);
 
   const payload = await request.json();

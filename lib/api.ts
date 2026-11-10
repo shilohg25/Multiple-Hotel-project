@@ -1,8 +1,14 @@
 import { NextResponse } from 'next/server';
+import { allows, type Capability } from './access';
 import { getStaffContext, type StaffContext } from './auth';
 
 export function jsonError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
+}
+
+export function denyUnless(staff: StaffContext, capability: Capability) {
+  if (!allows(staff.profile.role, capability)) return jsonError('Your role cannot do that.', 403);
+  return null;
 }
 
 export async function requireApiStaff(): Promise<{ ok: false; response: ReturnType<typeof jsonError> } | { ok: true; staff: StaffContext }> {

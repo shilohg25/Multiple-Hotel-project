@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel, canManagePricingSetup } from '@/lib/auth';
-import { jsonError, requireApiStaff } from '@/lib/api';
+import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 function toBoolean(value: unknown, fallback: boolean) {
@@ -31,6 +31,8 @@ function uniqueNames(names: string[]) {
 export async function POST(request: Request) {
   const auth = await requireApiStaff();
   if (!auth.ok) return auth.response;
+  const denied = denyUnless(auth.staff, 'settings');
+  if (denied) return denied;
   const staff = auth.staff;
   if (!canManagePricingSetup(staff.profile)) return jsonError('Owner or manager access is required to bulk create rooms/units.', 403);
 

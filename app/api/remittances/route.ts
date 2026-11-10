@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel, canManageRemittances } from '@/lib/auth';
-import { jsonError, requireApiStaff } from '@/lib/api';
+import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 function optionalText(value: unknown) {
@@ -11,6 +11,8 @@ function optionalText(value: unknown) {
 export async function POST(request: Request) {
   const auth = await requireApiStaff();
   if (!auth.ok) return auth.response;
+  const denied = denyUnless(auth.staff, 'settings');
+  if (denied) return denied;
   const staff = auth.staff;
   if (!canManageRemittances(staff.profile)) return jsonError('Owner or manager access is required to manage remittances.', 403);
 
