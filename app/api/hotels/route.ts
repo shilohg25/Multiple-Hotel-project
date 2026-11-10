@@ -43,7 +43,9 @@ export async function POST(request: Request) {
       default_downpayment_amount: Number(payload.default_downpayment_amount || 0),
       house_rules: optionalText(payload.house_rules) || undefined,
       booking_terms: optionalText(payload.booking_terms) || undefined,
-      timezone: businessTimeZone(optionalText(payload.timezone))
+      timezone: businessTimeZone(optionalText(payload.timezone)),
+      legal_name: optionalText(payload.legal_name),
+      is_reporting_unit: payload.is_reporting_unit === undefined ? true : payload.is_reporting_unit === true || payload.is_reporting_unit === 'true'
     })
     .select('*')
     .single();

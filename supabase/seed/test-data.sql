@@ -93,6 +93,19 @@ values
   )
 on conflict (id) do update set name = excluded.name, base_rate = excluded.base_rate;
 
+insert into public.outlets (id, hotel_id, name, slug, outlet_type, active, legal_name, is_reporting_unit)
+values (
+  '11111111-1111-4111-8111-111111111501',
+  '11111111-1111-4111-8111-111111111111',
+  'TEST- Practice Café',
+  'test-practice-cafe',
+  'restaurant',
+  true,
+  'TEST- Practice Corp',
+  true
+)
+on conflict (id) do update set name = excluded.name, is_reporting_unit = true;
+
 insert into public.guests (id, full_name, email, phone, notes)
 values (
   '11111111-1111-4111-8111-111111111401',
