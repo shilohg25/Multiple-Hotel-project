@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Hotel, Profile, Role } from '@/types/app';
 
-const roles: Role[] = ['owner', 'manager', 'front_desk'];
+const roles: Role[] = ['owner', 'manager', 'front_desk', 'cashier', 'restaurant_staff'];
 
 type Draft = {
   full_name: string;

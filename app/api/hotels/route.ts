@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireApiStaff, jsonError } from '@/lib/api';
+import { requireApiStaff, jsonError, denyUnless } from '@/lib/api';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { businessTimeZone } from '@/lib/date';
 import { slugify } from '@/lib/slug';
@@ -13,6 +13,8 @@ function optionalText(value: unknown) {
 export async function POST(request: Request) {
   const auth = await requireApiStaff();
   if (!auth.ok) return auth.response;
+  const denied = denyUnless(auth.staff, 'owner');
+  if (denied) return denied;
   const staff = auth.staff;
   if (staff.profile.role !== 'owner') return jsonError('Only owners can create hotels.', 403);
 

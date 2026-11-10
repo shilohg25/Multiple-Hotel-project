@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { businessDateForHotel } from '@/lib/business-date';
-import { jsonError, requireApiStaff } from '@/lib/api';
+import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 export async function POST(request: Request) {
   const auth = await requireApiStaff();
   if (!auth.ok) return auth.response;
+  const denied = denyUnless(auth.staff, 'daily');
+  if (denied) return denied;
   const staff = auth.staff;
   const payload = await request.json();
   const hotelId = String(payload.hotel_id || '');

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel, canManagePayments } from '@/lib/auth';
 import { businessToday } from '@/lib/date';
-import { jsonError, requireApiStaff } from '@/lib/api';
+import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { reservationStatusAfterConfirm } from '@/lib/payment-confirm';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import type { Guest, Hotel, Reservation } from '@/types/app';
@@ -9,6 +9,8 @@ import type { Guest, Hotel, Reservation } from '@/types/app';
 export async function PATCH(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiStaff();
   if (!auth.ok) return auth.response;
+  const denied = denyUnless(auth.staff, 'approve');
+  if (denied) return denied;
   const staff = auth.staff;
   if (!canManagePayments(staff.profile)) return jsonError('Payment confirmation requires owner or manager access.', 403);
 

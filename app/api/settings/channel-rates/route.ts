@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel, canManagePricingSetup } from '@/lib/auth';
-import { jsonError, requireApiStaff } from '@/lib/api';
+import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { RATE_CHANNELS } from '@/lib/channel-rates';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 export async function POST(request: Request) {
   const auth = await requireApiStaff();
   if (!auth.ok) return auth.response;
+  const denied = denyUnless(auth.staff, 'settings');
+  if (denied) return denied;
   if (!canManagePricingSetup(auth.staff.profile)) return jsonError('Only a manager or owner can edit rate defaults.', 403);
 
   const payload = await request.json();

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
-import { jsonError, requireApiStaff } from '@/lib/api';
+import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { storedCardAmount } from '@/lib/card-payment';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { getProcessedOfflineRequest, recordProcessedOfflineRequest } from '@/lib/idempotency';
@@ -14,6 +14,8 @@ function cleanFileName(name: string) {
 export async function POST(request: Request) {
   const auth = await requireApiStaff();
   if (!auth.ok) return auth.response;
+  const denied = denyUnless(auth.staff, 'daily');
+  if (denied) return denied;
   const staff = auth.staff;
 
   const form = await request.formData();
