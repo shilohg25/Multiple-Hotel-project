@@ -47,6 +47,8 @@ export type Hotel = {
   default_currency: string;
   breakfast_rate_per_room?: number;
   breakfast_outlet_portion_per_head?: number;
+  early_checkin_hourly_rate?: number;
+  late_checkout_hourly_rate?: number;
   downpayment_type: DownpaymentType;
   default_downpayment_percent: number;
   default_downpayment_amount: number;

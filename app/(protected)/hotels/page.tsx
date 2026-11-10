@@ -2,6 +2,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { requireStaff, canAccessHotel } from '@/lib/auth';
 import { HotelManager, type HotelRoomCount } from '@/components/HotelManager';
 import { ReportingUnitsManager } from '@/components/ReportingUnitsManager';
+import { PropertyHoursForm } from '@/components/PropertyHoursForm';
 import type { Hotel, Outlet, Room } from '@/types/app';
 
 export default async function HotelsPage() {
@@ -34,6 +35,7 @@ export default async function HotelsPage() {
         <p className="mt-1 text-slate-500">Add and manage hotels, rental properties, and the rooms/units they can book.</p>
       </div>
       <HotelManager hotels={hotels} roomCounts={roomCounts} role={staff.profile.role} />
+      <PropertyHoursForm hotels={hotels} role={staff.profile.role} />
       <ReportingUnitsManager hotels={hotels} outlets={(outletsRaw || []) as Outlet[]} role={staff.profile.role} />
     </div>
   );
