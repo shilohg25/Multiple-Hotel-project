@@ -16,10 +16,11 @@ const navItems = [
   { href: '/remittances', label: 'Remittances' },
   { href: '/day-tours', label: 'Day Tours' },
   { href: '/offline', label: 'Offline Queue' },
+  { href: '/help', label: 'How to' },
   { href: '/hotels', label: 'Hotels' }
 ];
 
-const frontlineHrefs = new Set(['/today', '/sales', '/offline']);
+const frontlineHrefs = new Set(['/today', '/sales', '/offline', '/help']);
 
 export function Shell({ children, profile }: { children: React.ReactNode; profile: Profile }) {
   const visibleNavItems = isFrontline(profile.role)
