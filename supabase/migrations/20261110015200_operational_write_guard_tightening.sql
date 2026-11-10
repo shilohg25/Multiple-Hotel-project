@@ -1,8 +1,8 @@
 -- Tightens the direct-write guard from 20261110015100.
 -- Does not edit that file. Replaces the function in place.
 -- Front desk may only check a guest in or out.
--- A payment is locked on the stay check-in date, not the submission clock.
--- A submitted payment insert, including a public booking, is not day-locked.
+-- Confirming or rejecting a payment is not day-locked. The ledger row is.
+-- nights is a generated column and is left out of the staff column check.
 -- Ledger inserts must name the signed-in staff member, use a positive amount, and belong to an accessible hotel.
 
 create or replace function public.guard_direct_staff_write()
@@ -33,8 +33,8 @@ begin
     target_hotel := coalesce((row_new->>'hotel_id')::uuid, (row_old->>'hotel_id')::uuid);
     target_reservation := coalesce((row_new->>'id')::uuid, (row_old->>'id')::uuid);
     -- Front desk, cashier, and restaurant staff may only check a guest in or out.
-    -- Managers and owners may change the stay. Day locks still apply on payments,
-    -- ledger rows, cash counts, and folio charges for every role.
+    -- Managers and owners may change the stay. Day locks still apply to ledger rows,
+    -- cash counts, and folio charges. nights is generated and is null in NEW here.
     if actor is not null and actor_role not in ('owner', 'manager') then
       if tg_op = 'DELETE' then
         raise exception 'Only a manager can delete a reservation.' using errcode = '42501';
@@ -43,7 +43,7 @@ begin
           select 1
           from jsonb_each(row_old) as old_field
           full outer join jsonb_each(row_new) as new_field using (key)
-          where key not in ('status', 'updated_at')
+          where key not in ('status', 'updated_at', 'nights')
             and old_field.value is distinct from new_field.value
         ) then
           raise exception 'Front desk can only check a guest in or out.' using errcode = '42501';
@@ -60,9 +60,10 @@ begin
     end if;
   elsif tg_table_name = 'payments' then
     target_reservation := coalesce((row_new->>'reservation_id')::uuid, (row_old->>'reservation_id')::uuid);
-    -- The payment belongs to the stay's check-in date, not the submission clock in paid_at.
-    select r.hotel_id, r.check_in
-      into target_hotel, target_date
+    -- Confirming or rejecting a submitted payment is not a day-lock check.
+    -- The ledger row for the date the money is received is what the lock covers.
+    select r.hotel_id
+      into target_hotel
     from public.reservations r
     where r.id = target_reservation;
     if actor is not null and actor_role not in ('owner', 'manager') then
@@ -77,11 +78,8 @@ begin
         raise exception 'Only a manager can confirm a payment.' using errcode = '42501';
       end if;
     end if;
-    -- A submitted payment, including a public booking, is not operational cash yet.
-    -- A locked day must not reject a new booking.
-    if not (tg_op = 'INSERT' and coalesce(row_new->>'status', 'submitted') is distinct from 'confirmed') then
-      perform public.assert_business_day_open(target_hotel, target_date, null);
-    end if;
+    -- No day lock on the payment row. A public booking insert and a confirm or reject
+    -- must not fail because a stay date or a submission date is locked.
   elsif tg_table_name = 'ledger_entries' then
     target_hotel := coalesce((row_new->>'hotel_id')::uuid, (row_old->>'hotel_id')::uuid);
     target_date := coalesce((row_new->>'entry_date')::date, (row_old->>'entry_date')::date);

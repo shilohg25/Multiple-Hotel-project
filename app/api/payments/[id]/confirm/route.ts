@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel, canManagePayments } from '@/lib/auth';
+import { businessToday } from '@/lib/date';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { reservationStatusAfterConfirm } from '@/lib/payment-confirm';
 import { supabaseAdmin } from '@/lib/supabase-admin';
@@ -25,7 +26,7 @@ export async function PATCH(_request: Request, { params }: { params: Promise<{ i
   if (!canAccessHotel(staff.profile, reservation.hotel_id)) return jsonError('Hotel access denied.', 403);
   if (!payment.proof_path) return jsonError('Payment proof is mandatory before confirmation.');
 
-  const entryDate = String(reservation.check_in).slice(0, 10);
+  const entryDate = businessToday(reservation.hotels?.timezone);
 
   const { data: confirmedRow, error: updatePaymentError } = await supabaseAdmin
     .from('payments')
