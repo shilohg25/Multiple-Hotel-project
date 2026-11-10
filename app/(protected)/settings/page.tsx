@@ -49,7 +49,7 @@ export default async function SettingsPage() {
   const cards = staff.profile.role === 'owner'
     ? ownerCards
     : staff.profile.role === 'manager'
-      ? ownerCards.filter((card) => card.href === '/settings/rates' || card.href === '/settings/price-history')
+      ? ownerCards.filter((card) => card.href === '/settings/rates' || card.href === '/settings/services' || card.href === '/settings/price-history')
       : ownerCards.filter((card) => card.href === '/settings/price-history');
 
   return (

@@ -97,7 +97,7 @@ export function canManagePricing(profile: Profile): boolean {
 }
 
 export function canManageServiceCatalog(profile: Profile): boolean {
-  return profile.role === 'owner';
+  return profile.role === 'owner' || profile.role === 'manager';
 }
 
 export function canAddReservationCharges(profile: Profile): boolean {
