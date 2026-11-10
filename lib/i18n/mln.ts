@@ -16,6 +16,8 @@ export const mln: MessageCatalog = {
     'today.checkIn': 'Check-in',
     'today.charge': 'Dugangan ro bayad',
     'today.payment': 'Isulat ro bayad',
+    'today.whichStay': 'Diin ro stay nga butangan it charge o bayad?',
+    'today.chooseStay': 'Pili-a anay ro kuwarto o bisita',
     'today.expense': 'Dugangan ro gasto',
     'today.close': 'Isara ro adlaw',
     'today.rooms': 'Mga kwarto',
