@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff } from '@/lib/api';
-import { guestCardCharge } from '@/lib/card-fees';
-import { cardTotalMatches } from '@/lib/card-payment';
+import { storedCardAmount } from '@/lib/card-payment';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { getProcessedOfflineRequest, recordProcessedOfflineRequest } from '@/lib/idempotency';
 
@@ -46,8 +45,10 @@ export async function POST(request: Request) {
   if (!canAccessHotel(staff.profile, reservation.hotel_id)) return jsonError('Hotel access denied.', 403);
 
   let storedAmount = amount;
+  let cardNotice: string | null = null;
   if (method === 'card') {
-    const base = Number(form.get('base_amount') || 0);
+    const baseRaw = form.get('base_amount');
+    const baseText = baseRaw == null ? '' : String(baseRaw).trim();
     const { data: channel } = await supabaseAdmin
       .from('payment_channels')
       .select('surcharge_percent')
@@ -55,11 +56,14 @@ export async function POST(request: Request) {
       .eq('code', 'card_metrobank')
       .maybeSingle();
     const percent = Number(channel?.surcharge_percent ?? 3);
-    if (!cardTotalMatches(base, percent, amount)) {
-      const expected = guestCardCharge(base, percent);
-      return jsonError(`The recorded card total must include the surcharge. ${Number(base || 0).toFixed(2)} at ${percent}% is ${expected.toFixed(2)}.`);
-    }
-    storedAmount = guestCardCharge(base, percent);
+    const resolved = storedCardAmount({
+      amount,
+      baseAmount: baseText ? Number(baseText) : null,
+      surchargePercent: percent
+    });
+    if (!resolved.ok) return jsonError(resolved.error);
+    storedAmount = resolved.amount;
+    cardNotice = resolved.notice;
   }
 
   const path = `${reservation.hotel_id}/${reservationId}/${Date.now()}-${cleanFileName(proof.name)}`;
@@ -81,7 +85,7 @@ export async function POST(request: Request) {
       method,
       payer_name: payerName,
       payment_reference: paymentReference,
-      payment_details: paymentDetails,
+      payment_details: cardNotice ? `${paymentDetails}\n${cardNotice}` : paymentDetails,
       proof_path: path,
       proof_original_name: proof.name,
       status: 'submitted'
@@ -116,5 +120,5 @@ export async function POST(request: Request) {
     details: { payment_id: payment.id, amount, method }
   });
 
-  return NextResponse.json({ payment });
+  return NextResponse.json({ payment, notice: cardNotice });
 }
