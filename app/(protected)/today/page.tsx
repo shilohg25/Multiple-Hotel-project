@@ -49,7 +49,8 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
       .not('status', 'in', '(cancelled,no_show)')
   ]);
   if (roomsResult.error || staysResult.error) {
-    console.error(roomsResult.error || staysResult.error);
+    if (roomsResult.error) console.error(roomsResult.error);
+    if (staysResult.error) console.error(staysResult.error);
     return (
       <section className="card max-w-lg space-y-3 p-6">
         <h1 className="text-2xl font-black">Today could not load this property</h1>
