@@ -25,6 +25,7 @@ These three `0002_*.sql` files overlap. The live database has no `supabase_migra
 | 4 | `supabase/migrations/20261110011300_priced_addons.sql` | `supabase/rollbacks/20261110011300_priced_addons.rollback.sql` |
 | 5 | `supabase/migrations/20261110011500_property_hours.sql` | `supabase/rollbacks/20261110011500_property_hours.rollback.sql` |
 | 5b | `supabase/migrations/20261110011510_stay_time_review.sql` | `supabase/rollbacks/20261110011510_stay_time_review.rollback.sql` |
+| 6 | `supabase/migrations/20261110011400_payment_channels.sql` | `supabase/rollbacks/20261110011400_payment_channels.rollback.sql` |
 
 `20261110000200_hotel_timezone.sql` only adds `hotels.timezone` (default `Asia/Manila`). It does not depend on which `0002` file was used.
 

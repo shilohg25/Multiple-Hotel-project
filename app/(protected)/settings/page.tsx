@@ -13,6 +13,11 @@ const ownerCards = [
     description: 'Separate default prices for walk-in, OTA, and short-time stays.'
   },
   {
+    href: '/settings/channels',
+    title: 'Payment channels',
+    description: 'Cash, e-wallets, card surcharge, MDR, cheque, and OTA payout.'
+  },
+  {
     href: '/settings/services',
     title: 'Services & Charges',
     description: 'Manage hotel-specific service items and default charge prices.'
@@ -49,7 +54,7 @@ export default async function SettingsPage() {
   const cards = staff.profile.role === 'owner'
     ? ownerCards
     : staff.profile.role === 'manager'
-      ? ownerCards.filter((card) => card.href === '/settings/rates' || card.href === '/settings/services' || card.href === '/settings/price-history')
+      ? ownerCards.filter((card) => ['/settings/rates', '/settings/services', '/settings/channels', '/settings/price-history'].includes(card.href))
       : ownerCards.filter((card) => card.href === '/settings/price-history');
 
   return (

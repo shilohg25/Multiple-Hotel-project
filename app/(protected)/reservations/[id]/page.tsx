@@ -61,6 +61,12 @@ export default async function ReservationDetailPage({ params }: { params: Promis
     const { data: signed } = await supabaseAdmin.storage.from('payment-proofs').createSignedUrl(payment.proof_path, 60 * 60);
     return { ...payment, proof_url: signed?.signedUrl || null } as PaymentWithUrl;
   }));
+  const { data: cardChannel } = await supabaseAdmin
+    .from('payment_channels')
+    .select('surcharge_percent, mdr_percent')
+    .eq('hotel_id', reservation.hotel_id)
+    .eq('code', 'card_metrobank')
+    .maybeSingle();
   const roomTypeId = reservation.rooms.room_type_id;
   const [{ data: ratesRaw }, { data: overridesRaw }, { data: stayTimesRaw }] = await Promise.all([
     roomTypeId
@@ -206,7 +212,14 @@ export default async function ReservationDetailPage({ params }: { params: Promis
 
       <EmailDraftPanel hotel={reservation.hotels} reservation={reservation} guest={reservation.guests} />
 
-      <PaymentPanel reservationId={reservation.id} payments={payments} currencyCode={reservation.hotels.default_currency} canConfirm={canManagePayments(staff.profile)} />
+      <PaymentPanel
+        reservationId={reservation.id}
+        payments={payments}
+        currencyCode={reservation.hotels.default_currency}
+        canConfirm={canManagePayments(staff.profile)}
+        cardSurchargePercent={Number(cardChannel?.surcharge_percent ?? 3)}
+        cardMdrPercent={Number(cardChannel?.mdr_percent ?? 3.5)}
+      />
     </div>
   );
 }
