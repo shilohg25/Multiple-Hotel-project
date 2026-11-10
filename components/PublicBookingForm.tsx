@@ -5,7 +5,7 @@ import type { Hotel, Room } from '@/types/app';
 import { proofFileProblem } from '@/lib/guest-contact';
 import { currency } from '@/lib/money';
 import { PAYMENT_INSTRUCTIONS } from '@/lib/payment-instructions';
-import { quotePublicStay } from '@/lib/public-quote';
+import { MAX_PUBLIC_STAY_NIGHTS, paymentWithinStay, quotePublicStay } from '@/lib/public-quote';
 
 type BookRoom = Room & { quoted_rate?: number };
 type Receipt = {
@@ -59,6 +59,15 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
         setMessage(problem);
         return;
       }
+    }
+    if (quote.nights > MAX_PUBLIC_STAY_NIGHTS) {
+      setMessage('A stay can be at most 30 nights.');
+      return;
+    }
+    const paid = Number(formElement.querySelector<HTMLInputElement>('input[name="payment_amount"]')?.value || 0);
+    if (!paymentWithinStay(paid, quote.total)) {
+      setMessage('The payment cannot be more than the stay total.');
+      return;
     }
     if (guestCount > Number(room.capacity || 0)) {
       setMessage(`This room allows up to ${room.capacity} guests.`);
@@ -172,8 +181,8 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
           <input name="payer_name" required className="public-field w-full" placeholder="Name shown on the proof" />
         </div>
         <div className="space-y-2">
-          <label>Amount paid</label>
-          <input name="payment_amount" type="number" min="1" step="0.01" required className="public-field w-full" />
+          <label>Amount paid{quote ? ` (up to ${currency(quote.total, hotel.default_currency)})` : ''}</label>
+          <input name="payment_amount" type="number" min="1" step="0.01" max={quote?.total || undefined} required className="public-field w-full" />
         </div>
         <div className="space-y-2">
           <label>Reference number <span className="font-normal text-slate-400">optional</span></label>
@@ -201,12 +210,13 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
           <div><p className="text-xs text-slate-500">Stay total</p><p className="font-bold">{datesReady ? currency(quote?.total || 0, hotel.default_currency) : '—'}</p></div>
           <div><p className="text-xs text-slate-500">Required down payment</p><p className="font-bold">{datesReady ? currency(quote?.downpaymentRequired || 0, hotel.default_currency) : '—'}</p></div>
         </div>
+        {quote && quote.nights > MAX_PUBLIC_STAY_NIGHTS ? <p className="mt-3 text-sm text-red-700">A stay can be at most 30 nights.</p> : null}
         {quote?.downpaymentDefaulted ? <p className="mt-3 text-xs text-slate-500">This property has no manual down-payment amount, so the request uses 50% of the stay.</p> : null}
       </div>
 
       <PaymentInstructions />
       <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">A submitted request holds the room against another online request for the same dates. The stay is secured only after the hotel confirms the payment.</p>
-      <button className="btn-primary w-full" disabled={loading || !datesReady} type="submit">{loading ? 'Submitting...' : 'Submit booking request'}</button>
+      <button className="btn-primary w-full" disabled={loading || !datesReady || Boolean(quote && quote.nights > MAX_PUBLIC_STAY_NIGHTS)} type="submit">{loading ? 'Submitting...' : 'Submit booking request'}</button>
     </form>
   );
 }

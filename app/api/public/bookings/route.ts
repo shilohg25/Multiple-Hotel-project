@@ -4,6 +4,7 @@ import { hasReservationConflict } from '@/lib/availability';
 import { businessToday } from '@/lib/date';
 import { isValidGuestEmail, normalizePhMobile, proofFileProblem } from '@/lib/guest-contact';
 import { allowPublicBooking, publicBookingClientIp } from '@/lib/public-booking-limit';
+import { isRoomOverlapError, ROOM_JUST_TAKEN } from '@/lib/room-overlap';
 import { MAX_PUBLIC_STAY_NIGHTS, guestCountAllowed, isPastCheckIn, paymentCoversDownpayment, paymentWithinStay, quotePublicStay } from '@/lib/public-quote';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
@@ -26,7 +27,7 @@ async function removeBooking(ids: { proofPath?: string; guestId?: string; reserv
 
 export async function POST(request: Request) {
   if (!allowPublicBooking(publicBookingClientIp(request))) {
-    return guestFailure('Too many booking attempts. Please wait a few minutes and try again.');
+    return jsonError('Too many booking attempts. Please wait a few minutes and try again.', 429);
   }
   const form = await request.formData();
   const hotelId = String(form.get('hotel_id') || '');
@@ -156,6 +157,7 @@ export async function POST(request: Request) {
     .single();
   if (reservationError || !reservationRaw) {
     await removeBooking({ proofPath, guestId: guestRaw.id });
+    if (isRoomOverlapError(reservationError)) return guestFailure(ROOM_JUST_TAKEN, reservationError);
     return guestFailure('The booking could not be saved. Please try again.', reservationError);
   }
 

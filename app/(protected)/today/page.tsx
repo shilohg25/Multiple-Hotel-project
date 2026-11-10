@@ -70,19 +70,34 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
   const inHouse = cards.filter((card) => card.status === 'in_house');
   const departures = cards.filter((card) => card.status === 'departure');
   const actionable = [...inHouse, ...arrivals, ...departures].filter((card) => card.stay);
-  const alertResult = await supabaseAdmin
-    .from('reservations')
-    .select('id, check_in, guest_count, with_breakfast, booking_source, status, guests(full_name)')
-    .eq('hotel_id', hotel.id)
-    .in('status', ['tentative', 'payment_submitted', 'secured']);
-  if (alertResult.error) console.error(alertResult.error);
-  const alertRows = (alertResult.data || []) as Array<{ id: string; check_in: string; guest_count: number; with_breakfast: boolean; booking_source: string; status: string; guests?: { full_name?: string } | { full_name?: string }[] | null }>;
-  const toAlert = (row: (typeof alertRows)[number]): BookingAlert => {
+  const alertSelect = 'id, check_in, guest_count, with_breakfast, guests(full_name)';
+  const [onlineResult, pastResult] = await Promise.all([
+    supabaseAdmin
+      .from('reservations')
+      .select(alertSelect, { count: 'exact' })
+      .eq('hotel_id', hotel.id)
+      .eq('booking_source', 'online')
+      .eq('status', 'payment_submitted')
+      .order('created_at', { ascending: false })
+      .limit(20),
+    supabaseAdmin
+      .from('reservations')
+      .select(alertSelect, { count: 'exact' })
+      .eq('hotel_id', hotel.id)
+      .in('status', ['tentative', 'payment_submitted', 'secured'])
+      .lt('check_in', date)
+      .order('check_in', { ascending: true })
+      .limit(20)
+  ]);
+  if (onlineResult.error) console.error(onlineResult.error);
+  if (pastResult.error) console.error(pastResult.error);
+  type AlertRow = { id: string; check_in: string; guest_count: number; with_breakfast: boolean; guests?: { full_name?: string } | { full_name?: string }[] | null };
+  const toAlert = (row: AlertRow): BookingAlert => {
     const guest = Array.isArray(row.guests) ? row.guests[0] : row.guests;
     return { id: row.id, guestName: guest?.full_name || 'Guest', checkIn: row.check_in, guestCount: Number(row.guest_count || 1), withBreakfast: Boolean(row.with_breakfast) };
   };
-  const onlineAlerts = alertRows.filter((row) => row.booking_source === 'online' && row.status === 'payment_submitted').map(toAlert);
-  const pastAlerts = alertRows.filter((row) => row.check_in < date).map(toAlert);
+  const onlineAlerts = ((onlineResult.data || []) as AlertRow[]).map(toAlert);
+  const pastAlerts = ((pastResult.data || []) as AlertRow[]).map(toAlert);
   const query = `hotel=${hotel.id}&date=${date}${outlet ? `&outlet=${outlet.id}` : ''}`;
 
   return (
@@ -108,7 +123,7 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
         </form>
       </div>
 
-      <BookingAlerts online={onlineAlerts} past={pastAlerts} />
+      <BookingAlerts online={onlineAlerts} past={pastAlerts} onlineCount={onlineResult.count ?? onlineAlerts.length} pastCount={pastResult.count ?? pastAlerts.length} />
 
       <StayActionLinks
         stays={actionable.map((card) => ({ id: card.stay!.id, label: `${label(locale, 'today.room')} ${card.room.name} · ${card.stay!.guest_name}` }))}

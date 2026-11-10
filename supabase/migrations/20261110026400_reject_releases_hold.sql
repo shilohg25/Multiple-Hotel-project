@@ -1,4 +1,5 @@
--- Rejecting a submitted payment also drops the room hold.
+-- Rejecting a submitted payment drops the room hold only when no other
+-- payment on that stay is still submitted or already confirmed.
 -- Does not edit 20261110026200. Replaces the function body only.
 -- The stay moves to cancelled, which is not a holding status.
 -- Not applied until approved.
@@ -15,6 +16,7 @@ as $$
 declare
   pay public.payments%rowtype;
   stay public.reservations%rowtype;
+  other_open bigint := 0;
   released boolean := false;
 begin
   if nullif(btrim(coalesce(p_reason, '')), '') is null then
@@ -35,7 +37,13 @@ begin
   where id = pay.id;
 
   select * into stay from public.reservations where id = pay.reservation_id for update;
-  if stay.id is not null and stay.status = 'payment_submitted' then
+  select count(*) into other_open
+  from public.payments
+  where reservation_id = pay.reservation_id
+    and id <> pay.id
+    and status in ('submitted', 'confirmed');
+
+  if stay.id is not null and stay.status = 'payment_submitted' and other_open = 0 then
     update public.reservations
     set status = 'cancelled'
     where id = stay.id

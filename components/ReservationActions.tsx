@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { BREAKFAST_TURN_OFF_BLOCKED } from '@/lib/breakfast-toggle';
 import type { ReservationStatus, Role } from '@/types/app';
 
 export function ReservationActions({
@@ -10,6 +11,8 @@ export function ReservationActions({
   postedRoomRate,
   totalAmount,
   downpaymentRequired,
+  withBreakfast,
+  breakfastCharged,
   role
 }: {
   reservationId: string;
@@ -17,6 +20,8 @@ export function ReservationActions({
   postedRoomRate: number;
   totalAmount: number;
   downpaymentRequired: number;
+  withBreakfast: boolean;
+  breakfastCharged: boolean;
   role: Role;
 }) {
   const router = useRouter();
@@ -25,6 +30,7 @@ export function ReservationActions({
   const [total, setTotal] = useState(String(totalAmount));
   const [downpayment, setDownpayment] = useState(String(downpaymentRequired));
   const [nextStatus, setNextStatus] = useState(status);
+  const [breakfast, setBreakfast] = useState(withBreakfast);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const manager = role === 'owner' || role === 'manager';
@@ -79,11 +85,16 @@ export function ReservationActions({
           className="grid gap-3 md:grid-cols-2"
           onSubmit={(event) => {
             event.preventDefault();
+            if (!breakfast && withBreakfast && breakfastCharged) {
+              setMessage(BREAKFAST_TURN_OFF_BLOCKED);
+              return;
+            }
             save({
               status: nextStatus,
               posted_room_rate: Number(rate),
               total_amount: Number(total),
               downpayment_required: Number(downpayment),
+              with_breakfast: breakfast,
               reason
             });
           }}
@@ -108,6 +119,14 @@ export function ReservationActions({
             Down payment
             <input className="w-full" inputMode="decimal" value={downpayment} onChange={(event) => setDownpayment(event.target.value)} />
           </label>
+          <label className="space-y-1">
+            Breakfast
+            <select className="w-full" value={breakfast ? 'true' : 'false'} disabled={breakfastCharged && withBreakfast} onChange={(event) => setBreakfast(event.target.value === 'true')}>
+              <option value="true">Yes</option>
+              <option value="false">No - room only</option>
+            </select>
+          </label>
+          {breakfastCharged && withBreakfast ? <p className="text-sm text-slate-600 md:col-span-2">{BREAKFAST_TURN_OFF_BLOCKED}</p> : null}
           <button className="btn-secondary md:col-span-2" type="submit" disabled={loading}>Save manager changes</button>
         </form>
       ) : (

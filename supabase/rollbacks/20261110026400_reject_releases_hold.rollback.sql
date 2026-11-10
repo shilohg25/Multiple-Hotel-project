@@ -1,4 +1,5 @@
 -- Restore the reject function from 20261110026200, which does not change the stay.
+-- That also removes the later rule that cancels only when no other payment is submitted or confirmed.
 -- Execute stays limited to service_role.
 
 create or replace function public.reject_submitted_payment(

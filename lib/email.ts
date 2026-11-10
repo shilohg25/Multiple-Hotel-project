@@ -2,6 +2,7 @@ import { supabaseAdmin } from './supabase-admin';
 import type { Guest, Hotel, Reservation } from '@/types/app';
 import { currency } from './money';
 import { formatDate } from './date';
+import { stayMoneyBreakdown } from './stay-total.ts';
 
 const RESEND_URL = 'https://api.resend.com/emails';
 
@@ -116,6 +117,15 @@ export async function sendHouseRulesEmail(input: { hotel: Hotel; reservation: Re
 export async function sendBookingConfirmationEmail(input: { hotel: Hotel; reservation: Reservation; guest: Guest }) {
   if (!input.guest.email || input.reservation.confirmation_sent_at) return;
 
+  const amounts = stayMoneyBreakdown({
+    roomTotal: Number(input.reservation.total_amount || 0),
+    checkIn: input.reservation.check_in,
+    checkOut: input.reservation.check_out,
+    nights: input.reservation.nights,
+    guestCount: Number(input.reservation.guest_count || 1),
+    withBreakfast: Boolean(input.reservation.with_breakfast),
+    breakfastRatePerRoom: Number(input.hotel.breakfast_rate_per_room || 0)
+  });
   const subject = `${input.hotel.name} booking confirmed`;
   const body = shell(
     'Booking confirmed',
@@ -124,7 +134,9 @@ export async function sendBookingConfirmationEmail(input: { hotel: Hotel; reserv
       <p>Your down payment has been confirmed. Your booking is now secured.</p>
       <p><strong>Hotel:</strong> ${input.hotel.name}</p>
       <p><strong>Stay:</strong> ${formatDate(input.reservation.check_in)} to ${formatDate(input.reservation.check_out)}</p>
-      <p><strong>Total amount:</strong> ${currency(input.reservation.total_amount, input.hotel.default_currency)}</p>
+      <p><strong>Room:</strong> ${currency(amounts.room, input.hotel.default_currency)}</p>
+      <p><strong>Breakfast:</strong> ${currency(amounts.breakfast, input.hotel.default_currency)}</p>
+      <p><strong>Total:</strong> ${currency(amounts.total, input.hotel.default_currency)}</p>
       <p><strong>Required down payment:</strong> ${currency(input.reservation.downpayment_required, input.hotel.default_currency)}</p>
       <p>Please bring valid ID and keep your payment proof for verification at check-in.</p>
     `

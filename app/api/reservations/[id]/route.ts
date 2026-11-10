@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { breakfastBill } from '@/lib/breakfast-charge';
+import { BREAKFAST_TURN_OFF_BLOCKED, breakfastTurnOffBlocked } from '@/lib/breakfast-toggle';
+import { isRoomOverlapError, ROOM_JUST_TAKEN } from '@/lib/room-overlap';
 import { decideReservationUpdate, RESERVATION_MONEY_FIELDS, type MoneyField, type PolicyStatus } from '@/lib/reservation-policy';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
@@ -52,6 +54,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   });
   if (!decision.ok) return jsonError(decision.error, decision.status);
 
+  if ('with_breakfast' in payload) {
+    const { data: breakfastCharges, error: breakfastError } = await supabaseAdmin
+      .from('reservation_charges')
+      .select('id')
+      .eq('reservation_id', id)
+      .eq('category', 'breakfast')
+      .limit(1);
+    if (breakfastError) {
+      console.error(breakfastError);
+      return jsonError('Could not check the breakfast charge. Try again.', 500);
+    }
+    if (breakfastTurnOffBlocked(Boolean(currentRaw.with_breakfast), payload.with_breakfast, Boolean(breakfastCharges?.length))) {
+      return jsonError(BREAKFAST_TURN_OFF_BLOCKED);
+    }
+  }
+
   if ('status' in payload) update.status = payload.status;
   for (const field of RESERVATION_MONEY_FIELDS) {
     if (field in nextMoney) update[field] = nextMoney[field];
@@ -63,7 +81,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     .eq('id', id)
     .select('*')
     .single();
-  if (updateError || !reservationRaw) return jsonError(updateError?.message || 'Failed to update reservation.');
+  if (updateError || !reservationRaw) {
+    if (isRoomOverlapError(updateError)) {
+      console.error(updateError);
+      return jsonError(ROOM_JUST_TAKEN);
+    }
+    return jsonError(updateError?.message || 'Failed to update reservation.');
+  }
 
   if ('guest_email' in payload || 'guest_name' in payload || 'guest_phone' in payload) {
     await supabaseAdmin

@@ -196,6 +196,8 @@ export default async function ReservationDetailPage({ params }: { params: Promis
         postedRoomRate={Number(reservation.posted_room_rate || 0)}
         totalAmount={Number(reservation.total_amount || 0)}
         downpaymentRequired={Number(reservation.downpayment_required || 0)}
+        withBreakfast={Boolean(reservation.with_breakfast)}
+        breakfastCharged={charges.some((charge) => charge.category === 'breakfast')}
         role={staff.profile.role}
       />
 
