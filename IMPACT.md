@@ -36,15 +36,13 @@ Direct PostgREST calls with a signed-in staff JWT are what the permissive `0001_
 
 `20261110015200_operational_write_guard_tightening.sql` replaces the guard function. It does not edit `20261110015100`.
 
-## Payment business date
+## Payment confirm and reject
 
-The day lock for a payment uses the reservation `check_in` date. That is the business date the payment belongs to. `paid_at` is only the clock time the proof was submitted, and it defaults to `now()`, so locking on it blocked confirm and reject after that calendar day was closed even when the stay itself was open.
+The payment row is not day-locked. Confirming or rejecting a submitted payment is never refused because the stay's check-in date, or the day the proof was submitted, is locked. A generated `nights` value is ignored in the staff reservation check, because it is null in `NEW` during a BEFORE trigger.
 
-Confirming a payment writes the ledger row on that same check-in date. If that date is locked, the confirm is refused. If the stay date is open, confirm and reject proceed even when the submission day is locked.
+The ledger row written when the money is received is still day-locked, on the business date of that receipt. Public `/book` inserts a guest, a reservation, and a submitted payment. None of those inserts are day-locked, so a new public booking does not fail because a day is locked.
 
-A payment insert that is still `submitted` does not take the day lock. Public `/book` inserts a guest, a reservation, and a submitted payment. Reservation inserts are not day-locked, and the submitted payment is not day-locked, so a new public booking does not fail because some day is locked. That includes a booking whose check-in is the locked date. The locked day's ledger, cash count, confirmed payment, and folio charge still refuse new operational rows.
-
-The service role has no `auth.uid()`, so the trigger skips the role checks and the ledger insert checks. Production API routes keep working. Once `day_closes` exists, the same trigger still refuses ledger, confirmed-payment, cash-count, and charge writes on a locked business date, including writes from the service role. A submitted public booking is the exception above. Production has no locked days until a manager locks one, so current live traffic is not blocked.
+The service role has no `auth.uid()`, so the trigger skips the role checks and the ledger insert checks. Production API routes keep working. Once `day_closes` exists, the same trigger still refuses ledger, cash-count, and charge writes on a locked business date, including writes from the service role. Production has no locked days until a manager locks one, so current live traffic is not blocked.
 
 ## What was left alone
 
