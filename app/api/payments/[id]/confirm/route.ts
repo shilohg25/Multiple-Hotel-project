@@ -3,6 +3,7 @@ import { canAccessHotel, canManagePayments } from '@/lib/auth';
 import { businessToday } from '@/lib/date';
 import { lockedDayMessage } from '@/lib/day-lock';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
+import { unavailableDatabaseFunction } from '@/lib/supabase-errors';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import type { Guest, Hotel, Reservation } from '@/types/app';
 
@@ -40,6 +41,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     p_received_on: receivedOn
   });
   if (error) {
+    const unavailable = unavailableDatabaseFunction(error);
+    if (unavailable) return jsonError(unavailable, 503);
     const message = error.message || 'Could not confirm this payment.';
     const status = /locked/i.test(message) ? 409 : /awaiting confirmation|not found/i.test(message) ? 409 : 400;
     return jsonError(message, status);
