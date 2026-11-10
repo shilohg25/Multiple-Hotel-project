@@ -1,4 +1,6 @@
--- Restores the guard function from 20261110015100_operational_write_guards.sql.
+-- Restores the guard function body from 20261110015100_operational_write_guards.sql.
+-- Execute rights stay as that migration set them: service_role on both helpers,
+-- and authenticated only on guard_direct_staff_write. anon and PUBLIC stay revoked.
 
 create or replace function public.guard_direct_staff_write()
 returns trigger

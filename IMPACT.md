@@ -36,6 +36,8 @@ Direct PostgREST calls with a signed-in staff JWT are what the permissive `0001_
 
 `20261110015200_operational_write_guard_tightening.sql` replaces the guard function. It does not edit `20261110015100`.
 
+`anon` and `PUBLIC` cannot execute `assert_business_day_open` or `guard_direct_staff_write`. `service_role` can execute both. `authenticated` can execute only the guard, because a signed-in write fires that trigger. The row policies here call `current_app_role` and `can_access_hotel`, not these two functions.
+
 ## Payment confirm and reject
 
 The payment row is not day-locked. Confirming or rejecting a submitted payment is never refused because the stay's check-in date, or the day the proof was submitted, is locked. A generated `nights` value is ignored in the staff reservation check, because it is null in `NEW` during a BEFORE trigger.

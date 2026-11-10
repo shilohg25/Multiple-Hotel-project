@@ -146,3 +146,25 @@ begin
 end;
 $$;
 
+-- Keep the same execute rights after replacing the guard body.
+-- anon and PUBLIC cannot run it. authenticated can, because a signed-in write fires the trigger.
+revoke all on function public.assert_business_day_open(uuid, date, uuid) from public;
+revoke all on function public.guard_direct_staff_write() from public;
+
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    execute 'revoke all on function public.assert_business_day_open(uuid, date, uuid) from anon';
+    execute 'revoke all on function public.guard_direct_staff_write() from anon';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'revoke all on function public.assert_business_day_open(uuid, date, uuid) from authenticated';
+    execute 'revoke all on function public.guard_direct_staff_write() from authenticated';
+    execute 'grant execute on function public.guard_direct_staff_write() to authenticated';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'grant execute on function public.assert_business_day_open(uuid, date, uuid) to service_role';
+    execute 'grant execute on function public.guard_direct_staff_write() to service_role';
+  end if;
+end $$;
+
