@@ -5,7 +5,7 @@ import type { Hotel, Room } from '@/types/app';
 import { proofFileProblem } from '@/lib/guest-contact';
 import { currency } from '@/lib/money';
 import { PAYMENT_INSTRUCTIONS } from '@/lib/payment-instructions';
-import { MAX_PUBLIC_STAY_NIGHTS, paymentWithinStay, quotePublicStay } from '@/lib/public-quote';
+import { paymentWithinStay, publicFormHold, quotePublicStay } from '@/lib/public-quote';
 
 type BookRoom = Room & { quoted_rate?: number };
 type Receipt = {
@@ -47,6 +47,14 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
       breakfastRatePerRoom: Number(hotel.breakfast_rate_per_room || 0)
     })
     : null;
+  const hold = publicFormHold({
+    datesReady,
+    checkIn,
+    today,
+    guestCount,
+    capacity: Number(room?.capacity || 0),
+    nights: quote?.nights || 0
+  });
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -60,7 +68,11 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
         return;
       }
     }
-    if (quote.nights > MAX_PUBLIC_STAY_NIGHTS) {
+    if (hold.pastCheckIn) {
+      setMessage(`Check-in cannot be before ${today}.`);
+      return;
+    }
+    if (hold.stayTooLong) {
       setMessage('A stay can be at most 30 nights.');
       return;
     }
@@ -153,6 +165,7 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
         <div className="space-y-2">
           <label>Check-in</label>
           <input name="check_in" type="date" required min={today} value={checkIn} onChange={(event) => setCheckIn(event.target.value)} className="public-field w-full" />
+          {hold.pastCheckIn ? <p className="text-sm text-red-700">Check-in cannot be before {today}.</p> : null}
         </div>
         <div className="space-y-2">
           <label>Check-out</label>
@@ -161,6 +174,7 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
         <div className="space-y-2">
           <label>Number of guests</label>
           <input name="guest_count" type="number" min="1" max={room.capacity} value={guestCount} onChange={(event) => setGuestCount(Number(event.target.value || 1))} className="public-field w-full" />
+          {hold.overCapacity ? <p className="text-sm text-red-700">This room allows up to {room.capacity} guests.</p> : null}
         </div>
         <div className="space-y-2">
           <label>Breakfast</label>
@@ -210,13 +224,14 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
           <div><p className="text-xs text-slate-500">Stay total</p><p className="font-bold">{datesReady ? currency(quote?.total || 0, hotel.default_currency) : '—'}</p></div>
           <div><p className="text-xs text-slate-500">Required down payment</p><p className="font-bold">{datesReady ? currency(quote?.downpaymentRequired || 0, hotel.default_currency) : '—'}</p></div>
         </div>
-        {quote && quote.nights > MAX_PUBLIC_STAY_NIGHTS ? <p className="mt-3 text-sm text-red-700">A stay can be at most 30 nights.</p> : null}
+        {hold.stayTooLong ? <p className="mt-3 text-sm text-red-700">A stay can be at most 30 nights.</p> : null}
+        {hold.overCapacity ? <p className="mt-3 text-sm text-red-700">This room allows up to {room.capacity} guests.</p> : null}
         {quote?.downpaymentDefaulted ? <p className="mt-3 text-xs text-slate-500">This property has no manual down-payment amount, so the request uses 50% of the stay.</p> : null}
       </div>
 
       <PaymentInstructions />
       <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">A submitted request holds the room against another online request for the same dates. The stay is secured only after the hotel confirms the payment.</p>
-      <button className="btn-primary w-full" disabled={loading || !datesReady || Boolean(quote && quote.nights > MAX_PUBLIC_STAY_NIGHTS)} type="submit">{loading ? 'Submitting...' : 'Submit booking request'}</button>
+      <button className="btn-primary w-full" disabled={loading || hold.submitDisabled} type="submit">{loading ? 'Submitting...' : 'Submit booking request'}</button>
     </form>
   );
 }

@@ -6,6 +6,7 @@ import {
   isPastCheckIn,
   paymentCoversDownpayment,
   paymentWithinStay,
+  publicFormHold,
   quotePublicStay,
   stayNights
 } from './public-quote.ts';
@@ -61,6 +62,40 @@ describe('public stay quote', () => {
     assert.equal(guestCountAllowed(2, 2), true);
     assert.equal(guestCountAllowed(3, 2), false);
     assert.equal(guestCountAllowed(0, 2), false);
+  });
+
+  it('keeps submit off for a typed check-in before today and for too many guests', () => {
+    const past = publicFormHold({
+      datesReady: true,
+      checkIn: '2026-11-09',
+      today: '2026-11-10',
+      guestCount: 2,
+      capacity: 2,
+      nights: 1
+    });
+    assert.equal(past.pastCheckIn, true);
+    assert.equal(past.submitDisabled, true);
+
+    const crowded = publicFormHold({
+      datesReady: true,
+      checkIn: '2026-11-10',
+      today: '2026-11-10',
+      guestCount: 3,
+      capacity: 2,
+      nights: 1
+    });
+    assert.equal(crowded.overCapacity, true);
+    assert.equal(crowded.submitDisabled, true);
+
+    const ok = publicFormHold({
+      datesReady: true,
+      checkIn: '2026-11-10',
+      today: '2026-11-10',
+      guestCount: 2,
+      capacity: 2,
+      nights: 1
+    });
+    assert.equal(ok.submitDisabled, false);
   });
 
   it('bills breakfast once after check-in: 1 night, 2 guests is ₱500 on the folio, print, and report', () => {

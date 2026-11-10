@@ -74,6 +74,26 @@ export function paymentWithinStay(paid: number, stayTotal: number): boolean {
   return Number.isFinite(paid) && paid <= Number(stayTotal || 0) + 0.001;
 }
 
+/** Reasons the public form keeps Submit off. A typed date can pass the input min. */
+export function publicFormHold(input: {
+  datesReady: boolean;
+  checkIn: string;
+  today: string;
+  guestCount: number;
+  capacity: number;
+  nights: number;
+}) {
+  const pastCheckIn = isPastCheckIn(input.checkIn, input.today);
+  const overCapacity = Math.floor(Number(input.guestCount)) > Math.floor(Number(input.capacity));
+  const stayTooLong = input.nights > MAX_PUBLIC_STAY_NIGHTS;
+  return {
+    pastCheckIn,
+    overCapacity,
+    stayTooLong,
+    submitDisabled: !input.datesReady || pastCheckIn || overCapacity || stayTooLong
+  };
+}
+
 export type StayQuote = {
   nights: number;
   nightlyRate: number;
