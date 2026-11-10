@@ -114,6 +114,24 @@ export function PaymentPanel({
     }
   }
 
+  async function rejectPayment(id: string) {
+    const reason = window.prompt('Why is this payment rejected?');
+    if (!reason || !reason.trim()) return;
+    setMessage('Rejecting payment...');
+    const response = await fetch(`/api/payments/${id}/reject`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: reason.trim() })
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(json.error || 'Payment rejection failed');
+      return;
+    }
+    setMessage('Payment rejected. The stay was not changed, and no cash was posted.');
+    router.refresh();
+  }
+
   async function confirmPayment(id: string) {
     setMessage('Confirming payment...');
     const response = await fetch(`/api/payments/${id}/confirm`, { method: 'PATCH' });
@@ -162,6 +180,7 @@ export function PaymentPanel({
                     {payment.status === 'submitted' && canConfirm ? (
                       <div className="flex flex-wrap gap-2">
                         <button className="btn-primary" type="button" onClick={() => void confirmPayment(payment.id)}>Confirm</button>
+                        <button className="btn-secondary" type="button" onClick={() => void rejectPayment(payment.id)}>Reject</button>
                         <a className="btn-secondary print-hidden" href={`/print/payments/${payment.id}/receipt`}>Print Submission</a>
                       </div>
                     ) : (
