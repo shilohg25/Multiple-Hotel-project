@@ -85,7 +85,7 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
       </div>
 
       <StayActionLinks
-        stays={actionable.map((card) => ({ id: card.stay!.id, label: `Room ${card.room.name} · ${card.stay!.guest_name}` }))}
+        stays={actionable.map((card) => ({ id: card.stay!.id, label: `${label(locale, 'today.room')} ${card.room.name} · ${card.stay!.guest_name}` }))}
         chargeLabel={label(locale, 'today.charge')}
         paymentLabel={label(locale, 'today.payment')}
         prompt={label(locale, 'today.whichStay')}

@@ -18,6 +18,7 @@ export const akl: MessageCatalog = {
     'today.payment': 'Irekord ro bayad',
     'today.whichStay': 'Diin nga stay ang butangan it charge o bayad?',
     'today.chooseStay': 'Pili-a anay ro kuwarto o bisita',
+    'today.room': 'Kuwarto',
     'today.expense': 'Dugangi ro gasto',
     'today.close': 'Isara ro adlaw',
     'today.rooms': 'Mga kuwarto',

@@ -18,6 +18,7 @@ export const hil: MessageCatalog = {
     'today.payment': 'Irekord ang bayad',
     'today.whichStay': 'Diin nga stay ang butangan sang charge ukon bayad?',
     'today.chooseStay': 'Pilia anay ang kuwarto ukon ang bisita',
+    'today.room': 'Kuwarto',
     'today.expense': 'Dugangi ang gasto',
     'today.close': 'Isira ang adlaw',
     'today.rooms': 'Mga kuwarto',
