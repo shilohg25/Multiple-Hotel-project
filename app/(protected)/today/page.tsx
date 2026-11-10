@@ -84,7 +84,7 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
       />
       <div className="grid gap-3 sm:grid-cols-3">
         <Link href={`/reservations/new`} className="btn-primary min-h-16 text-base">Check in</Link>
-        <Link href={`/sales?hotel=${hotel.id}&date=${date}`} className="btn-primary min-h-16 text-base">Add expense</Link>
+        <Link href={`/sales?hotel=${hotel.id}&date=${date}${outlet ? `&outlet=${outlet.id}` : ''}`} className="btn-primary min-h-16 text-base">Add expense</Link>
         <Link href={`/today/close?${query}`} className="btn-primary min-h-16 bg-emerald-800 text-base hover:bg-emerald-700">Close the day</Link>
       </div>
 

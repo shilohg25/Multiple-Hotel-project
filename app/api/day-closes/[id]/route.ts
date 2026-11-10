@@ -30,16 +30,45 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       .maybeSingle();
     if (updateError || !data) return jsonError(updateError?.message || 'Could not lock the day.', 400);
 
+    const { data: existingShortage } = await supabaseAdmin
+      .from('shortage_charges')
+      .select('id, status')
+      .eq('day_close_id', current.id)
+      .maybeSingle();
     if (current.variance_status === 'short' && current.responsible_profile_id) {
-      await supabaseAdmin.from('shortage_charges').insert({
+      if (!existingShortage) {
+        await supabaseAdmin.from('shortage_charges').insert({
+          hotel_id: current.hotel_id,
+          outlet_id: current.outlet_id,
+          business_date: current.business_date,
+          day_close_id: current.id,
+          staff_profile_id: current.responsible_profile_id,
+          amount: Math.abs(Number(current.variance_amount || 0)),
+          note: current.variance_note,
+          status: 'open',
+          created_by: auth.staff.userId
+        });
+      } else {
+        await supabaseAdmin.from('shortage_charges').update({
+          status: 'open',
+          amount: Math.abs(Number(current.variance_amount || 0)),
+          note: current.variance_note,
+          staff_profile_id: current.responsible_profile_id
+        }).eq('id', existingShortage.id);
+        await supabaseAdmin.from('audit_logs').insert({
+          hotel_id: current.hotel_id,
+          actor_id: auth.staff.userId,
+          action: existingShortage.status === 'void' ? 'shortage_charge.reopened' : 'shortage_charge.updated',
+          details: { day_close_id: current.id, shortage_id: existingShortage.id, before: { status: existingShortage.status }, after: { status: 'open' } }
+        });
+      }
+    } else if (existingShortage && existingShortage.status !== 'void') {
+      await supabaseAdmin.from('shortage_charges').update({ status: 'void' }).eq('id', existingShortage.id);
+      await supabaseAdmin.from('audit_logs').insert({
         hotel_id: current.hotel_id,
-        outlet_id: current.outlet_id,
-        business_date: current.business_date,
-        day_close_id: current.id,
-        staff_profile_id: current.responsible_profile_id,
-        amount: Math.abs(Number(current.variance_amount || 0)),
-        note: current.variance_note,
-        created_by: auth.staff.userId
+        actor_id: auth.staff.userId,
+        action: 'shortage_charge.voided',
+        details: { day_close_id: current.id, shortage_id: existingShortage.id, before: { status: existingShortage.status }, after: { status: 'void' } }
       });
     }
 

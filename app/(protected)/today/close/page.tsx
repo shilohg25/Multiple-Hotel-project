@@ -24,7 +24,9 @@ export default async function CloseDayPage({ searchParams }: { searchParams?: Pr
   closeQuery = outletId ? closeQuery.eq('outlet_id', outletId) : closeQuery.is('outlet_id', null);
 
   const [{ data: ledgerRaw }, { data: closeRaw }, { data: profilesRaw }, { data: outletRaw }, shortageResult] = await Promise.all([
-    supabaseAdmin.from('ledger_entries').select('category, payment_method, is_collectible, amount').eq('hotel_id', hotel.id).eq('entry_date', date),
+    (outletId
+      ? supabaseAdmin.from('ledger_entries').select('category, payment_method, is_collectible, amount').eq('hotel_id', hotel.id).eq('entry_date', date).eq('outlet_id', outletId)
+      : supabaseAdmin.from('ledger_entries').select('category, payment_method, is_collectible, amount').eq('hotel_id', hotel.id).eq('entry_date', date).is('outlet_id', null)),
     closeQuery.maybeSingle(),
     supabaseAdmin.from('profiles').select('id, full_name, role, hotel_id').or(`hotel_id.eq.${hotel.id},role.eq.owner`),
     outletId ? supabaseAdmin.from('outlets').select('name').eq('id', outletId).maybeSingle() : Promise.resolve({ data: null }),

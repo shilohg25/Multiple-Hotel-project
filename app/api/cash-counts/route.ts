@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { businessDateForHotel } from '@/lib/business-date';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
-import { lockedDayMessage } from '@/lib/day-lock';
+import { lockedDayMessage, verifiedOutletId } from '@/lib/day-lock';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { getProcessedOfflineRequest, recordProcessedOfflineRequest } from '@/lib/idempotency';
 
@@ -23,7 +23,8 @@ export async function POST(request: Request) {
   }
 
   if (!hotelId || !canAccessHotel(staff.profile, hotelId)) return jsonError('Hotel access denied.', 403);
-  const locked = await lockedDayMessage(hotelId, countDate, payload.outlet_id || null);
+  const outletId = await verifiedOutletId(hotelId, payload.outlet_id);
+  const locked = await lockedDayMessage(hotelId, countDate, outletId);
   if (locked) return jsonError(locked, 409);
   if (!Array.isArray(payload.counts)) return jsonError('Cash count rows are required.');
 
