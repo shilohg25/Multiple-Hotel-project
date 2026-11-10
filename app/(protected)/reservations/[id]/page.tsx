@@ -17,6 +17,7 @@ import { EmailDraftPanel } from '@/components/EmailDraftPanel';
 import { ReservationFolio } from '@/components/ReservationFolio';
 import { ReservationActions } from '@/components/ReservationActions';
 import { RateOverridePanel } from '@/components/RateOverridePanel';
+import { StayHoursPanel, type StayTimeRequest } from '@/components/StayHoursPanel';
 import type { ChannelRate, RateOverrideRequest } from '@/types/app';
 import { SavePrintSnapshotButton } from '@/components/offline/SavePrintSnapshotButton';
 import type { Guest, Hotel, Payment, Reservation, ReservationCharge, Room, ServiceItem } from '@/types/app';
@@ -61,11 +62,12 @@ export default async function ReservationDetailPage({ params }: { params: Promis
     return { ...payment, proof_url: signed?.signedUrl || null } as PaymentWithUrl;
   }));
   const roomTypeId = reservation.rooms.room_type_id;
-  const [{ data: ratesRaw }, { data: overridesRaw }] = await Promise.all([
+  const [{ data: ratesRaw }, { data: overridesRaw }, { data: stayTimesRaw }] = await Promise.all([
     roomTypeId
       ? supabaseAdmin.from('room_type_channel_rates').select('*').eq('room_type_id', roomTypeId)
       : Promise.resolve({ data: [] }),
-    supabaseAdmin.from('rate_override_requests').select('*').eq('reservation_id', reservation.id).order('created_at', { ascending: false })
+    supabaseAdmin.from('rate_override_requests').select('*').eq('reservation_id', reservation.id).order('created_at', { ascending: false }),
+    supabaseAdmin.from('stay_time_requests').select('*').eq('reservation_id', reservation.id).order('created_at', { ascending: false })
   ]);
   const charges = (chargesRaw || []) as ReservationCharge[];
   const serviceItems = (serviceItemsRaw || []) as ServiceItem[];
@@ -168,6 +170,17 @@ export default async function ReservationDetailPage({ params }: { params: Promis
         rates={(ratesRaw || []) as ChannelRate[]}
         requests={(overridesRaw || []) as RateOverrideRequest[]}
         role={staff.profile.role}
+      />
+
+      <StayHoursPanel
+        reservationId={reservation.id}
+        role={staff.profile.role}
+        checkInTime={reservation.hotels.check_in_time}
+        checkOutTime={reservation.hotels.check_out_time}
+        earlyRate={Number(reservation.hotels.early_checkin_hourly_rate ?? 200)}
+        lateRate={Number(reservation.hotels.late_checkout_hourly_rate ?? 200)}
+        currencyCode={reservation.hotels.default_currency}
+        requests={(stayTimesRaw || []) as StayTimeRequest[]}
       />
 
       <ReservationActions
