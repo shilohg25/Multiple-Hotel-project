@@ -18,6 +18,7 @@ export const tl: MessageCatalog = {
     'today.payment': 'Irekord ang bayad',
     'today.whichStay': 'Aling stay ang sisingilin o babayaran?',
     'today.chooseStay': 'Pumili muna ng kuwarto o bisita',
+    'today.room': 'Kuwarto',
     'today.expense': 'Magdagdag ng gastos',
     'today.close': 'Isara ang araw',
     'today.rooms': 'Mga kuwarto',
