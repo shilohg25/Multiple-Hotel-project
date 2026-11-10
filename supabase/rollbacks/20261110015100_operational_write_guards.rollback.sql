@@ -14,3 +14,4 @@ drop policy if exists "guests only for their hotel" on public.guests;
 
 drop function if exists public.guard_direct_staff_write();
 drop function if exists public.assert_business_day_open(uuid, date, uuid);
+-- Dropping the functions removes their execute grants.
