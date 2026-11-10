@@ -64,8 +64,14 @@ export function resolveDownpayment(input: {
   };
 }
 
+export const MAX_PUBLIC_STAY_NIGHTS = 30;
+
 export function paymentCoversDownpayment(paid: number, required: number): boolean {
   return Number.isFinite(paid) && paid + 0.001 >= Number(required || 0) && paid > 0;
+}
+
+export function paymentWithinStay(paid: number, stayTotal: number): boolean {
+  return Number.isFinite(paid) && paid <= Number(stayTotal || 0) + 0.001;
 }
 
 export type StayQuote = {
@@ -79,7 +85,10 @@ export type StayQuote = {
   downpaymentDefaulted: boolean;
 };
 
-/** The number the guest sees, and the number stored on the reservation. Client totals are not an input. */
+/**
+ * Guest-facing quote. `total` is room plus breakfast and is what the down payment uses.
+ * The reservation stores `roomTotal` only. Check-in posts the breakfast charge, so the folio adds it once.
+ */
 export function quotePublicStay(input: {
   nightlyRate: number;
   checkIn: string;
@@ -89,12 +98,13 @@ export function quotePublicStay(input: {
   downpaymentType: string;
   defaultPercent: number;
   defaultAmount: number;
+  breakfastRatePerRoom?: number;
 }): StayQuote {
   const nights = Math.max(0, stayNights(input.checkIn, input.checkOut));
   const nightlyRate = money(input.nightlyRate);
   const roomTotal = money(nightlyRate * nights);
   const breakfast = input.withBreakfast
-    ? guestBreakfastCharge(Math.max(nights, 1), input.guestCount)
+    ? guestBreakfastCharge(Math.max(nights, 1), input.guestCount, input.breakfastRatePerRoom)
     : null;
   const breakfastTotal = nights > 0 && breakfast ? breakfast.guestTotal : 0;
   const breakfastLine = input.withBreakfast && breakfast ? breakfast.line : 'Room only';

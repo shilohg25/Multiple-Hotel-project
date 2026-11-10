@@ -39,5 +39,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return jsonError(message, /awaiting confirmation|not found/i.test(message) ? 409 : 400);
   }
 
+  if (reservation.status === 'payment_submitted') {
+    const { error: releaseError } = await supabaseAdmin
+      .from('reservations')
+      .update({ status: 'cancelled' })
+      .eq('id', reservation.id)
+      .eq('status', 'payment_submitted');
+    if (releaseError) {
+      console.error(releaseError);
+      return jsonError('The payment was rejected, but the room could not be released. Cancel the stay from the reservation.', 500);
+    }
+  }
+
   return NextResponse.json(data);
 }

@@ -3,7 +3,8 @@ import { jsonError } from '@/lib/api';
 import { hasReservationConflict } from '@/lib/availability';
 import { businessToday } from '@/lib/date';
 import { isValidGuestEmail, normalizePhMobile, proofFileProblem } from '@/lib/guest-contact';
-import { guestCountAllowed, isPastCheckIn, paymentCoversDownpayment, quotePublicStay } from '@/lib/public-quote';
+import { allowPublicBooking, publicBookingClientIp } from '@/lib/public-booking-limit';
+import { MAX_PUBLIC_STAY_NIGHTS, guestCountAllowed, isPastCheckIn, paymentCoversDownpayment, paymentWithinStay, quotePublicStay } from '@/lib/public-quote';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 export const runtime = 'nodejs';
@@ -24,6 +25,9 @@ async function removeBooking(ids: { proofPath?: string; guestId?: string; reserv
 }
 
 export async function POST(request: Request) {
+  if (!allowPublicBooking(publicBookingClientIp(request))) {
+    return guestFailure('Too many booking attempts. Please wait a few minutes and try again.');
+  }
   const form = await request.formData();
   const hotelId = String(form.get('hotel_id') || '');
   const roomId = String(form.get('room_id') || '');
@@ -86,11 +90,16 @@ export async function POST(request: Request) {
     withBreakfast,
     downpaymentType: hotelRaw.downpayment_type,
     defaultPercent: Number(hotelRaw.default_downpayment_percent || 0),
-    defaultAmount: Number(hotelRaw.default_downpayment_amount || 0)
+    defaultAmount: Number(hotelRaw.default_downpayment_amount || 0),
+    breakfastRatePerRoom: Number(hotelRaw.breakfast_rate_per_room || 0)
   });
   if (quote.nights < 1) return guestFailure('Choose a check-in date and a later check-out date.');
+  if (quote.nights > MAX_PUBLIC_STAY_NIGHTS) return guestFailure('A stay can be at most 30 nights.');
   if (!paymentCoversDownpayment(paymentAmount, quote.downpaymentRequired)) {
     return guestFailure(`The payment must be at least the required down payment of ${quote.downpaymentRequired.toFixed(2)}.`);
+  }
+  if (!paymentWithinStay(paymentAmount, quote.total)) {
+    return guestFailure('The payment cannot be more than the stay total.');
   }
 
   let conflict = false;
@@ -107,7 +116,7 @@ export async function POST(request: Request) {
   const { error: uploadError } = await supabaseAdmin.storage
     .from('payment-proofs')
     .upload(proofPath, buffer, { contentType: proof.type || 'application/octet-stream', upsert: false });
-  if (uploadError) return guestFailure('The payment proof could not be saved. Please try a JPG, PNG, or PDF under 10 MB.', uploadError);
+  if (uploadError) return guestFailure('The payment proof could not be saved. Please try a JPG, PNG, or PDF under 4 MB.', uploadError);
 
   const { data: guestRaw, error: guestError } = await supabaseAdmin
     .from('guests')
@@ -139,7 +148,7 @@ export async function POST(request: Request) {
       posted_room_rate: quote.nightlyRate,
       surcharge_label: null,
       surcharge_amount: 0,
-      total_amount: quote.total,
+      total_amount: quote.roomTotal,
       downpayment_required: quote.downpaymentRequired,
       notes
     })

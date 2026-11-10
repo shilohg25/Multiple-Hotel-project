@@ -43,7 +43,8 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
       withBreakfast,
       downpaymentType: hotel.downpayment_type,
       defaultPercent: Number(hotel.default_downpayment_percent || 0),
-      defaultAmount: Number(hotel.default_downpayment_amount || 0)
+      defaultAmount: Number(hotel.default_downpayment_amount || 0),
+      breakfastRatePerRoom: Number(hotel.breakfast_rate_per_room || 0)
     })
     : null;
 
@@ -183,7 +184,7 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
           <textarea name="payment_details" rows={3} required className="public-field w-full" placeholder="Sender name, date and time paid, and the reference if you have it." />
         </div>
         <div className="space-y-2 md:col-span-2">
-          <label>Payment proof (JPG, PNG, or PDF, up to 10 MB)</label>
+          <label>Payment proof (JPG, PNG, or PDF, up to 4 MB)</label>
           <input name="proof" type="file" accept="image/jpeg,image/png,application/pdf" required className="public-field w-full" />
         </div>
         <div className="space-y-2 md:col-span-2">

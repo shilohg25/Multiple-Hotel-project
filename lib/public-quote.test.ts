@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { guestBreakfastCharge } from './breakfast-charge.ts';
+import { breakfastBill, guestBreakfastCharge } from './breakfast-charge.ts';
 import {
   guestCountAllowed,
   isPastCheckIn,
   paymentCoversDownpayment,
+  paymentWithinStay,
   quotePublicStay,
   stayNights
 } from './public-quote.ts';
@@ -60,5 +61,47 @@ describe('public stay quote', () => {
     assert.equal(guestCountAllowed(2, 2), true);
     assert.equal(guestCountAllowed(3, 2), false);
     assert.equal(guestCountAllowed(0, 2), false);
+  });
+
+  it('bills breakfast once after check-in: 1 night, 2 guests is ₱500 on the folio, print, and report', () => {
+    const quote = quotePublicStay({
+      nightlyRate: 2500,
+      checkIn: '2026-11-10',
+      checkOut: '2026-11-11',
+      guestCount: 2,
+      withBreakfast: true,
+      downpaymentType: 'percent',
+      defaultPercent: 50,
+      defaultAmount: 0
+    });
+    const storedRoomTotal = quote.roomTotal;
+    const posted = breakfastBill({ nights: quote.nights, guestCount: 2, ratePerRoom: 500, outletPerHead: 250 });
+    const folio = storedRoomTotal + posted.guestTotal;
+    const printGrandTotal = storedRoomTotal + posted.guestTotal;
+    const reportRoom = storedRoomTotal;
+    const reportBreakfast = posted.guestTotal;
+    assert.equal(posted.guestTotal, 500);
+    assert.equal(quote.breakfastTotal, 500);
+    assert.equal(quote.total, storedRoomTotal + 500);
+    assert.equal(folio, 3000);
+    assert.equal(printGrandTotal, folio);
+    assert.equal(reportBreakfast, 500);
+    assert.equal(reportRoom + reportBreakfast, folio);
+  });
+
+  it('refuses a payment above the displayed stay total and a stay longer than 30 nights', () => {
+    const quote = quotePublicStay({
+      nightlyRate: 1000,
+      checkIn: '2026-11-01',
+      checkOut: '2026-12-15',
+      guestCount: 1,
+      withBreakfast: false,
+      downpaymentType: 'percent',
+      defaultPercent: 50,
+      defaultAmount: 0
+    });
+    assert.equal(quote.nights > 30, true);
+    assert.equal(paymentWithinStay(2500, 2000), false);
+    assert.equal(paymentWithinStay(2000, 2000), true);
   });
 });

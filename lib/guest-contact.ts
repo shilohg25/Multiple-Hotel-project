@@ -1,4 +1,5 @@
-export const PROOF_MAX_BYTES = 10 * 1024 * 1024;
+/** Vercel rejects request bodies around 4.5 MB, so proofs stop at 4 MB. */
+export const PROOF_MAX_BYTES = 4 * 1024 * 1024;
 
 export function isValidGuestEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
@@ -19,7 +20,7 @@ export function proofFileProblem(file: { name: string; size: number; type?: stri
   if (name.endsWith('.heic') || name.endsWith('.heif') || type === 'image/heic' || type === 'image/heif') {
     return 'HEIC photos are not accepted. Please upload a JPG, PNG, or PDF.';
   }
-  if (file.size > PROOF_MAX_BYTES) return 'Payment proof must be 10 MB or smaller.';
+  if (file.size > PROOF_MAX_BYTES) return 'Payment proof must be 4 MB or smaller.';
   if (file.size <= 0) return 'Payment proof upload is required.';
   return null;
 }
