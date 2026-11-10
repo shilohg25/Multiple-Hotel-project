@@ -49,11 +49,11 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
       .not('status', 'in', '(cancelled,no_show)')
   ]);
   if (roomsResult.error || staysResult.error) {
+    console.error(roomsResult.error || staysResult.error);
     return (
       <section className="card max-w-lg space-y-3 p-6">
         <h1 className="text-2xl font-black">Today could not load this property</h1>
-        <p className="text-sm text-slate-600">{roomsResult.error?.message || staysResult.error?.message}</p>
-        <p className="text-sm text-slate-600">Reload the page. If this keeps happening, tell a manager. The day was not changed.</p>
+        <p className="text-sm text-slate-600">The room list could not be loaded. Reload the page. If this keeps happening, tell a manager. The day was not changed.</p>
       </section>
     );
   }
