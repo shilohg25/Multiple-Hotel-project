@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import type { Profile } from '@/types/app';
 import { isFrontline } from '@/lib/access';
+import { getLocale, label } from '@/lib/i18n';
+import { LanguageToggle } from '@/components/LanguageToggle';
 import { OfflineStatusBanner } from '@/components/offline/OfflineStatusBanner';
 
 const navItems = [
@@ -22,7 +24,14 @@ const navItems = [
 
 const frontlineHrefs = new Set(['/today', '/sales', '/offline', '/help']);
 
-export function Shell({ children, profile }: { children: React.ReactNode; profile: Profile }) {
+export async function Shell({ children, profile }: { children: React.ReactNode; profile: Profile }) {
+  const locale = await getLocale();
+  const nameFor = (href: string, fallback: string) => {
+    if (href === '/today') return label(locale, 'nav.today');
+    if (href === '/sales') return label(locale, 'nav.sales');
+    if (href === '/help') return label(locale, 'nav.help');
+    return fallback;
+  };
   const visibleNavItems = isFrontline(profile.role)
     ? navItems.filter((item) => frontlineHrefs.has(item.href))
     : [...navItems, { href: '/settings', label: 'Settings' }];
@@ -37,11 +46,12 @@ export function Shell({ children, profile }: { children: React.ReactNode; profil
           <nav className="flex flex-wrap items-center gap-1">
             {visibleNavItems.map((item) => (
               <Link key={item.href} href={item.href} className="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
-                {item.label}
+                {nameFor(item.href, item.label)}
               </Link>
             ))}
           </nav>
           <div className="flex items-center gap-3">
+            <LanguageToggle locale={locale} />
             <span className="hidden text-xs text-slate-500 sm:inline">
               {profile.full_name || 'Staff'} - {profile.role.replace('_', ' ')}
             </span>

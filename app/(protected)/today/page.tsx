@@ -5,6 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { roomStatus, type StaySlice } from '@/lib/today-board';
 import { StayActionLinks } from '@/components/StayActionLinks';
 import { HelpPanel } from '@/components/HelpPanel';
+import { getLocale, label, messagesFor } from '@/lib/i18n';
 import type { Hotel, Outlet, Room } from '@/types/app';
 
 type SearchParams = { hotel?: string; outlet?: string; date?: string };
@@ -19,6 +20,8 @@ const tone: Record<string, string> = {
 export default async function TodayPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const params = (await searchParams) || {};
   const staff = await requireStaff();
+  const locale = await getLocale();
+  const copy = messagesFor(locale);
   const { data: hotelsRaw } = await supabaseAdmin.from('hotels').select('*').eq('active', true).order('name');
   const hotels = ((hotelsRaw || []) as Hotel[]).filter((hotel) => canAccessHotel(staff.profile, hotel.id));
   const hotel = hotels.find((item) => item.id === params.hotel) || hotels[0];
@@ -62,9 +65,10 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
         <div>
-          <h1 className="text-3xl font-black tracking-tight">Today</h1>
+          <h1 className="text-3xl font-black tracking-tight">{label(locale, 'today.title')}</h1>
           <p className="mt-1 text-slate-600">{outlet ? outlet.name : hotel.name} · {date}. Same daily steps for Navarro, Sotera, Tagosilangan, and Tago Resto.</p>
-          <p className="mt-1 text-sm text-slate-500">Empty lists are normal. If nobody is arriving, check who is in house and who is leaving.</p>
+          <p className="mt-1 text-sm text-slate-500">{label(locale, 'today.emptyHint')}</p>
+          {copy.needsReview ? <p className="mt-1 text-sm text-amber-800">{label(locale, 'lang.review')}</p> : null}
         </div>
         <form className="flex flex-wrap gap-2" method="get">
           <select name="hotel" defaultValue={hotel.id} className="min-w-40">
@@ -76,19 +80,19 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
           </select>
           <input name="date" type="date" defaultValue={date} />
           <button className="btn-secondary" type="submit">Show</button>
-          <HelpPanel screen="today" />
+          <HelpPanel screen="today" helpLabel={label(locale, 'nav.helpButton')} allGuidesLabel={label(locale, 'help.allGuides')} guides={copy.guides} />
         </form>
       </div>
 
       <StayActionLinks
         stays={actionable.map((card) => ({ id: card.stay!.id, label: `Room ${card.room.name} · ${card.stay!.guest_name}` }))}
-        chargeLabel="Add charge"
-        paymentLabel="Record payment"
+        chargeLabel={label(locale, 'today.charge')}
+        paymentLabel={label(locale, 'today.payment')}
       />
       <div className="grid gap-3 sm:grid-cols-3">
-        <Link href={`/reservations/new`} className="btn-primary min-h-16 text-base">Check in</Link>
-        <Link href={`/sales?hotel=${hotel.id}&date=${date}${outlet ? `&outlet=${outlet.id}` : ''}`} className="btn-primary min-h-16 text-base">Add expense</Link>
-        <Link href={`/today/close?${query}`} className="btn-primary min-h-16 bg-emerald-800 text-base hover:bg-emerald-700">Close the day</Link>
+        <Link href={`/reservations/new`} className="btn-primary min-h-16 text-base">{label(locale, 'today.checkIn')}</Link>
+        <Link href={`/sales?hotel=${hotel.id}&date=${date}${outlet ? `&outlet=${outlet.id}` : ''}`} className="btn-primary min-h-16 text-base">{label(locale, 'today.expense')}</Link>
+        <Link href={`/today/close?${query}`} className="btn-primary min-h-16 bg-emerald-800 text-base hover:bg-emerald-700">{label(locale, 'today.close')}</Link>
       </div>
 
       {outlet ? (
@@ -98,13 +102,13 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
       ) : null}
 
       <section className="grid gap-4 lg:grid-cols-3">
-        <StayList title="Arrivals" empty="No one is due to arrive." cards={arrivals} actionLabel="Check in" />
-        <StayList title="In house" empty="No guests are in house." cards={inHouse} actionLabel="Open stay" />
-        <StayList title="Departures" empty="No one is due to leave." cards={departures} actionLabel="Check out" />
+        <StayList title={label(locale, 'today.arrivals')} empty={label(locale, 'today.noArrivals')} cards={arrivals} actionLabel={label(locale, 'today.checkIn')} />
+        <StayList title={label(locale, 'today.inHouse')} empty={label(locale, 'today.noInHouse')} cards={inHouse} actionLabel="Open stay" />
+        <StayList title={label(locale, 'today.departures')} empty={label(locale, 'today.noDepartures')} cards={departures} actionLabel="Check out" />
       </section>
 
       <section className="card p-4">
-        <h2 className="text-lg font-bold">Rooms</h2>
+        <h2 className="text-lg font-bold">{label(locale, 'today.rooms')}</h2>
         <p className="mt-1 text-sm text-slate-500">Amber is arriving, green is in house, blue is leaving, grey is empty.</p>
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
           {cards.map((card) => (
