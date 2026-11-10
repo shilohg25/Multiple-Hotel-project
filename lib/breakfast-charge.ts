@@ -2,16 +2,41 @@ function money(value: number) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
 
-/** Guest pays the room breakfast rate once per night. The outlet is owed the per-head amount for each guest each night. */
-export function breakfastBill(input: { nights: number; guestCount: number; ratePerRoom: number; outletPerHead: number }) {
-  const nights = Math.max(1, Math.floor(Number(input.nights) || 1));
-  const heads = Math.max(1, Math.floor(Number(input.guestCount) || 1));
-  const ratePerRoom = Number(input.ratePerRoom);
+/** Guest breakfast for a public quote and for the check-in folio. One place only. */
+export const PUBLIC_BREAKFAST = {
+  perRoomPerNight: 500,
+  extraHeadPerNight: 250,
+  includedHeads: 2
+} as const;
+
+/**
+ * ₱500 per room per night covers the first two guests.
+ * TODO(Shiloh): confirm a single guest still pays the full ₱500, and that a 3rd head
+ * may be added at ₱250 when the room capacity allows. "Max 2 per room" is read here
+ * as two heads included, not a hard stop.
+ */
+export function guestBreakfastCharge(nights: number, guestCount: number) {
+  const nightCount = Math.max(1, Math.floor(Number(nights) || 1));
+  const heads = Math.max(1, Math.floor(Number(guestCount) || 1));
+  const extraHeads = Math.max(0, heads - PUBLIC_BREAKFAST.includedHeads);
+  const perNight = PUBLIC_BREAKFAST.perRoomPerNight + extraHeads * PUBLIC_BREAKFAST.extraHeadPerNight;
+  const guestTotal = money(perNight * nightCount);
+  const line = extraHeads === 0
+    ? `Breakfast ₱${PUBLIC_BREAKFAST.perRoomPerNight} per room × ${nightCount} night(s)`
+    : `Breakfast ₱${PUBLIC_BREAKFAST.perRoomPerNight} per room + ₱${PUBLIC_BREAKFAST.extraHeadPerNight} × ${extraHeads} extra head(s) × ${nightCount} night(s)`;
+  return { nights: nightCount, heads, extraHeads, perNight, guestTotal, line };
+}
+
+/** Guest pays the shared breakfast rule. The outlet is still owed its per-head setting. */
+export function breakfastBill(input: { nights: number; guestCount: number; ratePerRoom?: number; outletPerHead: number }) {
+  const charge = guestBreakfastCharge(input.nights, input.guestCount);
   const outletPerHead = Number(input.outletPerHead);
   return {
-    nights,
-    heads,
-    guestTotal: money(ratePerRoom * nights),
-    outletOwed: money(outletPerHead * heads * nights)
+    nights: charge.nights,
+    heads: charge.heads,
+    extraHeads: charge.extraHeads,
+    guestTotal: charge.guestTotal,
+    outletOwed: money(outletPerHead * charge.heads * charge.nights),
+    line: charge.line
   };
 }

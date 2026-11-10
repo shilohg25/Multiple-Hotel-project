@@ -160,6 +160,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
         </div>
         <div className="mt-6 grid gap-5 md:grid-cols-3">
           <Info label="Booking source" value={reservation.booking_source.replaceAll('_', ' ')} />
+          <Info label="Guests" value={String(reservation.guest_count || 1)} />
           <Info label="Breakfast" value={reservation.with_breakfast ? 'Yes' : 'No - room only'} />
           <Info label="Surcharge" value={reservation.surcharge_label ? `${reservation.surcharge_label}: ${currency(reservation.surcharge_amount, reservation.hotels.default_currency)}` : '-'} />
           <Info label="House rules email draft" value={reservation.house_rules_sent_at ? 'Marked sent' : 'Not marked sent'} />

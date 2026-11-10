@@ -3,6 +3,7 @@ import { canAccessHotel, requireStaff } from '@/lib/auth';
 import { businessToday } from '@/lib/date';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { roomStatus, type StaySlice } from '@/lib/today-board';
+import { BookingAlerts, type BookingAlert } from '@/components/BookingAlerts';
 import { StayActionLinks } from '@/components/StayActionLinks';
 import { HelpPanel } from '@/components/HelpPanel';
 import { getLocale, label, messagesFor } from '@/lib/i18n';
@@ -69,6 +70,19 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
   const inHouse = cards.filter((card) => card.status === 'in_house');
   const departures = cards.filter((card) => card.status === 'departure');
   const actionable = [...inHouse, ...arrivals, ...departures].filter((card) => card.stay);
+  const alertResult = await supabaseAdmin
+    .from('reservations')
+    .select('id, check_in, guest_count, with_breakfast, booking_source, status, guests(full_name)')
+    .eq('hotel_id', hotel.id)
+    .in('status', ['tentative', 'payment_submitted', 'secured']);
+  if (alertResult.error) console.error(alertResult.error);
+  const alertRows = (alertResult.data || []) as Array<{ id: string; check_in: string; guest_count: number; with_breakfast: boolean; booking_source: string; status: string; guests?: { full_name?: string } | { full_name?: string }[] | null }>;
+  const toAlert = (row: (typeof alertRows)[number]): BookingAlert => {
+    const guest = Array.isArray(row.guests) ? row.guests[0] : row.guests;
+    return { id: row.id, guestName: guest?.full_name || 'Guest', checkIn: row.check_in, guestCount: Number(row.guest_count || 1), withBreakfast: Boolean(row.with_breakfast) };
+  };
+  const onlineAlerts = alertRows.filter((row) => row.booking_source === 'online' && row.status === 'payment_submitted').map(toAlert);
+  const pastAlerts = alertRows.filter((row) => row.check_in < date).map(toAlert);
   const query = `hotel=${hotel.id}&date=${date}${outlet ? `&outlet=${outlet.id}` : ''}`;
 
   return (
@@ -93,6 +107,8 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
           <HelpPanel screen="today" helpLabel={label(locale, 'nav.helpButton')} allGuidesLabel={label(locale, 'help.allGuides')} guides={copy.guides} />
         </form>
       </div>
+
+      <BookingAlerts online={onlineAlerts} past={pastAlerts} />
 
       <StayActionLinks
         stays={actionable.map((card) => ({ id: card.stay!.id, label: `${label(locale, 'today.room')} ${card.room.name} · ${card.stay!.guest_name}` }))}

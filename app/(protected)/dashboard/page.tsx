@@ -5,6 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { requireStaff, canAccessHotel } from '@/lib/auth';
 import { businessToday, localDayBounds } from '@/lib/date';
 import { currency } from '@/lib/money';
+import { BookingAlerts, type BookingAlert } from '@/components/BookingAlerts';
 import { StatCard } from '@/components/StatCard';
 import { ReservationStatusBadge, PaymentStatusBadge } from '@/components/StatusBadge';
 import type { Hotel, Payment, Reservation } from '@/types/app';
@@ -76,6 +77,17 @@ export default async function DashboardPage() {
     if (room.active) activeRoomCountByHotel.set(room.hotel_id, (activeRoomCountByHotel.get(room.hotel_id) || 0) + 1);
   });
   const hotelsNeedingRooms = hotels.filter((hotel) => (activeRoomCountByHotel.get(hotel.id) || 0) === 0);
+  const alertResult = hotelIds.length
+    ? await supabaseAdmin.from('reservations').select('id, check_in, guest_count, with_breakfast, booking_source, status, guests(full_name)').in('hotel_id', hotelIds).in('status', ['tentative', 'payment_submitted', 'secured'])
+    : { data: [], error: null };
+  if (alertResult.error) console.error(alertResult.error);
+  const alertRows = (alertResult.data || []) as Array<{ id: string; check_in: string; guest_count: number; with_breakfast: boolean; booking_source: string; status: string; guests?: { full_name?: string } | { full_name?: string }[] | null }>;
+  const toAlert = (row: (typeof alertRows)[number]): BookingAlert => {
+    const guest = Array.isArray(row.guests) ? row.guests[0] : row.guests;
+    return { id: row.id, guestName: guest?.full_name || 'Guest', checkIn: row.check_in, guestCount: Number(row.guest_count || 1), withBreakfast: Boolean(row.with_breakfast) };
+  };
+  const onlineAlerts = alertRows.filter((row) => row.booking_source === 'online' && row.status === 'payment_submitted').map(toAlert);
+  const pastAlerts = alertRows.filter((row) => row.check_in < today).map(toAlert);
 
   return (
     <div className="space-y-6">
@@ -89,6 +101,8 @@ export default async function DashboardPage() {
           <Link href={hotels[0] ? `/book/${hotels[0].slug}` : '/hotels'} className="btn-secondary">Public booking page</Link>
         </div>
       </div>
+
+      <BookingAlerts online={onlineAlerts} past={pastAlerts} />
 
       <div className="flex flex-wrap gap-2">
         <Link href="/reports/daily" className="btn-secondary">Daily Report</Link>

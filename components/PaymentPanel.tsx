@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import type { Payment } from '@/types/app';
 import { cardSettlementNet, guestCardCharge } from '@/lib/card-fees';
 import { currency } from '@/lib/money';
+import { paymentMethodLabel } from '@/lib/payment-method-label';
 import { queueOfflineItem } from '@/lib/offline/db';
 import { PaymentStatusBadge } from './StatusBadge';
 
@@ -167,7 +168,7 @@ export function PaymentPanel({
               {payments.map((payment) => (
                 <tr key={payment.id}>
                   <td className="px-5 py-3 font-semibold">{currency(payment.amount, currencyCode)}</td>
-                  <td className="px-5 py-3 capitalize text-slate-600">{payment.method.replaceAll('_', ' ')}</td>
+                  <td className="px-5 py-3 text-slate-600">{paymentMethodLabel(payment.method)}</td>
                   <td className="px-5 py-3 text-slate-600">
                     <div className="max-w-xs truncate" title={payment.payment_details}>{payment.payment_details}</div>
                     {payment.payment_reference ? <div className="text-xs text-slate-400">Ref: {payment.payment_reference}</div> : null}
