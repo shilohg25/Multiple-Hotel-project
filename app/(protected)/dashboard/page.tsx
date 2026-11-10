@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { isFrontline } from '@/lib/access';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { requireStaff, canAccessHotel } from '@/lib/auth';
 import { businessToday, localDayBounds } from '@/lib/date';
@@ -9,6 +11,7 @@ import type { Hotel, Payment, Reservation } from '@/types/app';
 
 export default async function DashboardPage() {
   const staff = await requireStaff();
+  if (isFrontline(staff.profile.role)) redirect('/today');
 
   const { data: hotelsRaw } = await supabaseAdmin.from('hotels').select('*').eq('active', true).order('name');
   const hotels = ((hotelsRaw || []) as Hotel[]).filter((hotel) => canAccessHotel(staff.profile, hotel.id));

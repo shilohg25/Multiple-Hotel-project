@@ -11,6 +11,9 @@ describe('staff access', () => {
       assert.equal(allows(role, 'settings'), false);
       assert.equal(allows(role, 'monthly'), false);
       assert.equal(canOpenPath(role, '/today'), true);
+      assert.equal(canOpenPath(role, '/today/'), true);
+      assert.equal(canOpenPath(role, 'https://preview.example/today'), true);
+      assert.equal(canOpenPath(role, '/dashboard'), true);
       assert.equal(canOpenPath(role, '/sales'), true);
       assert.equal(canOpenPath(role, '/reports/monthly'), false);
       assert.equal(canOpenPath(role, '/settings/rates'), false);

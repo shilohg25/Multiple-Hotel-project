@@ -41,7 +41,11 @@ export function LoginForm() {
         return;
       }
 
-      router.replace(getSafeNext(searchParams.get('next')));
+      const requested = searchParams.get('next');
+      const fallback = getSafeNext(requested);
+      const home = await fetch('/api/auth/home').then((response) => response.json()).catch(() => null);
+      const href = !requested || requested === '/dashboard' ? (home?.href || fallback) : fallback;
+      router.replace(href);
       router.refresh();
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Login failed. Check Supabase environment variables.');
