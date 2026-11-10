@@ -88,6 +88,8 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
         stays={actionable.map((card) => ({ id: card.stay!.id, label: `Room ${card.room.name} · ${card.stay!.guest_name}` }))}
         chargeLabel={label(locale, 'today.charge')}
         paymentLabel={label(locale, 'today.payment')}
+        prompt={label(locale, 'today.whichStay')}
+        chooseLabel={label(locale, 'today.chooseStay')}
       />
       <div className="grid gap-3 sm:grid-cols-3">
         <Link href={`/reservations/new`} className="btn-primary min-h-16 text-base">{label(locale, 'today.checkIn')}</Link>

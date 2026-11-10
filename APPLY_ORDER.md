@@ -21,19 +21,19 @@ These three `0002_*.sql` files overlap. The live database has no `supabase_migra
 | 1 | `supabase/migrations/20261110000200_hotel_timezone.sql` | `supabase/rollbacks/20261110000200_hotel_timezone.rollback.sql` |
 | 2 | `supabase/migrations/20261110011100_reporting_units.sql` | `supabase/rollbacks/20261110011100_reporting_units.rollback.sql` |
 | 3 | `supabase/migrations/20261110011200_room_channel_rates.sql` | `supabase/rollbacks/20261110011200_room_channel_rates.rollback.sql` |
-| 3b | `supabase/migrations/20261110011210_rate_override_review.sql` | `supabase/rollbacks/20261110011210_rate_override_review.rollback.sql` |
-| 4 | `supabase/migrations/20261110011300_priced_addons.sql` | `supabase/rollbacks/20261110011300_priced_addons.rollback.sql` |
-| 5 | `supabase/migrations/20261110011500_property_hours.sql` | `supabase/rollbacks/20261110011500_property_hours.rollback.sql` |
-| 5b | `supabase/migrations/20261110011510_stay_time_review.sql` | `supabase/rollbacks/20261110011510_stay_time_review.rollback.sql` |
-| 6 | `supabase/migrations/20261110011400_payment_channels.sql` | `supabase/rollbacks/20261110011400_payment_channels.rollback.sql` |
-| 7 | `supabase/migrations/20261110015000_staff_roles.sql` | `supabase/rollbacks/20261110015000_staff_roles.rollback.sql` |
-| 8 | `supabase/migrations/20261110015100_operational_write_guards.sql` | `supabase/rollbacks/20261110015100_operational_write_guards.rollback.sql` |
-| 8b | `supabase/migrations/20261110015200_operational_write_guard_tightening.sql` | `supabase/rollbacks/20261110015200_operational_write_guard_tightening.rollback.sql` |
-| 9 | `supabase/migrations/20261110026000_day_close.sql` | `supabase/rollbacks/20261110026000_day_close.rollback.sql` |
-| 10 | `supabase/migrations/20261110026100_ledger_outlet_and_shortage_status.sql` | `supabase/rollbacks/20261110026100_ledger_outlet_and_shortage_status.rollback.sql` |
-| 11 | `supabase/migrations/20261110026200_confirm_payment.sql` | `supabase/rollbacks/20261110026200_confirm_payment.rollback.sql` |
+| 4 | `supabase/migrations/20261110011210_rate_override_review.sql` | `supabase/rollbacks/20261110011210_rate_override_review.rollback.sql` |
+| 5 | `supabase/migrations/20261110011300_priced_addons.sql` | `supabase/rollbacks/20261110011300_priced_addons.rollback.sql` |
+| 6 | `supabase/migrations/20261110011500_property_hours.sql` | `supabase/rollbacks/20261110011500_property_hours.rollback.sql` |
+| 7 | `supabase/migrations/20261110011510_stay_time_review.sql` | `supabase/rollbacks/20261110011510_stay_time_review.rollback.sql` |
+| 8 | `supabase/migrations/20261110011400_payment_channels.sql` | `supabase/rollbacks/20261110011400_payment_channels.rollback.sql` |
+| 9 | `supabase/migrations/20261110015000_staff_roles.sql` | `supabase/rollbacks/20261110015000_staff_roles.rollback.sql` |
+| 10 | `supabase/migrations/20261110015100_operational_write_guards.sql` | `supabase/rollbacks/20261110015100_operational_write_guards.rollback.sql` |
+| 11 | `supabase/migrations/20261110015200_operational_write_guard_tightening.sql` | `supabase/rollbacks/20261110015200_operational_write_guard_tightening.rollback.sql` |
+| 12 | `supabase/migrations/20261110026000_day_close.sql` | `supabase/rollbacks/20261110026000_day_close.rollback.sql` |
+| 13 | `supabase/migrations/20261110026100_ledger_outlet_and_shortage_status.sql` | `supabase/rollbacks/20261110026100_ledger_outlet_and_shortage_status.rollback.sql` |
+| 14 | `supabase/migrations/20261110026200_confirm_payment.sql` | `supabase/rollbacks/20261110026200_confirm_payment.rollback.sql` |
 
-Before applying row 10 on a database that already has shortage charges, run the read-only query in `supabase/checks/pre_026100_duplicate_shortages.sql`. If it returns any rows, keep one shortage charge per `day_close_id` before applying that migration. The migration file itself is unchanged.
+Before applying `20261110026100_ledger_outlet_and_shortage_status.sql` on a database that already has shortage charges, run the read-only query in `supabase/checks/pre_026100_duplicate_shortages.sql`. If it returns any rows, keep one shortage charge per `day_close_id` before applying that migration. The migration file itself is unchanged.
 
 `20261110000200_hotel_timezone.sql` only adds `hotels.timezone` (default `Asia/Manila`). It does not depend on which `0002` file was used.
 

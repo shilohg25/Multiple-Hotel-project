@@ -15,6 +15,8 @@ export const en: MessageCatalog = {
     'today.checkIn': 'Check in',
     'today.charge': 'Add charge',
     'today.payment': 'Record payment',
+    'today.whichStay': 'Which stay for a charge or payment?',
+    'today.chooseStay': 'Choose a room or guest first',
     'today.expense': 'Add expense',
     'today.close': 'Close the day',
     'today.rooms': 'Rooms',

@@ -6,11 +6,15 @@ import Link from 'next/link';
 export function StayActionLinks({
   stays,
   chargeLabel,
-  paymentLabel
+  paymentLabel,
+  prompt = 'Which stay for a charge or payment?',
+  chooseLabel = 'Choose a room or guest first'
 }: {
   stays: { id: string; label: string }[];
   chargeLabel: string;
   paymentLabel: string;
+  prompt?: string;
+  chooseLabel?: string;
 }) {
   const [stayId, setStayId] = useState('');
   const href = stayId ? `/reservations/${stayId}` : '';
@@ -18,9 +22,9 @@ export function StayActionLinks({
   return (
     <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
       <label className="space-y-1 text-sm">
-        Which stay for a charge or payment?
+        {prompt}
         <select className="w-full" value={stayId} onChange={(event) => setStayId(event.target.value)}>
-          <option value="">Choose a room or guest first</option>
+          <option value="">{chooseLabel}</option>
           {stays.map((stay) => <option key={stay.id} value={stay.id}>{stay.label}</option>)}
         </select>
       </label>
