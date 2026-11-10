@@ -162,6 +162,7 @@ begin
 end;
 $$;
 
+-- No RLS policy calls these. Only the service-role API may execute them.
 revoke all on function public.confirm_submitted_payment(uuid, uuid, date, date) from public;
 revoke all on function public.reject_submitted_payment(uuid, uuid, text) from public;
 
