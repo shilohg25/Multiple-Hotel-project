@@ -3,6 +3,7 @@ import { canAccessHotel, canDeleteReservationCharges, canManageReservationCharge
 import { businessToday } from '@/lib/date';
 import { lockedDayMessage } from '@/lib/day-lock';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
+import { AUTO_BREAKFAST_REMOVED_ACTION, isAutoBreakfastCharge } from '@/lib/breakfast-toggle';
 import { normalizeServiceCategory } from '@/lib/service-categories';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
@@ -140,6 +141,20 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const { data: hotel } = await supabaseAdmin.from('hotels').select('timezone').eq('id', current.hotel_id).maybeSingle();
   const locked = await lockedDayMessage(current.hotel_id, businessToday(hotel?.timezone), null);
   if (locked) return jsonError(locked, 409);
+
+  if (isAutoBreakfastCharge(current)) {
+    const { error: removedError } = await supabaseAdmin.from('audit_logs').insert({
+      hotel_id: current.hotel_id,
+      reservation_id: id,
+      actor_id: staff.userId,
+      action: AUTO_BREAKFAST_REMOVED_ACTION,
+      details: { charge_id: chargeId, auto_breakfast: true }
+    });
+    if (removedError) {
+      console.error(removedError);
+      return jsonError('The breakfast charge could not be marked as removed. It was not deleted.', 500);
+    }
+  }
 
   const { error } = await supabaseAdmin
     .from('reservation_charges')

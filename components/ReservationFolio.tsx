@@ -243,7 +243,7 @@ export function ReservationFolio({
           </div>
 
           <div className="grid gap-3 md:grid-cols-4">
-            <SummaryItem label="Room total" value={currency(roomTotal, currencyCode)} />
+            <SummaryItem label="Room (excl. breakfast)" value={currency(roomTotal, currencyCode)} />
             <SummaryItem label="Additional charges" value={currency(chargesSubtotal, currencyCode)} />
             <SummaryItem label="Confirmed payments" value={currency(confirmedPaymentsTotal, currencyCode)} />
             <SummaryItem label="Total balance" value={currency(balance, currencyCode)} />

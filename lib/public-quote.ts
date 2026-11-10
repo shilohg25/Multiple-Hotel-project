@@ -82,15 +82,20 @@ export function publicFormHold(input: {
   guestCount: number;
   capacity: number;
   nights: number;
+  paidText?: string;
+  stayTotal?: number;
 }) {
   const pastCheckIn = isPastCheckIn(input.checkIn, input.today);
   const overCapacity = Math.floor(Number(input.guestCount)) > Math.floor(Number(input.capacity));
   const stayTooLong = input.nights > MAX_PUBLIC_STAY_NIGHTS;
+  const paidText = String(input.paidText ?? '').trim();
+  const paymentTooHigh = input.stayTotal != null && paidText !== '' && !paymentWithinStay(Number(paidText), input.stayTotal);
   return {
     pastCheckIn,
     overCapacity,
     stayTooLong,
-    submitDisabled: !input.datesReady || pastCheckIn || overCapacity || stayTooLong
+    paymentTooHigh,
+    submitDisabled: !input.datesReady || pastCheckIn || overCapacity || stayTooLong || paymentTooHigh
   };
 }
 

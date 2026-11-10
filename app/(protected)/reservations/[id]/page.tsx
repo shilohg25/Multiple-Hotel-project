@@ -9,6 +9,7 @@ import {
   canDeleteReservationCharges
 } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { isAutoBreakfastCharge } from '@/lib/breakfast-toggle';
 import { currency } from '@/lib/money';
 import { formatDate } from '@/lib/date';
 import { ReservationStatusBadge } from '@/components/StatusBadge';
@@ -149,7 +150,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
           </div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Amounts</p>
-            <p className="mt-1 font-bold">Room total {currency(reservation.total_amount, reservation.hotels.default_currency)}</p>
+            <p className="mt-1 font-bold">Room (excl. breakfast) {currency(reservation.total_amount, reservation.hotels.default_currency)}</p>
             <p className="text-sm text-slate-500">Required DP {currency(reservation.downpayment_required, reservation.hotels.default_currency)}</p>
           </div>
           <div>
@@ -197,7 +198,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
         totalAmount={Number(reservation.total_amount || 0)}
         downpaymentRequired={Number(reservation.downpayment_required || 0)}
         withBreakfast={Boolean(reservation.with_breakfast)}
-        breakfastCharged={charges.some((charge) => charge.category === 'breakfast')}
+        breakfastCharged={charges.some((charge) => isAutoBreakfastCharge(charge))}
         role={staff.profile.role}
       />
 

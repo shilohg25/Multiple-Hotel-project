@@ -96,6 +96,19 @@ describe('public stay quote', () => {
       nights: 1
     });
     assert.equal(ok.submitDisabled, false);
+
+    const overpaid = publicFormHold({
+      datesReady: true,
+      checkIn: '2026-11-10',
+      today: '2026-11-10',
+      guestCount: 2,
+      capacity: 2,
+      nights: 1,
+      paidText: '3000',
+      stayTotal: 2500
+    });
+    assert.equal(overpaid.paymentTooHigh, true);
+    assert.equal(overpaid.submitDisabled, true);
   });
 
   it('bills breakfast once after check-in: 1 night, 2 guests is ₱500 on the folio, print, and report', () => {

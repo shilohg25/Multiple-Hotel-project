@@ -4,6 +4,7 @@ import { businessToday } from '@/lib/date';
 import { paymentReceiptDate } from '@/lib/payment-confirm';
 import { lockedDayMessage } from '@/lib/day-lock';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
+import { isRoomOverlapError, ROOM_JUST_TAKEN } from '@/lib/room-overlap';
 import { unavailableDatabaseFunction } from '@/lib/supabase-errors';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import type { Guest, Hotel, Reservation } from '@/types/app';
@@ -45,6 +46,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     p_received_on: receivedOn
   });
   if (error) {
+    if (isRoomOverlapError(error)) {
+      console.error(error);
+      return jsonError(ROOM_JUST_TAKEN);
+    }
     const unavailable = unavailableDatabaseFunction(error);
     if (unavailable) return jsonError(unavailable, 503);
     const message = error.message || 'Could not confirm this payment.';

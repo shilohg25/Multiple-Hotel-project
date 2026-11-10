@@ -112,7 +112,7 @@ export function ReservationActions({
             <input className="w-full" inputMode="decimal" value={rate} onChange={(event) => setRate(event.target.value)} />
           </label>
           <label className="space-y-1">
-            Total
+            Room (excl. breakfast)
             <input className="w-full" inputMode="decimal" value={total} onChange={(event) => setTotal(event.target.value)} />
           </label>
           <label className="space-y-1">

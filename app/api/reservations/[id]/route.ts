@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { breakfastBill } from '@/lib/breakfast-charge';
-import { BREAKFAST_TURN_OFF_BLOCKED, breakfastTurnOffBlocked } from '@/lib/breakfast-toggle';
+import { AUTO_BREAKFAST_NOTE, AUTO_BREAKFAST_REMOVED_ACTION, BREAKFAST_TURN_OFF_BLOCKED, breakfastTurnOffBlocked, isAutoBreakfastCharge, shouldPostAutoBreakfast } from '@/lib/breakfast-toggle';
 import { isRoomOverlapError, ROOM_JUST_TAKEN } from '@/lib/room-overlap';
 import { decideReservationUpdate, RESERVATION_MONEY_FIELDS, type MoneyField, type PolicyStatus } from '@/lib/reservation-policy';
 import { supabaseAdmin } from '@/lib/supabase-admin';
@@ -57,15 +57,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if ('with_breakfast' in payload) {
     const { data: breakfastCharges, error: breakfastError } = await supabaseAdmin
       .from('reservation_charges')
-      .select('id')
+      .select('id, category, notes')
       .eq('reservation_id', id)
-      .eq('category', 'breakfast')
-      .limit(1);
+      .eq('category', 'breakfast');
     if (breakfastError) {
       console.error(breakfastError);
       return jsonError('Could not check the breakfast charge. Try again.', 500);
     }
-    if (breakfastTurnOffBlocked(Boolean(currentRaw.with_breakfast), payload.with_breakfast, Boolean(breakfastCharges?.length))) {
+    const autoPosted = (breakfastCharges || []).some((charge) => isAutoBreakfastCharge(charge));
+    if (breakfastTurnOffBlocked(Boolean(currentRaw.with_breakfast), payload.with_breakfast, autoPosted)) {
       return jsonError(BREAKFAST_TURN_OFF_BLOCKED);
     }
   }
@@ -101,13 +101,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 
   if (reservationRaw.status === 'checked_in' && reservationRaw.with_breakfast) {
-    const { data: existingBreakfast } = await supabaseAdmin
-      .from('reservation_charges')
-      .select('id')
-      .eq('reservation_id', id)
-      .eq('category', 'breakfast')
-      .limit(1);
-    if (!existingBreakfast?.length) {
+    const [existingBreakfast, removedBreakfast] = await Promise.all([
+      supabaseAdmin.from('reservation_charges').select('id, category, notes').eq('reservation_id', id).eq('category', 'breakfast'),
+      supabaseAdmin.from('audit_logs').select('id').eq('reservation_id', id).eq('action', AUTO_BREAKFAST_REMOVED_ACTION).limit(1)
+    ]);
+    if (existingBreakfast.error || removedBreakfast.error) {
+      console.error(existingBreakfast.error || removedBreakfast.error);
+    } else if (shouldPostAutoBreakfast({
+      status: reservationRaw.status,
+      withBreakfast: Boolean(reservationRaw.with_breakfast),
+      charges: existingBreakfast.data || [],
+      removed: Boolean(removedBreakfast.data?.length)
+    })) {
       const { data: hotel } = await supabaseAdmin
         .from('hotels')
         .select('breakfast_rate_per_room, breakfast_outlet_portion_per_head')
@@ -137,7 +142,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         total_amount: bill.guestTotal,
         remittance_required: true,
         remittance_note: `Outlet owed ${bill.outletOwed} (${bill.heads} head(s) x ${bill.nights} night(s))`,
-        notes: 'Posted at check-in from the breakfast settings.',
+        notes: AUTO_BREAKFAST_NOTE,
         created_by: staff.userId
       };
       const inserted = await supabaseAdmin.from('reservation_charges').insert(charge).select('id').single();

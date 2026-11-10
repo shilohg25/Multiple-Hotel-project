@@ -5,7 +5,7 @@ import type { Hotel, Room } from '@/types/app';
 import { proofFileProblem } from '@/lib/guest-contact';
 import { currency } from '@/lib/money';
 import { PAYMENT_INSTRUCTIONS } from '@/lib/payment-instructions';
-import { paymentWithinStay, publicFormHold, quotePublicStay } from '@/lib/public-quote';
+import { publicFormHold, quotePublicStay } from '@/lib/public-quote';
 
 type BookRoom = Room & { quoted_rate?: number };
 type Receipt = {
@@ -27,6 +27,7 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
   const [checkOut, setCheckOut] = useState('');
   const [guestCount, setGuestCount] = useState(1);
   const [withBreakfast, setWithBreakfast] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState('');
   const [message, setMessage] = useState('');
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [loading, setLoading] = useState(false);
@@ -53,7 +54,9 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
     today,
     guestCount,
     capacity: Number(room?.capacity || 0),
-    nights: quote?.nights || 0
+    nights: quote?.nights || 0,
+    paidText: paymentAmount,
+    stayTotal: quote?.total
   });
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -76,8 +79,7 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
       setMessage('A stay can be at most 30 nights.');
       return;
     }
-    const paid = Number(formElement.querySelector<HTMLInputElement>('input[name="payment_amount"]')?.value || 0);
-    if (!paymentWithinStay(paid, quote.total)) {
+    if (hold.paymentTooHigh) {
       setMessage('The payment cannot be more than the stay total.');
       return;
     }
@@ -196,7 +198,8 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
         </div>
         <div className="space-y-2">
           <label>Amount paid{quote ? ` (up to ${currency(quote.total, hotel.default_currency)})` : ''}</label>
-          <input name="payment_amount" type="number" min="1" step="0.01" max={quote?.total || undefined} required className="public-field w-full" />
+          <input name="payment_amount" type="number" min="1" step="0.01" max={quote?.total || undefined} required value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} className="public-field w-full" />
+          {hold.paymentTooHigh ? <p className="text-sm text-red-700">The payment cannot be more than the stay total.</p> : null}
         </div>
         <div className="space-y-2">
           <label>Reference number <span className="font-normal text-slate-400">optional</span></label>
@@ -225,7 +228,6 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
           <div><p className="text-xs text-slate-500">Required down payment</p><p className="font-bold">{datesReady ? currency(quote?.downpaymentRequired || 0, hotel.default_currency) : '—'}</p></div>
         </div>
         {hold.stayTooLong ? <p className="mt-3 text-sm text-red-700">A stay can be at most 30 nights.</p> : null}
-        {hold.overCapacity ? <p className="mt-3 text-sm text-red-700">This room allows up to {room.capacity} guests.</p> : null}
         {quote?.downpaymentDefaulted ? <p className="mt-3 text-xs text-slate-500">This property has no manual down-payment amount, so the request uses 50% of the stay.</p> : null}
       </div>
 

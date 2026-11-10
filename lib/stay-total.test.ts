@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { breakfastTurnOffBlocked } from './breakfast-toggle.ts';
+import { AUTO_BREAKFAST_NOTE, breakfastTurnOffBlocked, isAutoBreakfastCharge, shouldPostAutoBreakfast } from './breakfast-toggle.ts';
 import { currency } from './money.ts';
 import { buildBookingConfirmationDraft } from './email-drafts.ts';
 import { stayMoneyBreakdown } from './stay-total.ts';
@@ -52,10 +52,32 @@ describe('stay money in the confirmation email', () => {
 });
 
 describe('breakfast toggle', () => {
-  it('blocks turning breakfast off after the charge is on the stay', () => {
+  it('blocks turning breakfast off only when the auto-posted charge is still there', () => {
     assert.equal(breakfastTurnOffBlocked(true, false, true), true);
     assert.equal(breakfastTurnOffBlocked(true, 'false', true), true);
     assert.equal(breakfastTurnOffBlocked(true, false, false), false);
-    assert.equal(breakfastTurnOffBlocked(false, false, true), false);
+    assert.equal(isAutoBreakfastCharge({ category: 'breakfast', notes: AUTO_BREAKFAST_NOTE }), true);
+    assert.equal(isAutoBreakfastCharge({ category: 'breakfast', notes: 'Extra breakfast added by staff' }), false);
+  });
+
+  it('does not post the auto breakfast charge again after staff delete it', () => {
+    assert.equal(shouldPostAutoBreakfast({
+      status: 'checked_in',
+      withBreakfast: true,
+      charges: [],
+      removed: true
+    }), false);
+    assert.equal(shouldPostAutoBreakfast({
+      status: 'checked_in',
+      withBreakfast: true,
+      charges: [],
+      removed: false
+    }), true);
+    assert.equal(shouldPostAutoBreakfast({
+      status: 'checked_in',
+      withBreakfast: true,
+      charges: [{ category: 'breakfast', notes: 'Extra breakfast added by staff' }],
+      removed: false
+    }), false);
   });
 });

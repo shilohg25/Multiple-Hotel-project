@@ -51,7 +51,7 @@ export default async function ReservationFolioPrintPage({ params }: { params: Pr
           </thead>
           <tbody>
             <tr>
-              <td>Room total</td>
+              <td>Room (excl. breakfast)</td>
               <td>room</td>
               <td>{reservation.nights}</td>
               <td>{currency(reservation.posted_room_rate, reservation.hotels.default_currency)}</td>
@@ -93,7 +93,7 @@ export default async function ReservationFolioPrintPage({ params }: { params: Pr
       </section>
 
       <section className="print-card ml-auto max-w-sm">
-        <Summary label="Room total" value={currency(reservation.total_amount, reservation.hotels.default_currency)} />
+        <Summary label="Room (excl. breakfast)" value={currency(reservation.total_amount, reservation.hotels.default_currency)} />
         <Summary label="Additional charges" value={currency(additionalChargesTotal, reservation.hotels.default_currency)} />
         <Summary label="Grand total" value={currency(grandTotal, reservation.hotels.default_currency)} />
         <Summary label="Confirmed payments" value={currency(confirmedPaymentsTotal, reservation.hotels.default_currency)} />
