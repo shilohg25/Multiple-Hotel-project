@@ -151,6 +151,7 @@ export type Payment = {
   proof_original_name: string | null;
   status: PaymentStatus;
   paid_at: string;
+  received_on?: string | null;
   confirmed_at: string | null;
   rejection_reason: string | null;
   reservations?: Reservation | null;

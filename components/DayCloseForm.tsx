@@ -104,15 +104,15 @@ export function DayCloseForm({
 
       <div className="grid gap-4 lg:grid-cols-2">
         <CountBox title="RVF float count" counts={floatCounts} onChange={setFloatCounts} disabled={locked} />
-        <CountBox title="Cash to deposit" counts={drawerCounts} onChange={setDrawerCounts} disabled={locked} />
+        <CountBox title="Cash still in the drawer" counts={drawerCounts} onChange={setDrawerCounts} disabled={locked} />
       </div>
-      <p className="text-sm text-slate-600">Float counted {currency(floatCounted, currencyCode)}. Deposit counted {currency(drawerCounted, currencyCode)}. The bill count and the bank deposit are the same deposit, so the close counts that money once.</p>
+      <p className="text-sm text-slate-600">Float counted {currency(floatCounted, currencyCode)}. Cash still in the drawer {currency(drawerCounted, currencyCode)}. Already deposited {currency(bankDeposit, currencyCode)}. Count only bills that are still in the drawer. Type only money already taken to the bank. Do not enter the same bills in both places. The close adds them.</p>
 
       <div className="grid gap-3 md:grid-cols-2">
         <label className="space-y-1">Return to fund
           <input name="return_to_fund" type="number" min="0" step="0.01" defaultValue={existing?.return_to_fund ?? figures.returnToFund} className="w-full" disabled={locked} />
         </label>
-        <label className="space-y-1">Bank deposit already made
+        <label className="space-y-1">Already deposited to the bank
           <input name="bank_deposit" type="number" min="0" step="0.01" value={bankDeposit || ''} onChange={(event) => setBankDeposit(Number(event.target.value || 0))} className="w-full" disabled={locked} />
         </label>
         <label className="space-y-1 md:col-span-2">Note if short or over
