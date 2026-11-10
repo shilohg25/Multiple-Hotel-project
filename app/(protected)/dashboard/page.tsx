@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { requireStaff, canAccessHotel } from '@/lib/auth';
+import { businessToday, localDayBounds } from '@/lib/date';
 import { currency } from '@/lib/money';
 import { StatCard } from '@/components/StatCard';
 import { ReservationStatusBadge, PaymentStatusBadge } from '@/components/StatusBadge';
@@ -8,11 +9,12 @@ import type { Hotel, Payment, Reservation } from '@/types/app';
 
 export default async function DashboardPage() {
   const staff = await requireStaff();
-  const today = new Date().toISOString().slice(0, 10);
 
   const { data: hotelsRaw } = await supabaseAdmin.from('hotels').select('*').eq('active', true).order('name');
   const hotels = ((hotelsRaw || []) as Hotel[]).filter((hotel) => canAccessHotel(staff.profile, hotel.id));
   const hotelIds = hotels.map((hotel) => hotel.id);
+  const today = businessToday(hotels[0]?.timezone);
+  const todayBounds = localDayBounds(today, hotels[0]?.timezone);
 
   const [{ data: reservationsRaw }, { data: paymentsRaw }, { data: todayReservationsRaw }, { data: chargesRaw }, { data: roomsRaw }] = await Promise.all([
     hotelIds.length
@@ -42,8 +44,8 @@ export default async function DashboardPage() {
           .select('total_amount,remittance_required')
           .in('hotel_id', hotelIds)
           .eq('remittance_required', true)
-          .gte('created_at', `${today}T00:00:00.000Z`)
-          .lte('created_at', `${today}T23:59:59.999Z`)
+          .gte('created_at', todayBounds.start)
+          .lte('created_at', todayBounds.end)
       : Promise.resolve({ data: [] }),
     hotelIds.length
       ? supabaseAdmin

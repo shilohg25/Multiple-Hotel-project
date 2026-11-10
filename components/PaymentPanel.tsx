@@ -54,7 +54,7 @@ export function PaymentPanel({
       formElement.reset();
       setMessage('Payment proof submitted for confirmation. Dates are still not blocked until payment is confirmed.');
       router.refresh();
-    } catch (error) {
+    } catch {
       const form = new FormData(formElement);
       form.set('reservation_id', reservationId);
       setOfflineDraft(Object.fromEntries(form.entries()));

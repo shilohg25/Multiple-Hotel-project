@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireApiStaff, jsonError } from '@/lib/api';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { businessTimeZone } from '@/lib/date';
 import { slugify } from '@/lib/slug';
 import { normalizeDownpaymentType } from '@/lib/downpayment';
 
@@ -41,7 +42,8 @@ export async function POST(request: Request) {
       default_downpayment_percent: Number(payload.default_downpayment_percent || 50),
       default_downpayment_amount: Number(payload.default_downpayment_amount || 0),
       house_rules: optionalText(payload.house_rules) || undefined,
-      booking_terms: optionalText(payload.booking_terms) || undefined
+      booking_terms: optionalText(payload.booking_terms) || undefined,
+      timezone: businessTimeZone(optionalText(payload.timezone))
     })
     .select('*')
     .single();

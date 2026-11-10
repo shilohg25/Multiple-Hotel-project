@@ -1,4 +1,5 @@
 import { requireStaff, canAccessHotel } from '@/lib/auth';
+import { businessToday, localDayBounds } from '@/lib/date';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { SalesCashManager } from '@/components/SalesCashManager';
 import type { CashCount, Hotel, LedgerEntry } from '@/types/app';
@@ -6,18 +7,14 @@ import Link from 'next/link';
 
 type SearchParams = { hotel?: string; date?: string };
 
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export default async function SalesPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const params = (await searchParams) || {};
   const staff = await requireStaff();
-  const selectedDate = params.date || todayISO();
 
   const { data: hotelsRaw } = await supabaseAdmin.from('hotels').select('*').eq('active', true).order('name');
   const hotels = ((hotelsRaw || []) as Hotel[]).filter((hotel) => canAccessHotel(staff.profile, hotel.id));
   const selectedHotel = hotels.find((hotel) => hotel.id === params.hotel) || hotels[0];
+  const selectedDate = params.date || businessToday(selectedHotel?.timezone);
 
   if (!selectedHotel) {
     return (
@@ -28,8 +25,7 @@ export default async function SalesPage({ searchParams }: { searchParams?: Promi
     );
   }
 
-  const dayStart = `${selectedDate}T00:00:00.000Z`;
-  const dayEnd = `${selectedDate}T23:59:59.999Z`;
+  const { start: dayStart, end: dayEnd } = localDayBounds(selectedDate, selectedHotel.timezone);
 
   const [{ data: ledgerRaw }, { data: cashRaw }, { data: paymentsRaw }, { data: chargesRaw }, { data: dayToursRaw }, { data: remittancesRaw }] = await Promise.all([
     supabaseAdmin

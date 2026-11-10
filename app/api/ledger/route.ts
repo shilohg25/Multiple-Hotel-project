@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
+import { businessDateForHotel } from '@/lib/business-date';
 import { jsonError, requireApiStaff } from '@/lib/api';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
@@ -9,7 +10,7 @@ export async function POST(request: Request) {
   const staff = auth.staff;
   const payload = await request.json();
   const hotelId = String(payload.hotel_id || '');
-  const entryDate = String(payload.entry_date || new Date().toISOString().slice(0, 10));
+  const entryDate = await businessDateForHotel(hotelId, payload.entry_date);
   const amount = Number(payload.amount || 0);
 
   if (!hotelId || !canAccessHotel(staff.profile, hotelId)) return jsonError('Hotel access denied.', 403);

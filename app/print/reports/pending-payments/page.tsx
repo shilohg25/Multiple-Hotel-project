@@ -20,7 +20,15 @@ export default async function PendingPaymentsPrintPage() {
         .in('reservations.hotel_id', hotelIds)
         .order('created_at', { ascending: false })
     : { data: [] };
-  const payments = (data || []) as (Payment & { reservations: any })[];
+  const payments = (data || []) as (Payment & {
+    reservations?: {
+      check_in?: string;
+      check_out?: string;
+      guests?: { full_name?: string | null; phone?: string | null } | null;
+      rooms?: { name?: string | null } | null;
+      hotels?: { name?: string | null; default_currency?: string | null } | null;
+    } | null;
+  })[];
   const printedAt = new Date();
 
   return (

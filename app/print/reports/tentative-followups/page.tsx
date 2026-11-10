@@ -21,7 +21,7 @@ export default async function TentativeFollowupsPrintPage() {
     : { data: [] };
   const reservations = (data || []) as (Reservation & { hotels?: { name: string } })[];
   const printedAt = new Date();
-  const now = Date.now();
+  const now = printedAt.getTime();
 
   return (
     <div className="print-page space-y-6">

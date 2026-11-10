@@ -6,15 +6,11 @@ import { SavePrintSnapshotButton } from '@/components/offline/SavePrintSnapshotB
 
 type SearchParams = { hotel?: string; date?: string };
 
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export default async function DailyReportPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const params = (await searchParams) || {};
   const staff = await requireStaff();
-  const date = params.date || todayISO();
-  const { hotels, report } = await getDailyReportData(staff, { hotelId: params.hotel, date });
+  const { hotels, report } = await getDailyReportData(staff, { hotelId: params.hotel, date: params.date });
+  const date = report?.date || params.date || '';
 
   if (!report) return <div className="card p-6 text-sm text-slate-500">Create a hotel before viewing reports.</div>;
 

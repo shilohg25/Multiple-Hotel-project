@@ -11,8 +11,7 @@ type SearchParams = { hotel?: string; month?: string };
 export default async function MonthlyReportPrintPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const params = (await searchParams) || {};
   const staff = await requireStaff();
-  const month = params.month || new Date().toISOString().slice(0, 7);
-  const { hotel, totalsByDay, totals } = await getMonthlyReportData(staff, { hotelId: params.hotel, month });
+  const { hotel, month, totalsByDay, totals } = await getMonthlyReportData(staff, { hotelId: params.hotel, month: params.month });
   if (!hotel || !totals) return <div className="print-page">No report data.</div>;
   const printedAt = new Date();
 

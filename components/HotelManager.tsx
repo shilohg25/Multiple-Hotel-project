@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import type { Hotel, Role } from '@/types/app';
 import { currency } from '@/lib/money';
 import { downpaymentLabel } from '@/lib/downpayment';
+import { DEFAULT_BUSINESS_TIMEZONE } from '@/lib/date';
 import { slugify } from '@/lib/slug';
 
 export type HotelRoomCount = {
@@ -93,6 +94,7 @@ export function HotelManager({
                       {hotel.downpayment_type === 'fixed' ? ` ${currency(hotel.default_downpayment_amount, hotel.default_currency)}` : ''}
                     </p>
                     <p className="mt-1 text-sm text-slate-500">{hotel.address || 'Address not set'} - {hotel.contact_phone || 'Phone not set'}</p>
+                    <p className="mt-1 text-sm text-slate-500">Business timezone: {hotel.timezone || DEFAULT_BUSINESS_TIMEZONE}</p>
                     <p className="mt-2 text-sm font-semibold text-slate-700">
                       Rooms / Units: {counts.active} active, {counts.inactive} inactive, {counts.total} total
                     </p>
@@ -133,6 +135,11 @@ export function HotelManager({
               <input name="slug" placeholder="example-hotel" value={slug} onChange={(event) => setSlug(event.target.value)} className="w-full" />
               <p className="text-xs text-slate-500">Leave blank to auto-create from hotel name. Slug is used in the public booking URL.</p>
               <p className="text-xs font-semibold text-slate-600">Public booking URL: /book/{previewSlug || 'hotel-slug'}</p>
+            </div>
+            <div className="space-y-2">
+              <label>Business timezone</label>
+              <input name="timezone" defaultValue={DEFAULT_BUSINESS_TIMEZONE} className="w-full" />
+              <p className="text-xs text-slate-500">IANA name. Front desk “today” and reports use this, not UTC. Assumption until Shiloh says otherwise: Asia/Manila.</p>
             </div>
             <div className="space-y-2">
               <label>Address <span className="text-slate-400">optional</span></label>
