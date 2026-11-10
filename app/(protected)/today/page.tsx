@@ -3,6 +3,7 @@ import { canAccessHotel, requireStaff } from '@/lib/auth';
 import { businessToday } from '@/lib/date';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { roomStatus, type StaySlice } from '@/lib/today-board';
+import { StayActionLinks } from '@/components/StayActionLinks';
 import type { Hotel, Outlet, Room } from '@/types/app';
 
 type SearchParams = { hotel?: string; outlet?: string; date?: string };
@@ -53,7 +54,7 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
   const arrivals = cards.filter((card) => card.status === 'arrival');
   const inHouse = cards.filter((card) => card.status === 'in_house');
   const departures = cards.filter((card) => card.status === 'departure');
-  const chargeTarget = inHouse[0]?.stay || departures[0]?.stay;
+  const actionable = [...inHouse, ...arrivals, ...departures].filter((card) => card.stay);
   const query = `hotel=${hotel.id}&date=${date}${outlet ? `&outlet=${outlet.id}` : ''}`;
 
   return (
@@ -76,10 +77,13 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
         </form>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <StayActionLinks
+        stays={actionable.map((card) => ({ id: card.stay!.id, label: `Room ${card.room.name} · ${card.stay!.guest_name}` }))}
+        chargeLabel="Add charge"
+        paymentLabel="Record payment"
+      />
+      <div className="grid gap-3 sm:grid-cols-3">
         <Link href={`/reservations/new`} className="btn-primary min-h-16 text-base">Check in</Link>
-        <Link href={chargeTarget ? `/reservations/${chargeTarget.id}` : '/sales'} className="btn-primary min-h-16 text-base">Add charge</Link>
-        <Link href={chargeTarget ? `/reservations/${chargeTarget.id}` : '/sales'} className="btn-primary min-h-16 text-base">Record payment</Link>
         <Link href={`/sales?hotel=${hotel.id}&date=${date}`} className="btn-primary min-h-16 text-base">Add expense</Link>
         <Link href={`/today/close?${query}`} className="btn-primary min-h-16 bg-emerald-800 text-base hover:bg-emerald-700">Close the day</Link>
       </div>
