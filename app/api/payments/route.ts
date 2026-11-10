@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff } from '@/lib/api';
+import { guestCardCharge } from '@/lib/card-fees';
+import { cardTotalMatches } from '@/lib/card-payment';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { getProcessedOfflineRequest, recordProcessedOfflineRequest } from '@/lib/idempotency';
 
@@ -43,6 +45,23 @@ export async function POST(request: Request) {
   if (reservationError || !reservation) return jsonError('Reservation not found.', 404);
   if (!canAccessHotel(staff.profile, reservation.hotel_id)) return jsonError('Hotel access denied.', 403);
 
+  let storedAmount = amount;
+  if (method === 'card') {
+    const base = Number(form.get('base_amount') || 0);
+    const { data: channel } = await supabaseAdmin
+      .from('payment_channels')
+      .select('surcharge_percent')
+      .eq('hotel_id', reservation.hotel_id)
+      .eq('code', 'card_metrobank')
+      .maybeSingle();
+    const percent = Number(channel?.surcharge_percent ?? 3);
+    if (!cardTotalMatches(base, percent, amount)) {
+      const expected = guestCardCharge(base, percent);
+      return jsonError(`The recorded card total must include the surcharge. ${Number(base || 0).toFixed(2)} at ${percent}% is ${expected.toFixed(2)}.`);
+    }
+    storedAmount = guestCardCharge(base, percent);
+  }
+
   const path = `${reservation.hotel_id}/${reservationId}/${Date.now()}-${cleanFileName(proof.name)}`;
   const buffer = Buffer.from(await proof.arrayBuffer());
   const { error: uploadError } = await supabaseAdmin.storage
@@ -58,7 +77,7 @@ export async function POST(request: Request) {
     .from('payments')
     .insert({
       reservation_id: reservationId,
-      amount,
+      amount: storedAmount,
       method,
       payer_name: payerName,
       payment_reference: paymentReference,
