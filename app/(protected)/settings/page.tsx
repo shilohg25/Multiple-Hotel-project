@@ -8,6 +8,11 @@ const ownerCards = [
     description: 'Update room rates, capacity, room type labels, and active status.'
   },
   {
+    href: '/settings/rates',
+    title: 'Walk-in and OTA rates',
+    description: 'Separate default prices for walk-in, OTA, and short-time stays.'
+  },
+  {
     href: '/settings/services',
     title: 'Services & Charges',
     description: 'Manage hotel-specific service items and default charge prices.'
@@ -43,7 +48,9 @@ export default async function SettingsPage() {
   const staff = await requireStaff();
   const cards = staff.profile.role === 'owner'
     ? ownerCards
-    : ownerCards.filter((card) => card.href === '/settings/price-history');
+    : staff.profile.role === 'manager'
+      ? ownerCards.filter((card) => card.href === '/settings/rates' || card.href === '/settings/price-history')
+      : ownerCards.filter((card) => card.href === '/settings/price-history');
 
   return (
     <div className="space-y-6">

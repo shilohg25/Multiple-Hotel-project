@@ -16,6 +16,8 @@ import { PaymentPanel } from '@/components/PaymentPanel';
 import { EmailDraftPanel } from '@/components/EmailDraftPanel';
 import { ReservationFolio } from '@/components/ReservationFolio';
 import { ReservationActions } from '@/components/ReservationActions';
+import { RateOverridePanel } from '@/components/RateOverridePanel';
+import type { ChannelRate, RateOverrideRequest } from '@/types/app';
 import { SavePrintSnapshotButton } from '@/components/offline/SavePrintSnapshotButton';
 import type { Guest, Hotel, Payment, Reservation, ReservationCharge, Room, ServiceItem } from '@/types/app';
 
@@ -58,6 +60,13 @@ export default async function ReservationDetailPage({ params }: { params: Promis
     const { data: signed } = await supabaseAdmin.storage.from('payment-proofs').createSignedUrl(payment.proof_path, 60 * 60);
     return { ...payment, proof_url: signed?.signedUrl || null } as PaymentWithUrl;
   }));
+  const roomTypeId = reservation.rooms.room_type_id;
+  const [{ data: ratesRaw }, { data: overridesRaw }] = await Promise.all([
+    roomTypeId
+      ? supabaseAdmin.from('room_type_channel_rates').select('*').eq('room_type_id', roomTypeId)
+      : Promise.resolve({ data: [] }),
+    supabaseAdmin.from('rate_override_requests').select('*').eq('reservation_id', reservation.id).order('created_at', { ascending: false })
+  ]);
   const charges = (chargesRaw || []) as ReservationCharge[];
   const serviceItems = (serviceItemsRaw || []) as ServiceItem[];
   const chargesSubtotal = charges.reduce((sum, charge) => sum + Number(charge.total_amount || 0), 0);
@@ -150,6 +159,16 @@ export default async function ReservationDetailPage({ params }: { params: Promis
           <Info label="Notes" value={reservation.notes || '-'} />
         </div>
       </section>
+
+      <RateOverridePanel
+        hotelId={reservation.hotel_id}
+        reservationId={reservation.id}
+        roomTypeId={roomTypeId}
+        currencyCode={reservation.hotels.default_currency}
+        rates={(ratesRaw || []) as ChannelRate[]}
+        requests={(overridesRaw || []) as RateOverrideRequest[]}
+        role={staff.profile.role}
+      />
 
       <ReservationActions
         reservationId={reservation.id}
