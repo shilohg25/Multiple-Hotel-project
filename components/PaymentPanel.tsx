@@ -69,7 +69,7 @@ export function PaymentPanel({
       formElement.reset();
       setAmount('');
       setMethod('cash');
-      setMessage('Payment proof submitted for confirmation. Dates are still not blocked until payment is confirmed.');
+      setMessage(json.notice || 'Payment proof submitted for confirmation. Dates are still not blocked until payment is confirmed.');
       router.refresh();
     } catch {
       const form = new FormData(formElement);
@@ -188,7 +188,7 @@ export function PaymentPanel({
             <input name="amount" type="number" min="1" step="0.01" required className="w-full" value={amount} onChange={(event) => setAmount(event.target.value)} />
             {method === 'card' ? (
               <p className="text-sm text-slate-600">
-                This box is the amount before the surcharge. At {cardSurchargePercent}%, 2,317.50 is recorded as {currency(guestCardCharge(2317.5, cardSurchargePercent), currencyCode)}.
+                This box is the amount before the surcharge. At {cardSurchargePercent}%, 2,250.00 is recorded as {currency(guestCardCharge(2250, cardSurchargePercent), currencyCode)}.
                 {amount ? <> This payment records {currency(guestCardCharge(Number(amount || 0), cardSurchargePercent), currencyCode)}.</> : null}
                 {' '}Bank net is about {currency(cardSettlementNet(guestCardCharge(Number(amount || 0), cardSurchargePercent), cardMdrPercent), currencyCode)} after {cardMdrPercent}% MDR.
               </p>
