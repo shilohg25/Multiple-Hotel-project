@@ -132,14 +132,20 @@ export const ACCOUNT_BOOKING_SOURCES = ['lgu', 'company'] as const;
 
 /**
  * These OTAs collect the full stay before the hotel sees the booking.
- * Expedia stays on the 50% rule until Shiloh says otherwise. Move it into this list to switch.
+ * Company stays on the 50% rule. Add a source here only when Shiloh says it is prepaid in full.
  */
-export const FULL_PREPAID_OTA_SOURCES = ['booking_dot_com', 'trip_dot_com', 'agoda'] as const;
+export const FULL_PREPAID_OTA_SOURCES = ['booking_dot_com', 'trip_dot_com', 'agoda', 'expedia'] as const;
 
 /**
- * Billed after the stay, with no deposit. Company stays on the 50% rule until Shiloh says otherwise.
+ * Billed after the stay, with no deposit. Company stays on the 50% rule.
+ * Front desk can create these stays. They do not wait for a manager to confirm a payment.
  */
 export const BILL_LATER_SOURCES = ['lgu'] as const;
+
+/** Front desk can save an LGU stay as to be billed. So can a manager or the owner. */
+export function canCreateToBeBilledStay(role: string): boolean {
+  return role === 'front_desk' || role === 'owner' || role === 'manager';
+}
 
 /** Stored on reservations.mode_of_payment. Payments cannot be 0, so this marker holds the room without a payment row. */
 export const TO_BE_BILLED_PREFIX = 'to_be_billed:';
@@ -181,9 +187,9 @@ function sameMoney(left: number, right: number): boolean {
 /**
  * Staff stays hold a room only with a payment row in the same save, except an LGU
  * stay billed later, which is secured with no deposit and no ledger row.
- * Booking.com, Trip.com, and Agoda are recorded as OTA prepaid for the full stay,
- * with no proof file. Walk-ins, bank transfers, company stays, Expedia, and every
- * other source still need at least half the stay.
+ * Booking.com, Trip.com, Agoda, and Expedia are recorded as OTA prepaid for the full stay,
+ * with no proof file. Walk-ins, bank transfers, company stays, and every
+ * other source still need at least half the stay. Front desk can save an LGU stay to be billed.
  * OTA prepaid and invoice/PO are stored on existing method values, with the name in the details.
  */
 export function staffBookingPayment(input: {

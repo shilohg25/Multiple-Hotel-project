@@ -5,6 +5,7 @@ import { figuresFromLedger, summarizeClose } from './day-close.ts';
 import { expectedCashFromLedger } from './expected-cash.ts';
 import { shouldReleaseHoldOnReject } from './payment-reject.ts';
 import {
+  canCreateToBeBilledStay,
   clampGuestCount,
   guestCountAllowed,
   HOLDING_STATUSES,
@@ -161,9 +162,9 @@ describe('public stay quote', () => {
     assert.equal(walkInDeskStay({ bookingSource: 'facebook', deskPayment: 2500, downpaymentRequired: 2500 }).ok, false);
   });
 
-  it('requires a covering payment for Expedia and company stays, and a reject frees the room', () => {
+  it('requires a covering payment for company stays, and a reject frees the room', () => {
     const stay = { downpaymentRequired: 2500, stayTotal: 5000 };
-    for (const source of ['expedia', 'company']) {
+    for (const source of ['company']) {
       const kind = source === 'company' ? 'invoice' : 'ota_prepaid';
       const named = { bookingSource: source, ...stay, paymentKind: kind, reference: 'REF-1', otaName: source, canConfirm: false };
       assert.equal(staffBookingPayment({ ...named, amount: 0 }).ok, false);
@@ -184,8 +185,8 @@ describe('public stay quote', () => {
     }
   });
 
-  it('records Booking.com, Trip.com, and Agoda as full OTA prepaid with no proof', () => {
-    for (const source of ['booking_dot_com', 'trip_dot_com', 'agoda']) {
+  it('records Booking.com, Trip.com, Agoda, and Expedia as full OTA prepaid with no proof', () => {
+    for (const source of ['booking_dot_com', 'trip_dot_com', 'agoda', 'expedia']) {
       const half = staffBookingPayment({
         bookingSource: source,
         amount: 2500,
@@ -252,7 +253,11 @@ describe('public stay quote', () => {
     }
   });
 
-  it('holds an LGU stay with nothing paid and no ledger row', () => {
+  it('lets front desk hold an LGU stay with nothing paid and no ledger row', () => {
+    assert.equal(canCreateToBeBilledStay('front_desk'), true);
+    assert.equal(canCreateToBeBilledStay('owner'), true);
+    assert.equal(canCreateToBeBilledStay('manager'), true);
+    assert.equal(canCreateToBeBilledStay('cashier'), false);
     const missing = staffBookingPayment({
       bookingSource: 'lgu',
       amount: 0,

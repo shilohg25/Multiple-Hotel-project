@@ -375,7 +375,7 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
           <div><p className="text-xs text-slate-500">Stay total</p><p className="font-bold">{currency(stayTotal, hotel.default_currency)}</p></div>
           <div><p className="text-xs text-slate-500">Required down payment</p><p className="font-bold">{currency(downpayment, hotel.default_currency)}</p></div>
         </div>
-        <p className="mt-3 text-xs text-slate-500">Down payment rule: {downpaymentLabel(hotel.downpayment_type)}. Walk-ins, bank transfers, company stays, and Expedia still need at least half. Booking.com, Trip.com, and Agoda are prepaid in full. An LGU stay is billed later.</p>
+        <p className="mt-3 text-xs text-slate-500">Down payment rule: {downpaymentLabel(hotel.downpayment_type)}. Walk-ins, bank transfers, and company stays still need at least half. Booking.com, Trip.com, Agoda, and Expedia are prepaid in full. Front desk can save an LGU stay to be billed.</p>
       </div>
 
       <div className="lg:col-span-2">

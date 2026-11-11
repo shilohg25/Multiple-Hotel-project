@@ -4,7 +4,7 @@ import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { businessToday } from '@/lib/date';
 import { calculateDownpayment } from '@/lib/downpayment';
 import { confirmedPaymentLedgerRow } from '@/lib/confirmed-payment-ledger';
-import { guestCountAllowed, quotePublicStay, staffBookingPayment } from '@/lib/public-quote';
+import { canCreateToBeBilledStay, guestCountAllowed, quotePublicStay, staffBookingPayment } from '@/lib/public-quote';
 import { undoStayPieces } from '@/lib/undo-stay';
 import { ROOM_JUST_TAKEN } from '@/lib/room-overlap';
 import { supabaseAdmin } from '@/lib/supabase-admin';
@@ -83,6 +83,9 @@ export async function POST(request: Request) {
     canConfirm: staff.profile.role === 'owner' || staff.profile.role === 'manager'
   });
   if (!paid.ok) return jsonError(paid.error);
+  if (paid.modeOfPayment && !canCreateToBeBilledStay(staff.profile.role)) {
+    return jsonError('Front desk can save an LGU stay to be billed.', 403);
+  }
 
   const { data: guestRaw, error: guestError } = await supabaseAdmin
     .from('guests')

@@ -17,7 +17,7 @@ export default async function NewReservationPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-black tracking-tight">New reservation</h1>
-        <p className="mt-1 text-slate-500">A room is held only with a payment. Walk-ins are cash at the desk. OTA, LGU, and company stays need a payment record for at least half the stay in the same save.</p>
+        <p className="mt-1 text-slate-500">Walk-ins, bank transfers, and company stays need at least half the stay. Booking.com, Trip.com, Agoda, and Expedia are prepaid in full. Front desk can save an LGU stay to be billed, with no deposit.</p>
       </div>
       <ReservationForm hotels={hotels} rooms={rooms} />
     </div>
