@@ -3,11 +3,8 @@ import { describe, it } from 'node:test';
 import { confirmedPaymentLedgerRow } from './confirmed-payment-ledger.ts';
 import { figuresFromLedger, summarizeClose } from './day-close.ts';
 import { expectedCashFromLedger } from './expected-cash.ts';
-import { shouldReleaseHoldOnReject } from './payment-reject.ts';
 import {
   canCreateToBeBilledStay,
-  COMPANY_BILL_LATER_ACTION,
-  decideCompanyBillLater,
   clampGuestCount,
   guestCountAllowed,
   HOLDING_STATUSES,
@@ -164,29 +161,6 @@ describe('public stay quote', () => {
     assert.equal(walkInDeskStay({ bookingSource: 'facebook', deskPayment: 2500, downpaymentRequired: 2500 }).ok, false);
   });
 
-  it('requires a covering payment for company stays, and a reject frees the room', () => {
-    const stay = { downpaymentRequired: 2500, stayTotal: 5000 };
-    for (const source of ['company']) {
-      const kind = source === 'company' ? 'invoice' : 'ota_prepaid';
-      const named = { bookingSource: source, ...stay, paymentKind: kind, reference: 'REF-1', otaName: source, canConfirm: false };
-      assert.equal(staffBookingPayment({ ...named, amount: 0 }).ok, false);
-      assert.equal(staffBookingPayment({ ...named, amount: 1000 }).ok, false);
-      const accepted = staffBookingPayment({ ...named, amount: 2500 });
-      assert.equal(accepted.ok, true);
-      if (accepted.ok) {
-        assert.equal(accepted.reservationStatus, 'payment_submitted');
-        assert.equal(accepted.paymentStatus, 'submitted');
-        assert.equal(shouldReleaseHoldOnReject({
-          reservationStatus: accepted.reservationStatus,
-          otherPaymentStatuses: []
-        }), true);
-      }
-      assert.equal(staffBookingPayment({ ...named, amount: 5001 }).ok, false);
-      const manager = staffBookingPayment({ ...named, amount: 2500, canConfirm: true });
-      assert.equal(manager.ok && manager.reservationStatus, 'secured');
-    }
-  });
-
   it('records Booking.com, Trip.com, Agoda, and Expedia as full OTA prepaid with no proof', () => {
     for (const source of ['booking_dot_com', 'trip_dot_com', 'agoda', 'expedia']) {
       const half = staffBookingPayment({
@@ -255,125 +229,53 @@ describe('public stay quote', () => {
     }
   });
 
-  it('blocks front desk from skipping a company deposit and audits a manager approval', () => {
-    const stay = { downpaymentRequired: 2500, stayTotal: 5000, paymentKind: 'invoice', bookingSource: 'company' };
-    const frontDesk = staffBookingPayment({
-      ...stay,
-      amount: 0,
-      reference: 'PO-1',
-      canConfirm: false,
-      role: 'front_desk',
-      billCompanyLater: true
-    });
-    assert.equal(frontDesk.ok, false);
-    if (!frontDesk.ok) {
-      assert.match(frontDesk.error, /Front desk cannot skip the deposit/);
-    }
-    const missing = decideCompanyBillLater({
-      role: 'manager',
-      bookingSource: 'company',
-      reference: ' ',
-      actorId: 'manager-1',
-      hotelId: 'hotel',
-      reservationId: 'stay',
-      when: '2026-11-11T01:00:00.000Z'
-    });
-    assert.equal(missing.ok, false);
-    if (!missing.ok) {
-      assert.equal(missing.status, 400);
-      assert.match(missing.error, /invoice or PO/);
-    }
-    const approved = decideCompanyBillLater({
-      role: 'manager',
-      bookingSource: 'company',
-      reference: 'PO-9',
-      actorId: 'manager-1',
-      hotelId: 'hotel',
-      reservationId: 'stay',
-      when: '2026-11-11T01:00:00.000Z'
-    });
-    assert.equal(approved.ok, true);
-    if (approved.ok) {
-      assert.equal(approved.modeOfPayment, 'to_be_billed:PO-9');
-      assert.equal(approved.downpaymentRequired, 0);
-      assert.equal(approved.audit.action, COMPANY_BILL_LATER_ACTION);
-      assert.equal(approved.audit.actor_id, 'manager-1');
-      assert.equal(approved.audit.hotel_id, 'hotel');
-      assert.equal(approved.audit.reservation_id, 'stay');
-      assert.equal(approved.audit.details.approved_by, 'manager-1');
-      assert.equal(approved.audit.details.approved_at, '2026-11-11T01:00:00.000Z');
-      assert.equal(approved.audit.details.reference, 'PO-9');
-    }
-    const created = staffBookingPayment({
-      ...stay,
-      amount: 0,
-      reference: 'PO-9',
-      canConfirm: true,
-      role: 'manager',
-      billCompanyLater: true
-    });
-    assert.equal(created.ok, true);
-    if (created.ok) {
-      assert.equal(created.companyBillLater, true);
-      assert.equal(created.recordPayment, false);
-      assert.equal(created.writeLedger, false);
-      assert.equal(created.reservationStatus, 'secured');
-    }
-    const stillHalf = staffBookingPayment({
-      ...stay,
-      amount: 1000,
-      reference: 'PO-9',
-      canConfirm: true,
-      role: 'manager',
-      billCompanyLater: false
-    });
-    assert.equal(stillHalf.ok, false);
-  });
-
-  it('lets front desk hold an LGU stay with nothing paid and no ledger row', () => {
+  it('lets front desk hold an LGU or company stay with nothing paid and no ledger row', () => {
     assert.equal(canCreateToBeBilledStay('front_desk'), true);
     assert.equal(canCreateToBeBilledStay('owner'), true);
     assert.equal(canCreateToBeBilledStay('manager'), true);
-    assert.equal(canCreateToBeBilledStay('cashier'), false);
-    const missing = staffBookingPayment({
-      bookingSource: 'lgu',
-      amount: 0,
-      downpaymentRequired: 2500,
-      stayTotal: 5000,
-      paymentKind: 'invoice',
-      reference: '',
-      canConfirm: false
-    });
-    assert.equal(missing.ok, false);
-    const billed = staffBookingPayment({
-      bookingSource: 'lgu',
-      amount: 0,
-      downpaymentRequired: 2500,
-      stayTotal: 5000,
-      paymentKind: 'invoice',
-      reference: 'LGU-44',
-      canConfirm: false
-    });
-    assert.equal(billed.ok, true);
-    if (billed.ok) {
-      assert.equal(billed.reservationStatus, 'secured');
-      assert.equal(billed.recordPayment, false);
-      assert.equal(billed.writeLedger, false);
-      assert.equal(billed.countsAsDeskCash, false);
-      assert.equal(billed.modeOfPayment, 'to_be_billed:LGU-44');
-      assert.equal(HOLDING_STATUSES.includes(billed.reservationStatus), true);
-      assert.equal(readToBeBilled(billed.modeOfPayment)?.reference, 'LGU-44');
+    for (const source of ['lgu', 'company']) {
+      const reference = source === 'lgu' ? 'LGU-44' : 'PO-9';
+      const missing = staffBookingPayment({
+        bookingSource: source,
+        amount: 0,
+        downpaymentRequired: 2500,
+        stayTotal: 5000,
+        paymentKind: 'invoice',
+        reference: '',
+        canConfirm: false
+      });
+      assert.equal(missing.ok, false);
+      if (!missing.ok) assert.match(missing.error, /invoice or PO|billing reference/);
+      const billed = staffBookingPayment({
+        bookingSource: source,
+        amount: 0,
+        downpaymentRequired: 2500,
+        stayTotal: 5000,
+        paymentKind: 'invoice',
+        reference,
+        canConfirm: false
+      });
+      assert.equal(billed.ok, true);
+      if (billed.ok) {
+        assert.equal(billed.reservationStatus, 'secured');
+        assert.equal(billed.recordPayment, false);
+        assert.equal(billed.writeLedger, false);
+        assert.equal(billed.countsAsDeskCash, false);
+        assert.equal(billed.modeOfPayment, `to_be_billed:${reference}`);
+        assert.equal(HOLDING_STATUSES.includes(billed.reservationStatus), true);
+        assert.equal(readToBeBilled(billed.modeOfPayment)?.reference, reference);
+      }
+      const deposit = staffBookingPayment({
+        bookingSource: source,
+        amount: 100,
+        downpaymentRequired: 2500,
+        stayTotal: 5000,
+        paymentKind: 'invoice',
+        reference,
+        canConfirm: true
+      });
+      assert.equal(deposit.ok, false);
     }
-    const deposit = staffBookingPayment({
-      bookingSource: 'lgu',
-      amount: 100,
-      downpaymentRequired: 2500,
-      stayTotal: 5000,
-      paymentKind: 'invoice',
-      reference: 'LGU-44',
-      canConfirm: true
-    });
-    assert.equal(deposit.ok, false);
   });
 
   it('still blocks a direct booking under half the stay', () => {

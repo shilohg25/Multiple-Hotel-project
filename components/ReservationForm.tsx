@@ -11,7 +11,7 @@ import { roomAmountLabel } from '@/lib/hotel-pricing';
 import { BILL_LATER_SOURCES, FULL_PREPAID_OTA_SOURCES, clampGuestCount, quotePublicStay } from '@/lib/public-quote';
 import { queueOfflineItem } from '@/lib/offline/db';
 
-export function ReservationForm({ hotels, rooms, canBillCompanyLater = false }: { hotels: Hotel[]; rooms: Room[]; canBillCompanyLater?: boolean }) {
+export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Room[] }) {
   const router = useRouter();
   const activeRooms = useMemo(() => rooms.filter((room) => room.active), [rooms]);
   const firstHotelWithRooms = useMemo(
@@ -33,7 +33,6 @@ export function ReservationForm({ hotels, rooms, canBillCompanyLater = false }: 
   const [deskPayment, setDeskPayment] = useState('');
   const [surcharge, setSurcharge] = useState('0');
   const [manualDownpayment, setManualDownpayment] = useState('0');
-  const [companyBillLater, setCompanyBillLater] = useState(false);
   const [message, setMessage] = useState('');
   const [offlineDraft, setOfflineDraft] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
@@ -98,8 +97,7 @@ export function ReservationForm({ hotels, rooms, canBillCompanyLater = false }: 
     })
     : null;
   const fullPrepaid = (FULL_PREPAID_OTA_SOURCES as readonly string[]).includes(bookingSource) && paymentKind === 'ota_prepaid';
-  const companyToBeBilled = canBillCompanyLater && bookingSource === 'company' && paymentKind === 'invoice' && companyBillLater;
-  const billLater = ((BILL_LATER_SOURCES as readonly string[]).includes(bookingSource) && paymentKind === 'invoice') || companyToBeBilled;
+  const billLater = (BILL_LATER_SOURCES as readonly string[]).includes(bookingSource) && paymentKind === 'invoice';
   const surchargeAmount = Number(surcharge || 0);
   const stayTotal = (quote?.total || 0) + surchargeAmount;
   const downpayment = !hotel || !quote
@@ -159,7 +157,6 @@ export function ReservationForm({ hotels, rooms, canBillCompanyLater = false }: 
     form.set('booking_source', bookingSource);
     form.set('payment_kind', bookingSource === 'walk_in' ? 'desk_cash' : paymentKind);
     form.set('payment_reference', paymentReference);
-    form.set('bill_company_later', companyToBeBilled ? 'true' : 'false');
     form.set('ota_name', otaName);
     form.set('desk_payment', String(paid));
     form.set('surcharge_amount', String(Number(surcharge || 0)));
@@ -323,12 +320,6 @@ export function ReservationForm({ hotels, rooms, canBillCompanyLater = false }: 
           </select>
         </div>
       ) : null}
-      {canBillCompanyLater && bookingSource === 'company' && paymentKind === 'invoice' ? (
-        <label className="flex items-center gap-2 text-sm lg:col-span-2">
-          <input type="checkbox" checked={companyBillLater} onChange={(event) => setCompanyBillLater(event.target.checked)} />
-          To be billed, no deposit. This needs a manager or owner, and an invoice or PO number.
-        </label>
-      ) : null}
       {paymentKind === 'ota_prepaid' && bookingSource !== 'walk_in' ? (
         <div className="space-y-2">
           <label>OTA name</label>
@@ -384,7 +375,7 @@ export function ReservationForm({ hotels, rooms, canBillCompanyLater = false }: 
           <div><p className="text-xs text-slate-500">Stay total</p><p className="font-bold">{currency(stayTotal, hotel.default_currency)}</p></div>
           <div><p className="text-xs text-slate-500">Required down payment</p><p className="font-bold">{currency(downpayment, hotel.default_currency)}</p></div>
         </div>
-        <p className="mt-3 text-xs text-slate-500">Down payment rule: {downpaymentLabel(hotel.downpayment_type)}. Walk-ins, bank transfers, and company stays need at least half. A manager or owner can mark a company stay to be billed. Booking.com, Trip.com, Agoda, and Expedia are prepaid in full. Front desk can save an LGU stay to be billed.</p>
+        <p className="mt-3 text-xs text-slate-500">Down payment rule: {downpaymentLabel(hotel.downpayment_type)}. Walk-ins, direct bookings, and bank transfers need at least half. Booking.com, Trip.com, Agoda, and Expedia are prepaid in full. Front desk can save an LGU or company stay to be billed, with an invoice or PO and no deposit.</p>
       </div>
 
       <div className="lg:col-span-2">

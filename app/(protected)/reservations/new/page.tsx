@@ -1,5 +1,4 @@
 import { requireStaff, canAccessHotel } from '@/lib/auth';
-import { canApproveCompanyBillLater } from '@/lib/public-quote';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { ReservationForm } from '@/components/ReservationForm';
 import type { Hotel, Room } from '@/types/app';
@@ -18,9 +17,9 @@ export default async function NewReservationPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-black tracking-tight">New reservation</h1>
-        <p className="mt-1 text-slate-500">Walk-ins, bank transfers, and company stays need at least half the stay. A manager or owner can mark a company stay to be billed. Booking.com, Trip.com, Agoda, and Expedia are prepaid in full. Front desk can save an LGU stay to be billed, with no deposit.</p>
+        <p className="mt-1 text-slate-500">Walk-ins, direct bookings, and bank transfers need at least half the stay. Booking.com, Trip.com, Agoda, and Expedia are prepaid in full. Front desk can save an LGU or company stay to be billed, with an invoice or PO and no deposit.</p>
       </div>
-      <ReservationForm hotels={hotels} rooms={rooms} canBillCompanyLater={canApproveCompanyBillLater(staff.profile.role)} />
+      <ReservationForm hotels={hotels} rooms={rooms} />
     </div>
   );
 }
