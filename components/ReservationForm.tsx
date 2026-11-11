@@ -7,6 +7,7 @@ import type { Hotel, Room } from '@/types/app';
 import { diffDays } from '@/lib/date';
 import { currency } from '@/lib/money';
 import { calculateDownpayment, downpaymentLabel } from '@/lib/downpayment';
+import { quotePublicStay } from '@/lib/public-quote';
 import { queueOfflineItem } from '@/lib/offline/db';
 
 export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Room[] }) {
@@ -22,6 +23,8 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
   const [hotelWasSelected, setHotelWasSelected] = useState(false);
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
+  const [guestCount, setGuestCount] = useState(1);
+  const [withBreakfast, setWithBreakfast] = useState(true);
   const [surcharge, setSurcharge] = useState('0');
   const [manualDownpayment, setManualDownpayment] = useState('0');
   const [message, setMessage] = useState('');
@@ -70,16 +73,33 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
     setHotelWasSelected(true);
   }
 
-  const nights = checkIn && checkOut ? Math.max(1, diffDays(checkIn, checkOut)) : 1;
-  const total = Number(selectedRoom?.base_rate || 0) * nights + Number(surcharge || 0);
-  const downpayment = hotel
-    ? calculateDownpayment({
+  const nights = checkIn && checkOut && checkOut > checkIn ? Math.max(1, diffDays(checkIn, checkOut)) : 1;
+  const quote = hotel && selectedRoom
+    ? quotePublicStay({
+      hotelSlug: hotel.slug,
+      roomTypeName: selectedRoom.room_type_name,
+      nightlyRate: Number(selectedRoom.base_rate || 0),
+      checkIn: checkIn || '2026-01-01',
+      checkOut: checkOut && checkOut > (checkIn || '2026-01-01') ? checkOut : '2026-01-02',
+      guestCount,
+      withBreakfast,
+      downpaymentType: hotel.downpayment_type,
+      defaultPercent: Number(hotel.default_downpayment_percent || 0),
+      defaultAmount: Number(hotel.default_downpayment_amount || 0)
+    })
+    : null;
+  const surchargeAmount = Number(surcharge || 0);
+  const stayTotal = (quote?.total || 0) + surchargeAmount;
+  const downpayment = !hotel || !quote
+    ? 0
+    : quote.fixedDownpaymentPercent != null
+      ? Math.round(stayTotal * quote.fixedDownpaymentPercent) / 100
+      : calculateDownpayment({
         hotel,
-        total,
-        nightlyRate: Number(selectedRoom?.base_rate || 0),
+        total: stayTotal,
+        nightlyRate: quote.nightlyRate,
         manualAmount: Number(manualDownpayment || 0)
-      })
-    : 0;
+      });
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -94,8 +114,10 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
     const form = new FormData(event.currentTarget);
     form.set('hotel_id', hotel.id);
     form.set('room_id', selectedRoom.id);
-    form.set('posted_room_rate', String(selectedRoom.base_rate));
-    form.set('total_amount', String(total));
+    form.set('guest_count', String(guestCount));
+    form.set('with_breakfast', quote?.withBreakfast ? 'true' : 'false');
+    form.set('posted_room_rate', String(quote?.nightlyRate || selectedRoom.base_rate));
+    form.set('total_amount', String((quote?.roomTotal || 0) + surchargeAmount));
     form.set('downpayment_required', String(downpayment));
     form.set('surcharge_amount', String(Number(surcharge || 0)));
     const payload = Object.fromEntries(form.entries());
@@ -214,14 +236,18 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
       </div>
       <div className="space-y-2">
         <label>Number of guests</label>
-        <input name="guest_count" type="number" min="1" defaultValue="1" className="w-full" />
+        <input name="guest_count" type="number" min="1" max={selectedRoom?.capacity || undefined} value={guestCount} onChange={(event) => setGuestCount(Math.max(1, Number(event.target.value || 1)))} className="w-full" />
       </div>
       <div className="space-y-2">
         <label>Breakfast</label>
-        <select name="with_breakfast" className="w-full">
-          <option value="false">No - room only</option>
-          <option value="true">Yes</option>
-        </select>
+        {quote?.breakfastChoiceEnabled ? (
+          <select name="with_breakfast" className="w-full" value={withBreakfast ? 'true' : 'false'} onChange={(event) => setWithBreakfast(event.target.value === 'true')}>
+            <option value="true">Yes, breakfast included</option>
+            <option value="false">No - room only</option>
+          </select>
+        ) : (
+          <p className="rounded-md bg-slate-50 px-3 py-2 text-sm">Breakfast for 2 is included in the room rate.</p>
+        )}
       </div>
       <div className="space-y-2">
         <label>Surcharge label</label>
@@ -245,8 +271,9 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
       <div className="rounded-xl bg-slate-50 p-4 lg:col-span-2">
         <div className="grid gap-3 md:grid-cols-4">
           <div><p className="text-xs text-slate-500">Nights</p><p className="font-bold">{nights}</p></div>
-          <div><p className="text-xs text-slate-500">Room rate</p><p className="font-bold">{currency(selectedRoom.base_rate, hotel.default_currency)}</p></div>
-          <div><p className="text-xs text-slate-500">Total</p><p className="font-bold">{currency(total, hotel.default_currency)}</p></div>
+          <div><p className="text-xs text-slate-500">Room (excl. breakfast)</p><p className="font-bold">{currency(quote?.roomTotal || 0, hotel.default_currency)}</p></div>
+          <div><p className="text-xs text-slate-500">Extra bed</p><p className="font-bold">{quote?.extraBedLine || 'No extra bed'}</p></div>
+          <div><p className="text-xs text-slate-500">Stay total</p><p className="font-bold">{currency(stayTotal, hotel.default_currency)}</p></div>
           <div><p className="text-xs text-slate-500">Required down payment</p><p className="font-bold">{currency(downpayment, hotel.default_currency)}</p></div>
         </div>
         <p className="mt-3 text-xs text-slate-500">Down payment rule: {downpaymentLabel(hotel.downpayment_type)}. New staff-created reservations are tentative until payment is confirmed.</p>

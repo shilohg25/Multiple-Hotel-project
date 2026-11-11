@@ -4,7 +4,8 @@ import { useMemo, useState } from 'react';
 import type { Hotel, Room } from '@/types/app';
 import { proofFileProblem } from '@/lib/guest-contact';
 import { currency } from '@/lib/money';
-import { PAYMENT_INSTRUCTIONS } from '@/lib/payment-instructions';
+import { roomOnlyChoiceEnabled, stayPricingFor } from '@/lib/hotel-pricing';
+import { paymentAccountForHotel, paymentInstructionLines } from '@/lib/payment-instructions';
 import { publicFormHold, quotePublicStay } from '@/lib/public-quote';
 
 type BookRoom = Room & { quoted_rate?: number };
@@ -16,6 +17,7 @@ type Receipt = {
   nights: number;
   guestCount: number;
   breakfastLine: string;
+  extraBedLine: string;
   total: number;
   downpaymentRequired: number;
   amountPaid: number;
@@ -37,6 +39,8 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
   const nightly = Number(room?.quoted_rate ?? room?.base_rate ?? 0);
   const quote = datesReady && room
     ? quotePublicStay({
+      hotelSlug: hotel.slug,
+      roomTypeName: room.room_type_name,
       nightlyRate: nightly,
       checkIn,
       checkOut,
@@ -44,10 +48,13 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
       withBreakfast,
       downpaymentType: hotel.downpayment_type,
       defaultPercent: Number(hotel.default_downpayment_percent || 0),
-      defaultAmount: Number(hotel.default_downpayment_amount || 0),
-      breakfastRatePerRoom: Number(hotel.breakfast_rate_per_room || 0)
+      defaultAmount: Number(hotel.default_downpayment_amount || 0)
     })
     : null;
+  const payTo = paymentAccountForHotel(hotel);
+  const breakfastChoiceEnabled = quote
+    ? quote.breakfastChoiceEnabled
+    : roomOnlyChoiceEnabled(stayPricingFor({ slug: hotel.slug, roomTypeName: room?.room_type_name }));
   const hold = publicFormHold({
     datesReady,
     checkIn,
@@ -93,7 +100,8 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
     form.set('hotel_id', hotel.id);
     form.set('room_id', room.id);
     form.set('guest_count', String(guestCount));
-    form.set('with_breakfast', withBreakfast ? 'true' : 'false');
+    form.set('with_breakfast', quote.withBreakfast ? 'true' : 'false');
+    if (!payTo.gcash) form.set('payment_method', 'bank_transfer');
 
     const response = await fetch('/api/public/bookings', { method: 'POST', body: form });
     setLoading(false);
@@ -127,11 +135,12 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
           <li>{receipt.checkIn} to {receipt.checkOut} · {receipt.nights} night(s)</li>
           <li>{receipt.guestCount} guest(s)</li>
           <li>{receipt.breakfastLine}</li>
+          <li>{receipt.extraBedLine}</li>
           <li>Stay total {currency(receipt.total, hotel.default_currency)}</li>
           <li>Down payment required {currency(receipt.downpaymentRequired, hotel.default_currency)}</li>
           <li>Amount submitted {currency(receipt.amountPaid, hotel.default_currency)}</li>
         </ul>
-        <PaymentInstructions />
+        <PaymentInstructions slug={hotel.slug} />
       </section>
     );
   }
@@ -180,15 +189,19 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
         </div>
         <div className="space-y-2">
           <label>Breakfast</label>
-          <select name="with_breakfast" className="public-field w-full" value={withBreakfast ? 'true' : 'false'} onChange={(event) => setWithBreakfast(event.target.value === 'true')}>
-            <option value="false">No - room only</option>
-            <option value="true">Yes</option>
-          </select>
+          {breakfastChoiceEnabled ? (
+            <select name="with_breakfast" className="public-field w-full" value={withBreakfast ? 'true' : 'false'} onChange={(event) => setWithBreakfast(event.target.value === 'true')}>
+              <option value="true">Yes, breakfast included</option>
+              <option value="false">No - room only</option>
+            </select>
+          ) : (
+            <p className="public-field w-full bg-slate-50">Breakfast for 2 is included in the room rate.</p>
+          )}
         </div>
         <div className="space-y-2">
           <label>How you paid</label>
-          <select name="payment_method" className="public-field w-full" defaultValue="gcash">
-            <option value="gcash">GCash</option>
+          <select name="payment_method" className="public-field w-full" defaultValue={payTo.gcash ? 'gcash' : 'bank_transfer'}>
+            {payTo.gcash ? <option value="gcash">GCash</option> : null}
             <option value="bank_transfer">Bank transfer</option>
           </select>
         </div>
@@ -224,6 +237,7 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
           <div><p className="text-xs text-slate-500">Nights</p><p className="font-bold">{datesReady ? quote?.nights : 'Choose dates'}</p></div>
           <div><p className="text-xs text-slate-500">Room</p><p className="font-bold">{datesReady ? currency(quote?.roomTotal || 0, hotel.default_currency) : currency(nightly, hotel.default_currency)} {datesReady ? '' : 'a night'}</p></div>
           <div><p className="text-xs text-slate-500">Breakfast</p><p className="font-bold">{datesReady ? (quote?.breakfastLine || 'Room only') : 'Shown after you pick dates'}</p></div>
+          <div><p className="text-xs text-slate-500">Extra bed</p><p className="font-bold">{datesReady ? (quote?.extraBedLine || 'No extra bed') : 'Shown after you pick dates'}</p></div>
           <div><p className="text-xs text-slate-500">Stay total</p><p className="font-bold">{datesReady ? currency(quote?.total || 0, hotel.default_currency) : '—'}</p></div>
           <div><p className="text-xs text-slate-500">Required down payment</p><p className="font-bold">{datesReady ? currency(quote?.downpaymentRequired || 0, hotel.default_currency) : '—'}</p></div>
         </div>
@@ -231,19 +245,20 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
         {quote?.downpaymentDefaulted ? <p className="mt-3 text-xs text-slate-500">This property has no manual down-payment amount, so the request uses 50% of the stay.</p> : null}
       </div>
 
-      <PaymentInstructions />
+      <PaymentInstructions slug={hotel.slug} />
       <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">A submitted request holds the room against another online request for the same dates. The stay is secured only after the hotel confirms the payment.</p>
       <button className="btn-primary w-full" disabled={loading || hold.submitDisabled} type="submit">{loading ? 'Submitting...' : 'Submit booking request'}</button>
     </form>
   );
 }
 
-function PaymentInstructions() {
+function PaymentInstructions({ slug }: { slug?: string | null }) {
+  const account = paymentAccountForHotel({ slug });
+  const lines = paymentInstructionLines({ slug });
   return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
-      <p className="font-bold">Payment instructions (PLACEHOLDER — not a real account)</p>
-      <p className="mt-2">GCash: {PAYMENT_INSTRUCTIONS.gcashName}, {PAYMENT_INSTRUCTIONS.gcashNumber}</p>
-      <p>{PAYMENT_INSTRUCTIONS.bankName}: {PAYMENT_INSTRUCTIONS.bankAccountName}, {PAYMENT_INSTRUCTIONS.bankAccountNumber}</p>
+    <div className={`rounded-lg border p-3 text-sm ${account.placeholder ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-slate-200 bg-slate-50 text-slate-800'}`}>
+      {account.placeholder ? null : <p className="font-bold">Pay the down payment here</p>}
+      {lines.map((line) => <p key={line} className={account.placeholder ? '' : 'mt-1'}>{line}</p>)}
     </div>
   );
 }

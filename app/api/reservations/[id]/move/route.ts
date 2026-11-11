@@ -31,7 +31,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (roomError || !room || room.hotel_id !== reservation.hotel_id) return jsonError('Room not found for this hotel.', 404);
 
   const conflict = await hasReservationConflict({ roomId, checkIn, checkOut, ignoreReservationId: id });
-  if (conflict) return jsonError('Move blocked: the new room/date range overlaps a secured booking.');
+  if (conflict) return jsonError(ROOM_JUST_TAKEN);
 
   const { data, error: updateError } = await supabaseAdmin
     .from('reservations')

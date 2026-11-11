@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { breakfastBill, guestBreakfastCharge } from './breakfast-charge.ts';
 import {
   guestCountAllowed,
   isPastCheckIn,
@@ -12,7 +11,7 @@ import {
 } from './public-quote.ts';
 
 describe('public stay quote', () => {
-  it('recomputes room and breakfast from nights, not from a client total', () => {
+  it('recomputes the stay from nights, not from a client total', () => {
     const quote = quotePublicStay({
       nightlyRate: 2500,
       checkIn: '2026-11-10',
@@ -25,11 +24,10 @@ describe('public stay quote', () => {
     });
     assert.equal(stayNights('2026-11-10', '2026-11-12'), 2);
     assert.equal(quote.roomTotal, 5000);
-    assert.equal(quote.breakfastTotal, 1000);
-    assert.equal(quote.total, 6000);
-    assert.equal(quote.downpaymentRequired, 3000);
-    assert.equal(guestBreakfastCharge(2, 1).guestTotal, 1000);
-    assert.equal(guestBreakfastCharge(2, 3).guestTotal, 1500);
+    assert.equal(quote.breakfastTotal, 0);
+    assert.equal(quote.extraBedTotal, 0);
+    assert.equal(quote.total, 5000);
+    assert.equal(quote.downpaymentRequired, 2500);
   });
 
   it('uses a flagged 50% minimum when a manual hotel has no amount', () => {
@@ -111,30 +109,23 @@ describe('public stay quote', () => {
     assert.equal(overpaid.submitDisabled, true);
   });
 
-  it('bills breakfast once after check-in: 1 night, 2 guests is ₱500 on the folio, print, and report', () => {
+  it('bills a Tagosilangan extra bed once and does not add breakfast again', () => {
     const quote = quotePublicStay({
+      hotelSlug: 'tagosilangan',
       nightlyRate: 2500,
       checkIn: '2026-11-10',
       checkOut: '2026-11-11',
-      guestCount: 2,
+      guestCount: 3,
       withBreakfast: true,
       downpaymentType: 'percent',
       defaultPercent: 50,
       defaultAmount: 0
     });
-    const storedRoomTotal = quote.roomTotal;
-    const posted = breakfastBill({ nights: quote.nights, guestCount: 2, ratePerRoom: 500, outletPerHead: 250 });
-    const folio = storedRoomTotal + posted.guestTotal;
-    const printGrandTotal = storedRoomTotal + posted.guestTotal;
-    const reportRoom = storedRoomTotal;
-    const reportBreakfast = posted.guestTotal;
-    assert.equal(posted.guestTotal, 500);
-    assert.equal(quote.breakfastTotal, 500);
-    assert.equal(quote.total, storedRoomTotal + 500);
+    const folio = quote.roomTotal + quote.extraBedTotal;
+    assert.equal(quote.breakfastTotal, 0);
+    assert.equal(quote.extraBedTotal, 500);
+    assert.equal(folio, quote.total);
     assert.equal(folio, 3000);
-    assert.equal(printGrandTotal, folio);
-    assert.equal(reportBreakfast, 500);
-    assert.equal(reportRoom + reportBreakfast, folio);
   });
 
   it('refuses a payment above the displayed stay total and a stay longer than 30 nights', () => {

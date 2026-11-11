@@ -1,5 +1,5 @@
-import { guestBreakfastCharge, PUBLIC_BREAKFAST } from './breakfast-charge.ts';
 import { calculateDownpayment, normalizeDownpaymentType } from './downpayment.ts';
+import { priceStay } from './hotel-pricing.ts';
 import type { DownpaymentType } from '@/types/app';
 
 function money(value: number) {
@@ -103,18 +103,28 @@ export type StayQuote = {
   nights: number;
   nightlyRate: number;
   roomTotal: number;
+  extraBedRate: number;
+  extraBedTotal: number;
+  extraBedLine: string;
   breakfastTotal: number;
   breakfastLine: string;
+  breakfastChoiceEnabled: boolean;
+  withBreakfast: boolean;
   total: number;
+  fixedDownpaymentPercent: number | null;
   downpaymentRequired: number;
   downpaymentDefaulted: boolean;
 };
 
 /**
- * Guest-facing quote. `total` is room plus breakfast and is what the down payment uses.
- * The reservation stores `roomTotal` only. Check-in posts the breakfast charge, so the folio adds it once.
+ * Guest-facing quote. `total` is the room plus extra beds. Breakfast included in the
+ * room rate is not added again. The stay stores `roomTotal` only. Check-in posts the
+ * extra-bed charge, so the folio matches this total. Navarro and Tagosilangan take
+ * 50% of that total, computed here.
  */
 export function quotePublicStay(input: {
+  hotelSlug?: string | null;
+  roomTypeName?: string | null;
   nightlyRate: number;
   checkIn: string;
   checkOut: string;
@@ -123,34 +133,41 @@ export function quotePublicStay(input: {
   downpaymentType: string;
   defaultPercent: number;
   defaultAmount: number;
-  breakfastRatePerRoom?: number;
+  roomOnlyDiscountPerNight?: number | null;
 }): StayQuote {
   const nights = Math.max(0, stayNights(input.checkIn, input.checkOut));
-  const nightlyRate = money(input.nightlyRate);
-  const roomTotal = money(nightlyRate * nights);
-  const breakfast = input.withBreakfast
-    ? guestBreakfastCharge(Math.max(nights, 1), input.guestCount, input.breakfastRatePerRoom)
-    : null;
-  const breakfastTotal = nights > 0 && breakfast ? breakfast.guestTotal : 0;
-  const breakfastLine = input.withBreakfast && breakfast ? breakfast.line : 'Room only';
-  const total = money(roomTotal + breakfastTotal);
-  const down = resolveDownpayment({
-    downpaymentType: input.downpaymentType,
-    defaultPercent: input.defaultPercent,
-    defaultAmount: input.defaultAmount,
-    total,
-    nightlyRate
-  });
-  return {
+  const price = priceStay({
+    hotelSlug: input.hotelSlug,
+    roomTypeName: input.roomTypeName,
+    nightlyRate: input.nightlyRate,
     nights,
-    nightlyRate,
-    roomTotal,
-    breakfastTotal,
-    breakfastLine,
-    total,
+    guestCount: input.guestCount,
+    withBreakfast: input.withBreakfast,
+    roomOnlyDiscountPerNight: input.roomOnlyDiscountPerNight
+  });
+  const down = price.fixedDownpaymentPercent != null
+    ? { amount: money(price.total * price.fixedDownpaymentPercent / 100), defaulted: false }
+    : resolveDownpayment({
+      downpaymentType: input.downpaymentType,
+      defaultPercent: input.defaultPercent,
+      defaultAmount: input.defaultAmount,
+      total: price.total,
+      nightlyRate: price.nightlyRate
+    });
+  return {
+    nights: price.nights,
+    nightlyRate: price.nightlyRate,
+    roomTotal: price.roomTotal,
+    extraBedRate: price.extraBedRate,
+    extraBedTotal: price.extraBedTotal,
+    extraBedLine: price.extraBedLine,
+    breakfastTotal: price.breakfastTotal,
+    breakfastLine: price.breakfastLine,
+    breakfastChoiceEnabled: price.breakfastChoiceEnabled,
+    withBreakfast: price.withBreakfast,
+    total: price.total,
+    fixedDownpaymentPercent: price.fixedDownpaymentPercent,
     downpaymentRequired: down.amount,
     downpaymentDefaulted: down.defaulted
   };
 }
-
-export { PUBLIC_BREAKFAST };

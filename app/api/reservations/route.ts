@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
+import { calculateDownpayment } from '@/lib/downpayment';
+import { quotePublicStay } from '@/lib/public-quote';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { hasReservationConflict } from '@/lib/availability';
 import { getProcessedOfflineRequest, recordProcessedOfflineRequest } from '@/lib/idempotency';
@@ -33,6 +35,35 @@ export async function POST(request: Request) {
   const conflict = await hasReservationConflict({ roomId, checkIn, checkOut });
   if (conflict) return jsonError('This room already has a secured booking for the selected dates. Tentative reservations can overlap, but secured bookings cannot.');
 
+  const [{ data: hotelRaw }, { data: roomRaw }] = await Promise.all([
+    supabaseAdmin.from('hotels').select('slug, downpayment_type, default_downpayment_percent, default_downpayment_amount').eq('id', hotelId).maybeSingle(),
+    supabaseAdmin.from('rooms').select('base_rate, room_type_name, hotel_id').eq('id', roomId).maybeSingle()
+  ]);
+  if (!hotelRaw || !roomRaw || roomRaw.hotel_id !== hotelId) return jsonError('Room not found for this hotel.', 404);
+  const guestCount = Math.max(1, Math.floor(Number(payload.guest_count || 1)));
+  const surcharge = Math.max(0, Number(payload.surcharge_amount || 0));
+  const quote = quotePublicStay({
+    hotelSlug: hotelRaw.slug,
+    roomTypeName: roomRaw.room_type_name,
+    nightlyRate: Number(roomRaw.base_rate || 0),
+    checkIn,
+    checkOut,
+    guestCount,
+    withBreakfast: String(payload.with_breakfast) === 'true',
+    downpaymentType: hotelRaw.downpayment_type,
+    defaultPercent: Number(hotelRaw.default_downpayment_percent || 0),
+    defaultAmount: Number(hotelRaw.default_downpayment_amount || 0)
+  });
+  const stayTotal = quote.total + surcharge;
+  const downpayment = quote.fixedDownpaymentPercent != null
+    ? Math.round(stayTotal * quote.fixedDownpaymentPercent) / 100
+    : calculateDownpayment({
+      hotel: hotelRaw,
+      total: stayTotal,
+      nightlyRate: quote.nightlyRate,
+      manualAmount: Number(payload.manual_downpayment_amount || payload.downpayment_required || 0)
+    });
+
   const { data: guestRaw, error: guestError } = await supabaseAdmin
     .from('guests')
     .insert({
@@ -54,13 +85,13 @@ export async function POST(request: Request) {
       booking_source: payload.booking_source || 'walk_in',
       check_in: checkIn,
       check_out: checkOut,
-      guest_count: Number(payload.guest_count || 1),
-      with_breakfast: String(payload.with_breakfast) === 'true',
-      posted_room_rate: Number(payload.posted_room_rate || 0),
+      guest_count: guestCount,
+      with_breakfast: quote.withBreakfast,
+      posted_room_rate: quote.nightlyRate,
       surcharge_label: payload.surcharge_label || null,
-      surcharge_amount: Number(payload.surcharge_amount || 0),
-      total_amount: Number(payload.total_amount || 0),
-      downpayment_required: Number(payload.downpayment_required || 0),
+      surcharge_amount: surcharge,
+      total_amount: Math.round((quote.roomTotal + surcharge) * 100) / 100,
+      downpayment_required: downpayment,
       notes: payload.notes || null,
       created_by: staff.userId
     })

@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
-import { breakfastBill } from '@/lib/breakfast-charge';
-import { AUTO_BREAKFAST_NOTE, AUTO_BREAKFAST_REMOVED_ACTION, BREAKFAST_TURN_OFF_BLOCKED, breakfastTurnOffBlocked, isAutoBreakfastCharge, shouldPostAutoBreakfast } from '@/lib/breakfast-toggle';
+import { AUTO_BREAKFAST_REMOVED_ACTION, AUTO_POST_SOURCE, BREAKFAST_TURN_OFF_BLOCKED, breakfastTurnOffBlocked, isAutoPostedCharge, shouldPostAutoStayCharge } from '@/lib/breakfast-toggle';
+import { priceStay } from '@/lib/hotel-pricing';
 import { isRoomOverlapError, ROOM_JUST_TAKEN } from '@/lib/room-overlap';
 import { decideReservationUpdate, RESERVATION_MONEY_FIELDS, type MoneyField, type PolicyStatus } from '@/lib/reservation-policy';
 import { supabaseAdmin } from '@/lib/supabase-admin';
@@ -55,16 +55,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (!decision.ok) return jsonError(decision.error, decision.status);
 
   if ('with_breakfast' in payload) {
-    const { data: breakfastCharges, error: breakfastError } = await supabaseAdmin
+    const { data: stayCharges, error: breakfastError } = await supabaseAdmin
       .from('reservation_charges')
       .select('id, category, notes')
-      .eq('reservation_id', id)
-      .eq('category', 'breakfast');
+      .eq('reservation_id', id);
     if (breakfastError) {
       console.error(breakfastError);
       return jsonError('Could not check the breakfast charge. Try again.', 500);
     }
-    const autoPosted = (breakfastCharges || []).some((charge) => isAutoBreakfastCharge(charge));
+    const autoPosted = (stayCharges || []).some((charge) => isAutoPostedCharge(charge));
     if (breakfastTurnOffBlocked(Boolean(currentRaw.with_breakfast), payload.with_breakfast, autoPosted)) {
       return jsonError(BREAKFAST_TURN_OFF_BLOCKED);
     }
@@ -100,55 +99,50 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       .eq('id', currentRaw.guest_id);
   }
 
-  if (reservationRaw.status === 'checked_in' && reservationRaw.with_breakfast) {
-    const [existingBreakfast, removedBreakfast] = await Promise.all([
-      supabaseAdmin.from('reservation_charges').select('id, category, notes').eq('reservation_id', id).eq('category', 'breakfast'),
-      supabaseAdmin.from('audit_logs').select('id').eq('reservation_id', id).eq('action', AUTO_BREAKFAST_REMOVED_ACTION).limit(1)
+  if (reservationRaw.status === 'checked_in') {
+    const [existingCharges, removedBreakfast, hotelRow, roomRow] = await Promise.all([
+      supabaseAdmin.from('reservation_charges').select('id, category, notes').eq('reservation_id', id),
+      supabaseAdmin.from('audit_logs').select('id').eq('reservation_id', id).eq('action', AUTO_BREAKFAST_REMOVED_ACTION).limit(1),
+      supabaseAdmin.from('hotels').select('slug').eq('id', currentRaw.hotel_id).maybeSingle(),
+      supabaseAdmin.from('rooms').select('room_type_name').eq('id', reservationRaw.room_id).maybeSingle()
     ]);
-    if (existingBreakfast.error || removedBreakfast.error) {
-      console.error(existingBreakfast.error || removedBreakfast.error);
-    } else if (shouldPostAutoBreakfast({
-      status: reservationRaw.status,
-      withBreakfast: Boolean(reservationRaw.with_breakfast),
-      charges: existingBreakfast.data || [],
-      removed: Boolean(removedBreakfast.data?.length)
-    })) {
-      const { data: hotel } = await supabaseAdmin
-        .from('hotels')
-        .select('breakfast_rate_per_room, breakfast_outlet_portion_per_head')
-        .eq('id', currentRaw.hotel_id)
-        .maybeSingle();
-      const bill = breakfastBill({
+    if (existingCharges.error || removedBreakfast.error || hotelRow.error || roomRow.error) {
+      console.error(existingCharges.error || removedBreakfast.error || hotelRow.error || roomRow.error);
+    } else {
+      const price = priceStay({
+        hotelSlug: hotelRow.data?.slug,
+        roomTypeName: roomRow.data?.room_type_name,
+        nightlyRate: Number(reservationRaw.posted_room_rate || 0),
         nights: Number(reservationRaw.nights || 1),
         guestCount: Number(reservationRaw.guest_count || 1),
-        ratePerRoom: Number(hotel?.breakfast_rate_per_room ?? 500),
-        outletPerHead: Number(hotel?.breakfast_outlet_portion_per_head ?? 250)
+        withBreakfast: Boolean(reservationRaw.with_breakfast),
+        rateAlreadyAdjusted: true
       });
-      const { data: service } = await supabaseAdmin
-        .from('service_items')
-        .select('id')
-        .eq('hotel_id', currentRaw.hotel_id)
-        .eq('category', 'breakfast')
-        .ilike('name', 'Breakfast')
-        .maybeSingle();
+      if (shouldPostAutoStayCharge({
+        status: reservationRaw.status,
+        extraBedTotal: price.extraBedTotal,
+        charges: existingCharges.data || [],
+        removed: Boolean(removedBreakfast.data?.length)
+      })) {
       const charge = {
         reservation_id: id,
         hotel_id: currentRaw.hotel_id,
-        service_item_id: service?.id || null,
-        description: `Breakfast ${bill.nights} night(s) at ${bill.guestTotal / bill.nights} per room`,
-        category: 'breakfast',
-        quantity: bill.nights,
-        unit_price: bill.guestTotal / bill.nights,
-        total_amount: bill.guestTotal,
-        remittance_required: true,
-        remittance_note: `Outlet owed ${bill.outletOwed} (${bill.heads} head(s) x ${bill.nights} night(s))`,
-        notes: AUTO_BREAKFAST_NOTE,
+        service_item_id: null,
+        description: price.extraBedLine,
+        category: 'extra_bed',
+        quantity: price.extraPax * price.nights,
+        unit_price: price.extraBedRate,
+        total_amount: price.extraBedTotal,
+        remittance_required: false,
+        remittance_note: null,
+        notes: AUTO_POST_SOURCE,
         created_by: staff.userId
       };
       const inserted = await supabaseAdmin.from('reservation_charges').insert(charge).select('id').single();
       if (inserted.error && String(inserted.error.message || '').includes('total_amount')) {
         const { total_amount: _ignored, ...withoutTotal } = charge;
         await supabaseAdmin.from('reservation_charges').insert(withoutTotal);
+      }
       }
     }
   }

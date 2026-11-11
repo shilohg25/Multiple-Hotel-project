@@ -5,6 +5,7 @@ import { businessToday } from '@/lib/date';
 import { isValidGuestEmail, normalizePhMobile, proofFileProblem } from '@/lib/guest-contact';
 import { allowPublicBooking, publicBookingClientIp } from '@/lib/public-booking-limit';
 import { isRoomOverlapError, ROOM_JUST_TAKEN } from '@/lib/room-overlap';
+import { paymentAccountForHotel } from '@/lib/payment-instructions';
 import { MAX_PUBLIC_STAY_NIGHTS, guestCountAllowed, isPastCheckIn, paymentCoversDownpayment, paymentWithinStay, quotePublicStay } from '@/lib/public-quote';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
@@ -83,7 +84,11 @@ export async function POST(request: Request) {
     else if (rateRow.data) nightlyRate = Number(rateRow.data.rate);
   }
 
+  const payTo = paymentAccountForHotel(hotelRaw);
+  if (method === 'gcash' && !payTo.gcash) return guestFailure('This property does not take GCash. Use a bank transfer.');
   const quote = quotePublicStay({
+    hotelSlug: hotelRaw.slug,
+    roomTypeName: roomRaw.room_type_name,
     nightlyRate,
     checkIn,
     checkOut,
@@ -91,8 +96,7 @@ export async function POST(request: Request) {
     withBreakfast,
     downpaymentType: hotelRaw.downpayment_type,
     defaultPercent: Number(hotelRaw.default_downpayment_percent || 0),
-    defaultAmount: Number(hotelRaw.default_downpayment_amount || 0),
-    breakfastRatePerRoom: Number(hotelRaw.breakfast_rate_per_room || 0)
+    defaultAmount: Number(hotelRaw.default_downpayment_amount || 0)
   });
   if (quote.nights < 1) return guestFailure('Choose a check-in date and a later check-out date.');
   if (quote.nights > MAX_PUBLIC_STAY_NIGHTS) return guestFailure('A stay can be at most 30 nights.');
@@ -145,7 +149,7 @@ export async function POST(request: Request) {
       check_in: checkIn,
       check_out: checkOut,
       guest_count: guestCount,
-      with_breakfast: withBreakfast,
+      with_breakfast: quote.withBreakfast,
       posted_room_rate: quote.nightlyRate,
       surcharge_label: null,
       surcharge_amount: 0,
@@ -202,6 +206,8 @@ export async function POST(request: Request) {
       nights: quote.nights,
       guestCount,
       breakfastLine: quote.breakfastLine,
+      extraBedLine: quote.extraBedLine,
+      extraBedTotal: quote.extraBedTotal,
       total: quote.total,
       downpaymentRequired: quote.downpaymentRequired,
       amountPaid: paymentAmount,
