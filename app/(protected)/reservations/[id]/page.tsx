@@ -15,6 +15,7 @@ import { ReservationStatusBadge } from '@/components/StatusBadge';
 import { PaymentPanel } from '@/components/PaymentPanel';
 import { EmailDraftPanel } from '@/components/EmailDraftPanel';
 import { ReservationFolio } from '@/components/ReservationFolio';
+import { ReservationActions } from '@/components/ReservationActions';
 import { SavePrintSnapshotButton } from '@/components/offline/SavePrintSnapshotButton';
 import type { Guest, Hotel, Payment, Reservation, ReservationCharge, Room, ServiceItem } from '@/types/app';
 
@@ -149,6 +150,15 @@ export default async function ReservationDetailPage({ params }: { params: Promis
           <Info label="Notes" value={reservation.notes || '-'} />
         </div>
       </section>
+
+      <ReservationActions
+        reservationId={reservation.id}
+        status={reservation.status}
+        postedRoomRate={Number(reservation.posted_room_rate || 0)}
+        totalAmount={Number(reservation.total_amount || 0)}
+        downpaymentRequired={Number(reservation.downpayment_required || 0)}
+        role={staff.profile.role}
+      />
 
       <ReservationFolio
         reservationId={reservation.id}
