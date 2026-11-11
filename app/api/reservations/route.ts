@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { calculateDownpayment } from '@/lib/downpayment';
-import { quotePublicStay, walkInDeskStay } from '@/lib/public-quote';
+import { quotePublicStay, staffBookingPayment } from '@/lib/public-quote';
 import { ROOM_JUST_TAKEN } from '@/lib/room-overlap';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { hasReservationConflict } from '@/lib/availability';
@@ -64,13 +64,18 @@ export async function POST(request: Request) {
       nightlyRate: quote.nightlyRate,
       manualAmount: Number(payload.manual_downpayment_amount || payload.downpayment_required || 0)
     });
-  const desk = walkInDeskStay({
-    bookingSource: String(payload.booking_source || 'walk_in'),
-    deskPayment: Number(payload.desk_payment || 0),
-    downpaymentRequired: downpayment
+  const bookingSource = String(payload.booking_source || 'walk_in');
+  const paid = staffBookingPayment({
+    bookingSource,
+    amount: Number(payload.desk_payment || payload.payment_amount || 0),
+    downpaymentRequired: downpayment,
+    stayTotal,
+    paymentKind: String(payload.payment_kind || (bookingSource === 'walk_in' ? 'desk_cash' : '')),
+    reference: String(payload.payment_reference || ''),
+    otaName: String(payload.ota_name || ''),
+    canConfirm: staff.profile.role === 'owner' || staff.profile.role === 'manager'
   });
-  if (!desk.ok) return jsonError(desk.error);
-  const deskPayment = Number(payload.desk_payment || 0);
+  if (!paid.ok) return jsonError(paid.error);
 
   const { data: guestRaw, error: guestError } = await supabaseAdmin
     .from('guests')
@@ -89,8 +94,8 @@ export async function POST(request: Request) {
       hotel_id: hotelId,
       room_id: roomId,
       guest_id: guestRaw.id,
-      status: desk.status,
-      booking_source: 'walk_in',
+      status: paid.reservationStatus,
+      booking_source: bookingSource,
       check_in: checkIn,
       check_out: checkOut,
       guest_count: guestCount,
@@ -113,20 +118,21 @@ export async function POST(request: Request) {
 
   const { error: paymentError } = await supabaseAdmin.from('payments').insert({
     reservation_id: reservationRaw.id,
-    amount: deskPayment,
-    method: 'cash',
+    amount: Number(payload.desk_payment || payload.payment_amount || 0),
+    method: paid.method,
     payer_name: guestName,
-    payment_details: 'Paid at the desk',
-    proof_path: 'walk-in/desk-cash',
-    status: 'confirmed',
-    confirmed_at: new Date().toISOString(),
-    confirmed_by: staff.userId
+    payment_reference: paid.reference || null,
+    payment_details: paid.details,
+    proof_path: paid.proofPath,
+    status: paid.paymentStatus,
+    confirmed_at: paid.paymentStatus === 'confirmed' ? new Date().toISOString() : null,
+    confirmed_by: paid.paymentStatus === 'confirmed' ? staff.userId : null
   });
   if (paymentError) {
     console.error(paymentError);
     await supabaseAdmin.from('reservations').delete().eq('id', reservationRaw.id);
     await supabaseAdmin.from('guests').delete().eq('id', guestRaw.id);
-    return jsonError('The desk payment could not be saved, so the room was not held.', 500);
+    return jsonError('The payment could not be saved, so the room was not held.', 500);
   }
 
   await recordProcessedOfflineRequest({
@@ -142,7 +148,7 @@ export async function POST(request: Request) {
     reservation_id: reservationRaw.id,
     actor_id: staff.userId,
     action: 'reservation.created',
-    details: { status: desk.status, desk_payment: deskPayment }
+    details: { status: paid.reservationStatus, method: paid.method, reference: paid.reference, amount: Number(payload.desk_payment || payload.payment_amount || 0) }
   });
 
   return NextResponse.json({ reservation: reservationRaw });

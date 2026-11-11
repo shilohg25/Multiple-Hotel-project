@@ -105,16 +105,115 @@ export function publicFormHold(input: {
   };
 }
 
-/** A walk-in paid at the desk is the only staff stay that may hold a room. */
-export function walkInDeskStay(input: { bookingSource: string; deskPayment: number; downpaymentRequired: number }):
+/** A walk-in paid at the desk is saved as secured. Other sources use staffBookingPayment. */
+export function walkInDeskStay(input: { bookingSource: string; deskPayment: number; downpaymentRequired: number; stayTotal?: number }):
   { ok: true; status: 'secured' } | { ok: false; error: string } {
-  if (input.bookingSource !== 'walk_in') {
-    return { ok: false, error: 'Pencil bookings are not allowed. Only a walk-in paid at the desk can be saved here.' };
-  }
-  if (!paymentCoversDownpayment(input.deskPayment, input.downpaymentRequired)) {
-    return { ok: false, error: 'A room cannot be held without payment. Enter the amount paid at the desk. It must cover the down payment.' };
-  }
+  const result = staffBookingPayment({
+    bookingSource: input.bookingSource,
+    amount: input.deskPayment,
+    downpaymentRequired: input.downpaymentRequired,
+    stayTotal: input.stayTotal ?? Math.max(input.deskPayment, input.downpaymentRequired),
+    paymentKind: 'desk_cash',
+    canConfirm: true
+  });
+  if (!result.ok) return result;
   return { ok: true, status: 'secured' };
+}
+
+export const OTA_BOOKING_SOURCES = ['booking_dot_com', 'trip_dot_com', 'agoda', 'expedia'] as const;
+export const ACCOUNT_BOOKING_SOURCES = ['lgu', 'company'] as const;
+
+export type StaffPaymentKind = 'desk_cash' | 'ota_prepaid' | 'bank_transfer' | 'invoice';
+
+export type StaffPaymentDecision = {
+  ok: true;
+  reservationStatus: 'secured' | 'payment_submitted';
+  paymentStatus: 'confirmed' | 'submitted';
+  method: 'cash' | 'bank_transfer' | 'booking_dot_com' | 'trip_dot_com' | 'other';
+  details: string;
+  reference: string;
+  proofPath: string;
+};
+
+/**
+ * Staff stays hold a room only with a payment row in the same save.
+ * Walk-in desk cash is confirmed immediately. OTA, LGU, and company payments
+ * are confirmed only when the staff member can confirm payments. Everyone else
+ * leaves them submitted, which still holds the room until a manager confirms or rejects.
+ * OTA prepaid and invoice/PO are stored on existing method values, with the name in the details.
+ */
+export function staffBookingPayment(input: {
+  bookingSource: string;
+  amount: number;
+  downpaymentRequired: number;
+  stayTotal: number;
+  paymentKind?: string;
+  reference?: string;
+  otaName?: string;
+  canConfirm: boolean;
+}): StaffPaymentDecision | { ok: false; error: string } {
+  const source = String(input.bookingSource || '');
+  const kind = String(input.paymentKind || (source === 'walk_in' ? 'desk_cash' : '')) as StaffPaymentKind;
+  const amount = Number(input.amount || 0);
+  const reference = String(input.reference || '').trim();
+  const otaName = String(input.otaName || '').trim();
+  const ota = (OTA_BOOKING_SOURCES as readonly string[]).includes(source);
+  const account = (ACCOUNT_BOOKING_SOURCES as readonly string[]).includes(source);
+  if (source !== 'walk_in' && !ota && !account) {
+    return { ok: false, error: 'Pencil bookings are not allowed. This source needs a payment record before the room is held.' };
+  }
+  if (source === 'walk_in' && kind !== 'desk_cash') {
+    return { ok: false, error: 'A walk-in is recorded as cash paid at the desk.' };
+  }
+  if (ota && kind !== 'ota_prepaid' && kind !== 'bank_transfer') {
+    return { ok: false, error: 'An OTA stay needs an OTA prepaid record or a bank transfer.' };
+  }
+  if (account && kind !== 'invoice' && kind !== 'bank_transfer') {
+    return { ok: false, error: 'An LGU or company stay needs an invoice or PO, or a bank transfer.' };
+  }
+  if (!(amount > 0)) return { ok: false, error: 'A room cannot be held without a payment record.' };
+  if (!paymentCoversDownpayment(amount, input.downpaymentRequired)) {
+    return { ok: false, error: 'The payment must cover at least half the stay.' };
+  }
+  if (!paymentWithinStay(amount, input.stayTotal)) {
+    return { ok: false, error: 'The payment cannot be more than the stay total.' };
+  }
+  if ((kind === 'ota_prepaid' || kind === 'bank_transfer' || kind === 'invoice') && !reference) {
+    return { ok: false, error: kind === 'invoice' ? 'An invoice or PO number is required.' : 'A reference number is required.' };
+  }
+  if (kind === 'ota_prepaid' && !otaName) return { ok: false, error: 'The OTA name is required.' };
+
+  const managerConfirms = source === 'walk_in' || input.canConfirm;
+  let method: StaffPaymentDecision['method'] = 'other';
+  let details = '';
+  if (kind === 'desk_cash') {
+    method = 'cash';
+    details = 'Paid at the desk';
+  } else if (kind === 'bank_transfer') {
+    method = 'bank_transfer';
+    details = 'Bank transfer';
+  } else if (kind === 'invoice') {
+    method = 'other';
+    details = `Invoice/PO ${reference}`;
+  } else if (source === 'booking_dot_com') {
+    method = 'booking_dot_com';
+    details = `OTA prepaid: ${otaName}`;
+  } else if (source === 'trip_dot_com') {
+    method = 'trip_dot_com';
+    details = `OTA prepaid: ${otaName}`;
+  } else {
+    method = 'other';
+    details = `OTA prepaid: ${otaName}`;
+  }
+  return {
+    ok: true,
+    reservationStatus: managerConfirms ? 'secured' : 'payment_submitted',
+    paymentStatus: managerConfirms ? 'confirmed' : 'submitted',
+    method,
+    details,
+    reference,
+    proofPath: kind === 'desk_cash' ? 'walk-in/desk-cash' : 'staff/no-proof'
+  };
 }
 
 export type StayQuote = {

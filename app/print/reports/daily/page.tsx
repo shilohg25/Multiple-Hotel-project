@@ -66,12 +66,13 @@ export default async function DailyReportPrintPage({ searchParams }: { searchPar
       <section>
         <h2 className="mb-2 text-lg font-bold">Confirmed Payments</h2>
         <table className="print-table">
-          <thead><tr><th>Reservation</th><th>Method</th><th>Amount</th><th>Confirmed at</th></tr></thead>
+          <thead><tr><th>Reservation</th><th>Method</th><th>Reference</th><th>Amount</th><th>Confirmed at</th></tr></thead>
           <tbody>
             {report.confirmedPayments.map((payment) => (
               <tr key={payment.id}>
                 <td>{payment.reservation_id.slice(0, 8).toUpperCase()}</td>
                 <td>{payment.method.replaceAll('_', ' ')}</td>
+                <td>{payment.payment_reference || payment.payment_details || '-'}</td>
                 <td>{currency(payment.amount, report.hotel.default_currency)}</td>
                 <td>{payment.confirmed_at ? new Date(payment.confirmed_at).toLocaleString() : '-'}</td>
               </tr>

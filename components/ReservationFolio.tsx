@@ -16,6 +16,7 @@ export function ReservationFolio({
   expectedExtraBedLine = '',
   confirmedPaymentsTotal,
   charges,
+  payments = [],
   serviceItems,
   canAdd,
   canManage,
@@ -29,6 +30,7 @@ export function ReservationFolio({
   expectedExtraBedLine?: string;
   confirmedPaymentsTotal: number;
   charges: ReservationCharge[];
+  payments?: Array<{ id: string; amount: number; method: string; payment_reference?: string | null; payment_details?: string | null; status?: string }>;
   serviceItems: ServiceItem[];
   canAdd: boolean;
   canManage: boolean;
@@ -266,6 +268,13 @@ export function ReservationFolio({
             <SummaryItem label="Total balance" value={currency(balance, currencyCode)} />
           </div>
           <p className="text-sm text-slate-500">Display total: {currency(displayTotal, currencyCode)}</p>
+          {payments.length ? (
+            <ul className="space-y-1 text-sm text-slate-700">
+              {payments.map((payment) => (
+                <li key={payment.id}>{payment.method.replaceAll('_', ' ')} · {payment.payment_reference || payment.payment_details || 'No reference'} · {currency(payment.amount, currencyCode)}</li>
+              ))}
+            </ul>
+          ) : null}
         </div>
 
         <div>

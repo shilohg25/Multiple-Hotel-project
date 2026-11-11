@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { shouldReleaseHoldOnReject } from './payment-reject.ts';
 import {
   guestCountAllowed,
   isPastCheckIn,
@@ -7,6 +8,7 @@ import {
   paymentWithinStay,
   publicFormHold,
   quotePublicStay,
+  staffBookingPayment,
   stayNights,
   walkInDeskStay
 } from './public-quote.ts';
@@ -130,6 +132,29 @@ describe('public stay quote', () => {
     assert.deepEqual(walkInDeskStay({ bookingSource: 'walk_in', deskPayment: 2500, downpaymentRequired: 2500 }), { ok: true, status: 'secured' });
     assert.equal(walkInDeskStay({ bookingSource: 'walk_in', deskPayment: 100, downpaymentRequired: 2500 }).ok, false);
     assert.equal(walkInDeskStay({ bookingSource: 'facebook', deskPayment: 2500, downpaymentRequired: 2500 }).ok, false);
+  });
+
+  it('requires a covering payment for OTA, LGU, and company stays, and a reject frees the room', () => {
+    const stay = { downpaymentRequired: 2500, stayTotal: 5000 };
+    for (const source of ['agoda', 'booking_dot_com', 'expedia', 'trip_dot_com', 'lgu', 'company']) {
+      const kind = source === 'lgu' || source === 'company' ? 'invoice' : 'ota_prepaid';
+      const named = { bookingSource: source, ...stay, paymentKind: kind, reference: 'REF-1', otaName: source, canConfirm: false };
+      assert.equal(staffBookingPayment({ ...named, amount: 0 }).ok, false);
+      assert.equal(staffBookingPayment({ ...named, amount: 1000 }).ok, false);
+      const accepted = staffBookingPayment({ ...named, amount: 2500 });
+      assert.equal(accepted.ok, true);
+      if (accepted.ok) {
+        assert.equal(accepted.reservationStatus, 'payment_submitted');
+        assert.equal(accepted.paymentStatus, 'submitted');
+        assert.equal(shouldReleaseHoldOnReject({
+          reservationStatus: accepted.reservationStatus,
+          otherPaymentStatuses: []
+        }), true);
+      }
+      assert.equal(staffBookingPayment({ ...named, amount: 5001 }).ok, false);
+      const manager = staffBookingPayment({ ...named, amount: 2500, canConfirm: true });
+      assert.equal(manager.ok && manager.reservationStatus, 'secured');
+    }
   });
 
   it('bills a Tagosilangan extra bed once and does not add breakfast again', () => {

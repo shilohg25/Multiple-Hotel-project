@@ -27,6 +27,9 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
   const [guestCount, setGuestCount] = useState(1);
   const [withBreakfast, setWithBreakfast] = useState(true);
   const [bookingSource, setBookingSource] = useState('walk_in');
+  const [paymentKind, setPaymentKind] = useState('desk_cash');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [otaName, setOtaName] = useState('');
   const [deskPayment, setDeskPayment] = useState('');
   const [surcharge, setSurcharge] = useState('0');
   const [manualDownpayment, setManualDownpayment] = useState('0');
@@ -111,12 +114,25 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
       setMessage('Choose a hotel and room before saving the reservation.');
       return;
     }
-    if (bookingSource !== 'walk_in') {
-      setMessage('Pencil bookings are not allowed. Only a walk-in paid at the desk can be saved here.');
+    const paid = Number(deskPayment || 0);
+    if (!['walk_in', 'booking_dot_com', 'trip_dot_com', 'agoda', 'expedia', 'lgu', 'company'].includes(bookingSource)) {
+      setMessage('Pencil bookings are not allowed. This source needs a payment record before the room is held.');
       return;
     }
-    if (Number(deskPayment || 0) + 0.001 < downpayment) {
-      setMessage('A room cannot be held without payment. The desk amount must cover the down payment.');
+    if (paid + 0.001 < downpayment) {
+      setMessage('A room cannot be held without a payment that covers the down payment.');
+      return;
+    }
+    if (paid > stayTotal + 0.001) {
+      setMessage('The payment cannot be more than the stay total.');
+      return;
+    }
+    if (bookingSource !== 'walk_in' && !paymentReference.trim()) {
+      setMessage(paymentKind === 'invoice' ? 'An invoice or PO number is required.' : 'A reference number is required.');
+      return;
+    }
+    if (paymentKind === 'ota_prepaid' && bookingSource !== 'walk_in' && !otaName.trim()) {
+      setMessage('The OTA name is required.');
       return;
     }
 
@@ -130,7 +146,10 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
     form.set('posted_room_rate', String(quote?.nightlyRate || selectedRoom.base_rate));
     form.set('total_amount', String((quote?.roomTotal || 0) + surchargeAmount));
     form.set('downpayment_required', String(downpayment));
-    form.set('booking_source', 'walk_in');
+    form.set('booking_source', bookingSource);
+    form.set('payment_kind', bookingSource === 'walk_in' ? 'desk_cash' : paymentKind);
+    form.set('payment_reference', paymentReference);
+    form.set('ota_name', otaName);
     form.set('desk_payment', String(Number(deskPayment || 0)));
     form.set('surcharge_amount', String(Number(surcharge || 0)));
     const payload = Object.fromEntries(form.entries());
@@ -228,16 +247,30 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
       </div>
       <div className="space-y-2">
         <label>Booking source</label>
-        <select name="booking_source" className="w-full" value={bookingSource} onChange={(event) => setBookingSource(event.target.value)}>
+        <select name="booking_source" className="w-full" value={bookingSource} onChange={(event) => {
+          const next = event.target.value;
+          setBookingSource(next);
+          if (next === 'walk_in') setPaymentKind('desk_cash');
+          else if (next === 'lgu' || next === 'company') setPaymentKind('invoice');
+          else setPaymentKind('ota_prepaid');
+          if (next === 'booking_dot_com') setOtaName('Booking.com');
+          else if (next === 'trip_dot_com') setOtaName('Trip.com');
+          else if (next === 'agoda') setOtaName('Agoda');
+          else if (next === 'expedia') setOtaName('Expedia');
+        }}>
           <option value="walk_in">Walk-in</option>
-          <option value="facebook">Facebook</option>
-          <option value="phone">Phone</option>
           <option value="booking_dot_com">Booking.com</option>
           <option value="trip_dot_com">Trip.com</option>
+          <option value="agoda">Agoda</option>
+          <option value="expedia">Expedia</option>
+          <option value="lgu">LGU</option>
+          <option value="company">Company</option>
+          <option value="facebook">Facebook</option>
+          <option value="phone">Phone</option>
           <option value="online">Online booking form</option>
           <option value="other">Other</option>
         </select>
-        {bookingSource !== 'walk_in' ? <p className="text-sm text-red-700">Pencil bookings are not allowed. Only a walk-in paid at the desk can be saved here.</p> : null}
+        {!['walk_in', 'booking_dot_com', 'trip_dot_com', 'agoda', 'expedia', 'lgu', 'company'].includes(bookingSource) ? <p className="text-sm text-red-700">Pencil bookings are not allowed. This source needs a payment record before the room is held.</p> : null}
       </div>
 
       <div className="space-y-2">
@@ -265,10 +298,31 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
           <p className="rounded-md bg-slate-50 px-3 py-2 text-sm">Room only</p>
         )}
       </div>
+      {bookingSource !== 'walk_in' && ['booking_dot_com', 'trip_dot_com', 'agoda', 'expedia', 'lgu', 'company'].includes(bookingSource) ? (
+        <div className="space-y-2">
+          <label>How it was paid</label>
+          <select className="w-full" value={paymentKind} onChange={(event) => setPaymentKind(event.target.value)}>
+            {bookingSource === 'lgu' || bookingSource === 'company' ? <option value="invoice">Invoice or PO</option> : <option value="ota_prepaid">OTA prepaid</option>}
+            <option value="bank_transfer">Bank transfer</option>
+          </select>
+        </div>
+      ) : null}
+      {paymentKind === 'ota_prepaid' && bookingSource !== 'walk_in' ? (
+        <div className="space-y-2">
+          <label>OTA name</label>
+          <input className="w-full" value={otaName} onChange={(event) => setOtaName(event.target.value)} />
+        </div>
+      ) : null}
+      {bookingSource !== 'walk_in' && ['booking_dot_com', 'trip_dot_com', 'agoda', 'expedia', 'lgu', 'company'].includes(bookingSource) ? (
+        <div className="space-y-2">
+          <label>{paymentKind === 'invoice' ? 'Invoice or PO number' : 'Reference number'}</label>
+          <input className="w-full" value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} />
+        </div>
+      ) : null}
       <div className="space-y-2">
-        <label>Amount paid at the desk</label>
-        <input name="desk_payment" type="number" min="0" step="0.01" value={deskPayment} onChange={(event) => setDeskPayment(event.target.value)} className="w-full" />
-        <p className="text-sm text-slate-600">Must cover the down payment of {currency(downpayment, hotel.default_currency)}. The room is held only after this cash is recorded.</p>
+        <label>{bookingSource === 'walk_in' ? 'Amount paid at the desk' : 'Payment amount'}</label>
+        <input name="desk_payment" type="number" min="0" step="0.01" max={stayTotal || undefined} value={deskPayment} onChange={(event) => setDeskPayment(event.target.value)} className="w-full" />
+        <p className="text-sm text-slate-600">Must cover the down payment of {currency(downpayment, hotel.default_currency)} and cannot exceed the stay total. The room is held only after this payment is saved.</p>
       </div>
       <div className="space-y-2">
         <label>Surcharge label</label>
@@ -297,11 +351,11 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
           <div><p className="text-xs text-slate-500">Stay total</p><p className="font-bold">{currency(stayTotal, hotel.default_currency)}</p></div>
           <div><p className="text-xs text-slate-500">Required down payment</p><p className="font-bold">{currency(downpayment, hotel.default_currency)}</p></div>
         </div>
-        <p className="mt-3 text-xs text-slate-500">Down payment rule: {downpaymentLabel(hotel.downpayment_type)}. A paid walk-in is saved as secured. A stay without payment does not hold the room.</p>
+        <p className="mt-3 text-xs text-slate-500">Down payment rule: {downpaymentLabel(hotel.downpayment_type)}. A paid walk-in is secured. OTA, LGU, and company payments hold the room once saved. A manager confirms a payment entered by front desk.</p>
       </div>
 
       <div className="lg:col-span-2">
-        <button className="btn-primary" disabled={loading || bookingSource !== 'walk_in'} type="submit">{loading ? 'Saving...' : 'Save paid walk-in'}</button>
+        <button className="btn-primary" disabled={loading || !['walk_in', 'booking_dot_com', 'trip_dot_com', 'agoda', 'expedia', 'lgu', 'company'].includes(bookingSource)} type="submit">{loading ? 'Saving...' : 'Save with payment'}</button>
         {offlineDraft ? (
           <button className="btn-secondary ml-2" disabled={loading} type="button" onClick={() => void saveOfflineDraft()}>
             Save offline draft

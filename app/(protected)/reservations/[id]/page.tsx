@@ -227,6 +227,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
         expectedExtraBedLine={folio.expectedExtraBedLine}
         confirmedPaymentsTotal={confirmedTotal}
         charges={charges}
+        payments={payments}
         serviceItems={serviceItems}
         canAdd={canAddReservationCharges(staff.profile)}
         canManage={canManageReservationCharges(staff.profile)}

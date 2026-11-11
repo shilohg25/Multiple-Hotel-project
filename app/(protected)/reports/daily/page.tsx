@@ -89,7 +89,7 @@ export default async function DailyReportPage({ searchParams }: { searchParams?:
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <tbody className="divide-y divide-slate-100">
-                {report.confirmedPayments.map((payment) => <tr key={payment.id}><td className="px-5 py-3">{payment.reservation_id.slice(0, 8).toUpperCase()}</td><td>{payment.method.replaceAll('_', ' ')}</td><td className="font-semibold">{currency(payment.amount, report.hotel.default_currency)}</td></tr>)}
+                {report.confirmedPayments.map((payment) => <tr key={payment.id}><td className="px-5 py-3">{payment.reservation_id.slice(0, 8).toUpperCase()}</td><td>{payment.method.replaceAll('_', ' ')}</td><td>{payment.payment_reference || payment.payment_details || '-'}</td><td className="font-semibold">{currency(payment.amount, report.hotel.default_currency)}</td></tr>)}
                 {!report.confirmedPayments.length ? <tr><td className="px-5 py-6 text-slate-500">No confirmed payments today.</td></tr> : null}
               </tbody>
             </table>
