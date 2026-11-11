@@ -4,6 +4,7 @@ import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { AUTO_BREAKFAST_REMOVED_ACTION, AUTO_POST_SOURCE, BREAKFAST_TURN_OFF_BLOCKED, autoChargeRemovedFromRead, breakfastTurnOffBlocked, isAutoPostedCharge, shouldPostAutoStayCharge } from '@/lib/breakfast-toggle';
 import { priceStay } from '@/lib/hotel-pricing';
 import { isRoomOverlapError, ROOM_JUST_TAKEN } from '@/lib/room-overlap';
+import { decideCompanyBillLater, readToBeBilled } from '@/lib/public-quote';
 import { decideReservationUpdate, RESERVATION_MONEY_FIELDS, type MoneyField, type PolicyStatus } from '@/lib/reservation-policy';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
@@ -23,6 +24,48 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     .single();
   if (currentError || !currentRaw) return jsonError('Reservation not found.', 404);
   if (!canAccessHotel(staff.profile, currentRaw.hotel_id)) return jsonError('Hotel access denied.', 403);
+
+  if (payload.bill_company_later === true || payload.bill_company_later === 'true') {
+    const when = new Date().toISOString();
+    const approved = decideCompanyBillLater({
+      role: staff.profile.role,
+      bookingSource: String(currentRaw.booking_source || ''),
+      reference: payload.billing_reference || payload.payment_reference,
+      actorId: staff.userId,
+      hotelId: currentRaw.hotel_id,
+      reservationId: id,
+      when
+    });
+    if (!approved.ok) return jsonError(approved.error, approved.status);
+    if (['cancelled', 'checked_out', 'no_show'].includes(currentRaw.status)) {
+      return jsonError('This stay can no longer be marked to be billed.');
+    }
+    if (readToBeBilled(currentRaw.mode_of_payment)) {
+      return jsonError('This company stay is already marked to be billed.');
+    }
+    const nextStatus = currentRaw.status === 'checked_in' ? currentRaw.status : 'secured';
+    const { error: billError } = await supabaseAdmin.from('reservations').update({
+      mode_of_payment: approved.modeOfPayment,
+      downpayment_required: 0,
+      status: nextStatus
+    }).eq('id', id);
+    if (billError) return jsonError(billError.message, 400);
+    const { error: approvalError } = await supabaseAdmin.from('audit_logs').insert(approved.audit);
+    if (approvalError) {
+      console.error(approvalError);
+      await supabaseAdmin.from('reservations').update({
+        mode_of_payment: currentRaw.mode_of_payment,
+        downpayment_required: currentRaw.downpayment_required,
+        status: currentRaw.status
+      }).eq('id', id);
+      return jsonError('The approval could not be recorded. The stay was not marked to be billed.', 500);
+    }
+    return NextResponse.json({ reservation: { id, mode_of_payment: approved.modeOfPayment, status: nextStatus } });
+  }
+
+  if (readToBeBilled(payload.mode_of_payment)) {
+    return jsonError('A company stay is marked to be billed only with a manager approval.', 403);
+  }
 
   const frontline = staff.profile.role === 'front_desk' || staff.profile.role === 'cashier' || staff.profile.role === 'restaurant_staff';
   if (frontline) {

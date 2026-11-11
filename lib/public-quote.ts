@@ -147,6 +147,71 @@ export function canCreateToBeBilledStay(role: string): boolean {
   return role === 'front_desk' || role === 'owner' || role === 'manager';
 }
 
+/** A manager or the owner may waive the company deposit. Front desk cannot. */
+export function canApproveCompanyBillLater(role: string): boolean {
+  return role === 'owner' || role === 'manager';
+}
+
+export const COMPANY_BILL_LATER_ACTION = 'reservation.company_to_be_billed';
+
+export type CompanyBillLaterAudit = {
+  hotel_id: string;
+  reservation_id: string;
+  actor_id: string;
+  action: typeof COMPANY_BILL_LATER_ACTION;
+  details: {
+    approved_by: string;
+    approved_at: string;
+    reference: string;
+    booking_source: 'company';
+  };
+};
+
+/** Server rule for marking a company stay to be billed. Front desk is refused even if the UI hid the control. */
+export function decideCompanyBillLater(input: {
+  role: string;
+  bookingSource: string;
+  reference?: string | null;
+  actorId: string;
+  hotelId: string;
+  reservationId: string;
+  when: string;
+}): { ok: false; status: number; error: string } | {
+  ok: true;
+  modeOfPayment: string;
+  downpaymentRequired: 0;
+  reservationStatus: 'secured';
+  audit: CompanyBillLaterAudit;
+} {
+  if (String(input.bookingSource || '') !== 'company') {
+    return { ok: false, status: 400, error: 'Only a company stay can be marked to be billed.' };
+  }
+  if (!canApproveCompanyBillLater(input.role)) {
+    return { ok: false, status: 403, error: 'Front desk cannot skip the deposit on a company stay.' };
+  }
+  const reference = String(input.reference || '').trim();
+  if (!reference) return { ok: false, status: 400, error: 'An invoice or PO number is required.' };
+  const when = String(input.when || '').trim();
+  return {
+    ok: true,
+    modeOfPayment: toBeBilledMode(reference),
+    downpaymentRequired: 0,
+    reservationStatus: 'secured',
+    audit: {
+      hotel_id: input.hotelId,
+      reservation_id: input.reservationId,
+      actor_id: input.actorId,
+      action: COMPANY_BILL_LATER_ACTION,
+      details: {
+        approved_by: input.actorId,
+        approved_at: when,
+        reference,
+        booking_source: 'company'
+      }
+    }
+  };
+}
+
 /** Stored on reservations.mode_of_payment. Payments cannot be 0, so this marker holds the room without a payment row. */
 export const TO_BE_BILLED_PREFIX = 'to_be_billed:';
 
@@ -178,6 +243,8 @@ export type StaffPaymentDecision = {
   modeOfPayment: string | null;
   /** Cash in the drawer. OTA prepaid and a bill-later stay are never desk cash. */
   countsAsDeskCash: boolean;
+  /** A manager or owner waived the company deposit. The save must write the audit row. */
+  companyBillLater: boolean;
 };
 
 function sameMoney(left: number, right: number): boolean {
@@ -201,6 +268,8 @@ export function staffBookingPayment(input: {
   reference?: string;
   otaName?: string;
   canConfirm: boolean;
+  role?: string;
+  billCompanyLater?: boolean;
 }): StaffPaymentDecision | { ok: false; error: string } {
   const source = String(input.bookingSource || '');
   const kind = String(input.paymentKind || (source === 'walk_in' ? 'desk_cash' : '')) as StaffPaymentKind;
@@ -223,6 +292,33 @@ export function staffBookingPayment(input: {
   }
   const fullPrepaid = kind === 'ota_prepaid' && (FULL_PREPAID_OTA_SOURCES as readonly string[]).includes(source);
   const billLater = kind === 'invoice' && (BILL_LATER_SOURCES as readonly string[]).includes(source);
+  if (source === 'company' && input.billCompanyLater) {
+    const approved = decideCompanyBillLater({
+      role: String(input.role || ''),
+      bookingSource: source,
+      reference,
+      actorId: 'pending',
+      hotelId: 'pending',
+      reservationId: 'pending',
+      when: 'pending'
+    });
+    if (!approved.ok) return { ok: false, error: approved.error };
+    if (amount > 0.009) return { ok: false, error: 'A company stay marked to be billed has no deposit.' };
+    return {
+      ok: true,
+      reservationStatus: 'secured',
+      paymentStatus: 'submitted',
+      method: 'other',
+      details: `To be billed ${reference}`,
+      reference,
+      proofPath: 'staff/no-proof',
+      recordPayment: false,
+      writeLedger: false,
+      modeOfPayment: approved.modeOfPayment,
+      countsAsDeskCash: false,
+      companyBillLater: true
+    };
+  }
   if ((kind === 'ota_prepaid' || kind === 'bank_transfer' || kind === 'invoice') && !reference) {
     return { ok: false, error: kind === 'invoice' ? 'An invoice or billing reference is required.' : 'A reference number is required.' };
   }
@@ -240,7 +336,8 @@ export function staffBookingPayment(input: {
       recordPayment: false,
       writeLedger: false,
       modeOfPayment: toBeBilledMode(reference),
-      countsAsDeskCash: false
+      countsAsDeskCash: false,
+      companyBillLater: false
     };
   }
   if (!(amount > 0)) return { ok: false, error: 'A room cannot be held without a payment record.' };
@@ -289,7 +386,8 @@ export function staffBookingPayment(input: {
     recordPayment: true,
     writeLedger: paymentStatus === 'confirmed',
     modeOfPayment: null,
-    countsAsDeskCash: method === 'cash'
+    countsAsDeskCash: method === 'cash',
+    companyBillLater: false
   };
 }
 

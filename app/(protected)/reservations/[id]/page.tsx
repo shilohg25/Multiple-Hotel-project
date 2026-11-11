@@ -221,6 +221,8 @@ export default async function ReservationDetailPage({ params }: { params: Promis
         withBreakfast={Boolean(reservation.with_breakfast)}
         breakfastCharged={charges.some((charge) => isAutoBreakfastCharge(charge))}
         role={staff.profile.role}
+        bookingSource={reservation.booking_source}
+        toBeBilled={Boolean(billed)}
       />
 
       <ReservationFolio

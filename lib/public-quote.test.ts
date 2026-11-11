@@ -6,6 +6,8 @@ import { expectedCashFromLedger } from './expected-cash.ts';
 import { shouldReleaseHoldOnReject } from './payment-reject.ts';
 import {
   canCreateToBeBilledStay,
+  COMPANY_BILL_LATER_ACTION,
+  decideCompanyBillLater,
   clampGuestCount,
   guestCountAllowed,
   HOLDING_STATUSES,
@@ -251,6 +253,81 @@ describe('public stay quote', () => {
         }
       }
     }
+  });
+
+  it('blocks front desk from skipping a company deposit and audits a manager approval', () => {
+    const stay = { downpaymentRequired: 2500, stayTotal: 5000, paymentKind: 'invoice', bookingSource: 'company' };
+    const frontDesk = staffBookingPayment({
+      ...stay,
+      amount: 0,
+      reference: 'PO-1',
+      canConfirm: false,
+      role: 'front_desk',
+      billCompanyLater: true
+    });
+    assert.equal(frontDesk.ok, false);
+    if (!frontDesk.ok) {
+      assert.match(frontDesk.error, /Front desk cannot skip the deposit/);
+    }
+    const missing = decideCompanyBillLater({
+      role: 'manager',
+      bookingSource: 'company',
+      reference: ' ',
+      actorId: 'manager-1',
+      hotelId: 'hotel',
+      reservationId: 'stay',
+      when: '2026-11-11T01:00:00.000Z'
+    });
+    assert.equal(missing.ok, false);
+    if (!missing.ok) {
+      assert.equal(missing.status, 400);
+      assert.match(missing.error, /invoice or PO/);
+    }
+    const approved = decideCompanyBillLater({
+      role: 'manager',
+      bookingSource: 'company',
+      reference: 'PO-9',
+      actorId: 'manager-1',
+      hotelId: 'hotel',
+      reservationId: 'stay',
+      when: '2026-11-11T01:00:00.000Z'
+    });
+    assert.equal(approved.ok, true);
+    if (approved.ok) {
+      assert.equal(approved.modeOfPayment, 'to_be_billed:PO-9');
+      assert.equal(approved.downpaymentRequired, 0);
+      assert.equal(approved.audit.action, COMPANY_BILL_LATER_ACTION);
+      assert.equal(approved.audit.actor_id, 'manager-1');
+      assert.equal(approved.audit.hotel_id, 'hotel');
+      assert.equal(approved.audit.reservation_id, 'stay');
+      assert.equal(approved.audit.details.approved_by, 'manager-1');
+      assert.equal(approved.audit.details.approved_at, '2026-11-11T01:00:00.000Z');
+      assert.equal(approved.audit.details.reference, 'PO-9');
+    }
+    const created = staffBookingPayment({
+      ...stay,
+      amount: 0,
+      reference: 'PO-9',
+      canConfirm: true,
+      role: 'manager',
+      billCompanyLater: true
+    });
+    assert.equal(created.ok, true);
+    if (created.ok) {
+      assert.equal(created.companyBillLater, true);
+      assert.equal(created.recordPayment, false);
+      assert.equal(created.writeLedger, false);
+      assert.equal(created.reservationStatus, 'secured');
+    }
+    const stillHalf = staffBookingPayment({
+      ...stay,
+      amount: 1000,
+      reference: 'PO-9',
+      canConfirm: true,
+      role: 'manager',
+      billCompanyLater: false
+    });
+    assert.equal(stillHalf.ok, false);
   });
 
   it('lets front desk hold an LGU stay with nothing paid and no ledger row', () => {

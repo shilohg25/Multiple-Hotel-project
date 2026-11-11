@@ -4,7 +4,7 @@ import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { businessToday } from '@/lib/date';
 import { calculateDownpayment } from '@/lib/downpayment';
 import { confirmedPaymentLedgerRow } from '@/lib/confirmed-payment-ledger';
-import { canCreateToBeBilledStay, guestCountAllowed, quotePublicStay, staffBookingPayment } from '@/lib/public-quote';
+import { canApproveCompanyBillLater, canCreateToBeBilledStay, decideCompanyBillLater, guestCountAllowed, quotePublicStay, staffBookingPayment } from '@/lib/public-quote';
 import { undoStayPieces } from '@/lib/undo-stay';
 import { ROOM_JUST_TAKEN } from '@/lib/room-overlap';
 import { supabaseAdmin } from '@/lib/supabase-admin';
@@ -80,10 +80,15 @@ export async function POST(request: Request) {
     paymentKind: String(payload.payment_kind || (bookingSource === 'walk_in' ? 'desk_cash' : '')),
     reference: String(payload.payment_reference || ''),
     otaName: String(payload.ota_name || ''),
-    canConfirm: staff.profile.role === 'owner' || staff.profile.role === 'manager'
+    canConfirm: staff.profile.role === 'owner' || staff.profile.role === 'manager',
+    role: staff.profile.role,
+    billCompanyLater: payload.bill_company_later === true || payload.bill_company_later === 'true'
   });
   if (!paid.ok) return jsonError(paid.error);
-  if (paid.modeOfPayment && !canCreateToBeBilledStay(staff.profile.role)) {
+  if (paid.companyBillLater && !canApproveCompanyBillLater(staff.profile.role)) {
+    return jsonError('Front desk cannot skip the deposit on a company stay.', 403);
+  }
+  if (paid.modeOfPayment && !paid.companyBillLater && !canCreateToBeBilledStay(staff.profile.role)) {
     return jsonError('Front desk can save an LGU stay to be billed.', 403);
   }
 
@@ -182,6 +187,28 @@ export async function POST(request: Request) {
     serverId: reservationRaw.id,
     createdBy: staff.userId
   });
+
+  if (paid.companyBillLater) {
+    const approved = decideCompanyBillLater({
+      role: staff.profile.role,
+      bookingSource,
+      reference: paid.reference,
+      actorId: staff.userId,
+      hotelId,
+      reservationId: reservationRaw.id,
+      when: new Date().toISOString()
+    });
+    if (!approved.ok) {
+      const undone = await undoStayPieces({ reservationId: reservationRaw.id, guestId: guestRaw.id });
+      return jsonError(undone.roomHeld ? undone.message : `${approved.error} ${undone.message}`, approved.status);
+    }
+    const { error: approvalError } = await supabaseAdmin.from('audit_logs').insert(approved.audit);
+    if (approvalError) {
+      console.error(approvalError);
+      const undone = await undoStayPieces({ reservationId: reservationRaw.id, guestId: guestRaw.id });
+      return jsonError(undone.roomHeld ? undone.message : `The approval could not be recorded. ${undone.message}`, 500);
+    }
+  }
 
   await supabaseAdmin.from('audit_logs').insert({
     hotel_id: hotelId,

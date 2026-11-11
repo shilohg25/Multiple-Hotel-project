@@ -14,7 +14,9 @@ export function ReservationActions({
   downpaymentRequired,
   withBreakfast,
   breakfastCharged,
-  role
+  role,
+  bookingSource = '',
+  toBeBilled = false
 }: {
   reservationId: string;
   status: ReservationStatus;
@@ -25,6 +27,8 @@ export function ReservationActions({
   withBreakfast: boolean;
   breakfastCharged: boolean;
   role: Role;
+  bookingSource?: string;
+  toBeBilled?: boolean;
 }) {
   const router = useRouter();
   const [reason, setReason] = useState('');
@@ -93,6 +97,19 @@ export function ReservationActions({
             void save({ status: 'checked_in', reason: nextReason });
           }}>
             Check in
+          </button>
+        ) : null}
+        {manager && bookingSource === 'company' && !toBeBilled && status !== 'cancelled' && status !== 'checked_out' && status !== 'no_show' ? (
+          <button className="btn-secondary" type="button" disabled={loading} onClick={() => {
+            const reference = window.prompt('Invoice or PO number for billing this company stay');
+            if (reference === null) return;
+            if (!reference.trim()) {
+              setMessage('An invoice or PO number is required.');
+              return;
+            }
+            void save({ bill_company_later: true, billing_reference: reference.trim() });
+          }}>
+            Mark to be billed
           </button>
         ) : null}
         {status === 'checked_in' ? (
