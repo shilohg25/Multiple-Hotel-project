@@ -14,7 +14,7 @@ export function allows(role: string | null | undefined, capability: Capability):
   return false;
 }
 
-const DAILY_EXACT = new Set(['/today', '/sales', '/offline', '/reservations/new']);
+const DAILY_EXACT = new Set(['/today', '/sales', '/offline', '/reservations/new', '/help']);
 
 /** Path only, without a host, query, or trailing slash. */
 export function normalizePathname(value: string | null | undefined): string {

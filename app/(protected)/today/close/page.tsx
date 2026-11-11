@@ -5,6 +5,7 @@ import { businessToday } from '@/lib/date';
 import { figuresFromLedger, type LedgerLike } from '@/lib/day-close';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { DayCloseForm } from '@/components/DayCloseForm';
+import { HelpPanel } from '@/components/HelpPanel';
 import type { Hotel, Outlet } from '@/types/app';
 
 type SearchParams = { hotel?: string; outlet?: string; date?: string };
@@ -48,10 +49,12 @@ export default async function CloseDayPage({ searchParams }: { searchParams?: Pr
         <div>
           <h1 className="text-3xl font-black tracking-tight">Close the day</h1>
           <p className="mt-1 text-slate-600">{outlet?.name || hotel.name} · {date}. Front desk fills this in. A manager locks it.</p>
+          <p className="mt-1 text-sm text-slate-500">Count the float and the deposit cash in two boxes. If the list of staff is empty, an owner still needs to add profiles.</p>
         </div>
         <div className="flex gap-2">
           <Link href={`/today?hotel=${hotel.id}&date=${date}${outletId ? `&outlet=${outletId}` : ''}`} className="btn-secondary">Back to today</Link>
           <Link href={`/print/reports/day-close?hotel=${hotel.id}&date=${date}${outletId ? `&outlet=${outletId}` : ''}`} className="btn-secondary">Print</Link>
+          <HelpPanel screen="close" />
         </div>
       </div>
       <DayCloseForm

@@ -4,6 +4,7 @@ import { businessToday } from '@/lib/date';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { roomStatus, type StaySlice } from '@/lib/today-board';
 import { StayActionLinks } from '@/components/StayActionLinks';
+import { HelpPanel } from '@/components/HelpPanel';
 import type { Hotel, Outlet, Room } from '@/types/app';
 
 type SearchParams = { hotel?: string; outlet?: string; date?: string };
@@ -63,6 +64,7 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
         <div>
           <h1 className="text-3xl font-black tracking-tight">Today</h1>
           <p className="mt-1 text-slate-600">{outlet ? outlet.name : hotel.name} · {date}. Same daily steps for Navarro, Sotera, Tagosilangan, and Tago Resto.</p>
+          <p className="mt-1 text-sm text-slate-500">Empty lists are normal. If nobody is arriving, check who is in house and who is leaving.</p>
         </div>
         <form className="flex flex-wrap gap-2" method="get">
           <select name="hotel" defaultValue={hotel.id} className="min-w-40">
@@ -74,6 +76,7 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
           </select>
           <input name="date" type="date" defaultValue={date} />
           <button className="btn-secondary" type="submit">Show</button>
+          <HelpPanel screen="today" />
         </form>
       </div>
 
