@@ -21,6 +21,8 @@ export type Hotel = {
   house_rules: string;
   booking_terms: string;
   timezone?: string | null;
+  legal_name?: string | null;
+  is_reporting_unit?: boolean;
   active: boolean;
 };
 
@@ -195,6 +197,8 @@ export type Outlet = {
   name: string;
   slug: string;
   outlet_type: 'hotel' | 'restaurant' | 'other' | string;
+  legal_name?: string | null;
+  is_reporting_unit?: boolean;
   active: boolean;
   created_at: string;
   updated_at: string;

@@ -19,8 +19,11 @@ These three `0002_*.sql` files overlap. The live database has no `supabase_migra
 | Order | Apply | Rollback |
 |---|---|---|
 | 1 | `supabase/migrations/20261110000200_hotel_timezone.sql` | `supabase/rollbacks/20261110000200_hotel_timezone.rollback.sql` |
+| 2 | `supabase/migrations/20261110011100_reporting_units.sql` | `supabase/rollbacks/20261110011100_reporting_units.rollback.sql` |
 
 `20261110000200_hotel_timezone.sql` only adds `hotels.timezone` (default `Asia/Manila`). It does not depend on which `0002` file was used.
+
+`20261110011100_reporting_units.sql` adds legal names and a reporting-unit flag. It inserts Sotera Café and Tago Resto. It does not rename older restaurant outlets. It needs the `outlets` table from the folio `0002`.
 
 ## Test data
 

@@ -1,13 +1,15 @@
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { requireStaff, canAccessHotel } from '@/lib/auth';
 import { HotelManager, type HotelRoomCount } from '@/components/HotelManager';
-import type { Hotel, Room } from '@/types/app';
+import { ReportingUnitsManager } from '@/components/ReportingUnitsManager';
+import type { Hotel, Outlet, Room } from '@/types/app';
 
 export default async function HotelsPage() {
   const staff = await requireStaff();
-  const [{ data }, { data: roomsRaw }] = await Promise.all([
+  const [{ data }, { data: roomsRaw }, { data: outletsRaw }] = await Promise.all([
     supabaseAdmin.from('hotels').select('*').order('name'),
-    supabaseAdmin.from('rooms').select('id, hotel_id, active')
+    supabaseAdmin.from('rooms').select('id, hotel_id, active'),
+    supabaseAdmin.from('outlets').select('*').order('name')
   ]);
   const hotels = ((data || []) as Hotel[]).filter((hotel) => canAccessHotel(staff.profile, hotel.id));
   const hotelIds = new Set(hotels.map((hotel) => hotel.id));
@@ -32,6 +34,7 @@ export default async function HotelsPage() {
         <p className="mt-1 text-slate-500">Add and manage hotels, rental properties, and the rooms/units they can book.</p>
       </div>
       <HotelManager hotels={hotels} roomCounts={roomCounts} role={staff.profile.role} />
+      <ReportingUnitsManager hotels={hotels} outlets={(outletsRaw || []) as Outlet[]} role={staff.profile.role} />
     </div>
   );
 }

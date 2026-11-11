@@ -95,6 +95,7 @@ export function HotelManager({
                     </p>
                     <p className="mt-1 text-sm text-slate-500">{hotel.address || 'Address not set'} - {hotel.contact_phone || 'Phone not set'}</p>
                     <p className="mt-1 text-sm text-slate-500">Business timezone: {hotel.timezone || DEFAULT_BUSINESS_TIMEZONE}</p>
+                    <p className="mt-1 text-sm text-slate-500">Legal name: {hotel.legal_name || 'Not set'}</p>
                     <p className="mt-2 text-sm font-semibold text-slate-700">
                       Rooms / Units: {counts.active} active, {counts.inactive} inactive, {counts.total} total
                     </p>
@@ -135,6 +136,10 @@ export function HotelManager({
               <input name="slug" placeholder="example-hotel" value={slug} onChange={(event) => setSlug(event.target.value)} className="w-full" />
               <p className="text-xs text-slate-500">Leave blank to auto-create from hotel name. Slug is used in the public booking URL.</p>
               <p className="text-xs font-semibold text-slate-600">Public booking URL: /book/{previewSlug || 'hotel-slug'}</p>
+            </div>
+            <div className="space-y-2">
+              <label>Legal name <span className="text-slate-400">optional</span></label>
+              <input name="legal_name" className="w-full" placeholder="Example: NAVSOT Corp" />
             </div>
             <div className="space-y-2">
               <label>Business timezone</label>
