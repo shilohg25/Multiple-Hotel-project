@@ -1,5 +1,35 @@
 export type Role = 'owner' | 'manager' | 'front_desk';
 
+export type RoomType = {
+  id: string;
+  hotel_id: string;
+  name: string;
+  description: string | null;
+  base_rate: number;
+  capacity: number;
+  active: boolean;
+};
+
+export type ChannelRate = {
+  id: string;
+  room_type_id: string;
+  channel: 'walk_in' | 'ota' | 'short_time' | string;
+  rate: number;
+};
+
+export type RateOverrideRequest = {
+  id: string;
+  hotel_id: string;
+  reservation_id: string | null;
+  room_type_id: string | null;
+  channel: string;
+  requested_rate: number;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected' | string;
+  review_note: string | null;
+  created_at: string;
+};
+
 export type DownpaymentType = 'percent' | 'fixed' | 'first_night' | 'manual';
 
 export type Hotel = {

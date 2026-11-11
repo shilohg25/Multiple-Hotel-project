@@ -106,6 +106,18 @@ values (
 )
 on conflict (id) do update set name = excluded.name, is_reporting_unit = true;
 
+do $$
+begin
+  if to_regclass('public.room_type_channel_rates') is not null then
+    insert into public.room_type_channel_rates (room_type_id, channel, rate)
+    values
+      ('11111111-1111-4111-8111-111111111201', 'walk_in', 2250),
+      ('11111111-1111-4111-8111-111111111201', 'ota', 2520),
+      ('11111111-1111-4111-8111-111111111201', 'short_time', 1500)
+    on conflict (room_type_id, channel) do nothing;
+  end if;
+end $$;
+
 insert into public.guests (id, full_name, email, phone, notes)
 values (
   '11111111-1111-4111-8111-111111111401',
