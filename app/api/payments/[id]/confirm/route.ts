@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { canAccessHotel, canManagePayments } from '@/lib/auth';
 import { businessToday } from '@/lib/date';
 import { jsonError, requireApiStaff } from '@/lib/api';
+import { reservationStatusAfterConfirm } from '@/lib/payment-confirm';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import type { Guest, Hotel, Reservation } from '@/types/app';
 
@@ -23,11 +24,15 @@ export async function PATCH(_request: Request, { params }: { params: Promise<{ i
   if (!canAccessHotel(staff.profile, reservation.hotel_id)) return jsonError('Hotel access denied.', 403);
   if (!payment.proof_path) return jsonError('Payment proof is mandatory before confirmation.');
 
-  const { error: updatePaymentError } = await supabaseAdmin
+  const { data: confirmedRow, error: updatePaymentError } = await supabaseAdmin
     .from('payments')
     .update({ status: 'confirmed', confirmed_at: new Date().toISOString(), confirmed_by: staff.userId })
-    .eq('id', id);
+    .eq('id', id)
+    .eq('status', 'submitted')
+    .select('id')
+    .maybeSingle();
   if (updatePaymentError) return jsonError(updatePaymentError.message, 400);
+  if (!confirmedRow) return jsonError('Payment is not awaiting confirmation.', 409);
 
   const { data: confirmedPayments, error: sumError } = await supabaseAdmin
     .from('payments')
@@ -38,11 +43,12 @@ export async function PATCH(_request: Request, { params }: { params: Promise<{ i
 
   const confirmedTotal = (confirmedPayments || []).reduce((sum: number, item: { amount: number | string | null }) => sum + Number(item.amount || 0), 0);
   let statusUpdated = false;
+  const nextStatus = reservationStatusAfterConfirm(reservation.status, confirmedTotal, Number(reservation.downpayment_required || 0));
 
-  if (confirmedTotal >= Number(reservation.downpayment_required || 0)) {
+  if (nextStatus) {
     const { error: reservationUpdateError } = await supabaseAdmin
       .from('reservations')
-      .update({ status: 'secured' })
+      .update({ status: nextStatus })
       .eq('id', reservation.id);
 
     if (reservationUpdateError) {
