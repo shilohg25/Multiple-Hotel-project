@@ -37,6 +37,18 @@ export function ReservationActions({
   const [loading, setLoading] = useState(false);
   const manager = role === 'owner' || role === 'manager';
 
+  function reasonFor(prompt: string): string | null {
+    const typed = reason.trim();
+    if (typed) return typed;
+    if (!manager) return '';
+    const entered = window.prompt(prompt);
+    if (entered === null) return null;
+    const next = entered.trim();
+    if (!next) return null;
+    setReason(next);
+    return next;
+  }
+
   async function save(body: Record<string, unknown>) {
     setMessage('');
     setLoading(true);
@@ -67,17 +79,31 @@ export function ReservationActions({
       {manager ? (
         <label className="block space-y-1">
           Reason
-          <textarea className="w-full" rows={2} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required when you change the rate, total, down payment, or status." />
+          <textarea className="w-full" rows={2} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Required to check in, check out, or change the rate, total, down payment, or status." />
         </label>
       ) : null}
       <div className="flex flex-wrap gap-2">
         {status !== 'checked_in' && status !== 'checked_out' && status !== 'cancelled' && status !== 'no_show' ? (
-          <button className="btn-primary" type="button" disabled={loading} onClick={() => save({ status: 'checked_in', reason })}>
+          <button className="btn-primary" type="button" disabled={loading} onClick={() => {
+            const nextReason = reasonFor('Why are you checking this guest in?');
+            if (nextReason === null) {
+              setMessage('A reason is required to check this guest in.');
+              return;
+            }
+            void save({ status: 'checked_in', reason: nextReason });
+          }}>
             Check in
           </button>
         ) : null}
         {status === 'checked_in' ? (
-          <button className="btn-primary" type="button" disabled={loading} onClick={() => save({ status: 'checked_out', reason })}>
+          <button className="btn-primary" type="button" disabled={loading} onClick={() => {
+            const nextReason = reasonFor('Why are you checking this guest out?');
+            if (nextReason === null) {
+              setMessage('A reason is required to check this guest out.');
+              return;
+            }
+            void save({ status: 'checked_out', reason: nextReason });
+          }}>
             Check out
           </button>
         ) : null}
@@ -91,13 +117,22 @@ export function ReservationActions({
               setMessage(BREAKFAST_TURN_OFF_BLOCKED);
               return;
             }
+            const needsReason = nextStatus !== status
+              || Number(rate) !== postedRoomRate
+              || Number(total) !== totalAmount
+              || Number(downpayment) !== downpaymentRequired;
+            const nextReason = needsReason ? reasonFor('Why are you changing this stay?') : reason.trim();
+            if (nextReason === null) {
+              setMessage('A reason is required when you change the rate, total, down payment, or status.');
+              return;
+            }
             save({
               status: nextStatus,
               posted_room_rate: Number(rate),
               total_amount: Number(total),
               downpayment_required: Number(downpayment),
               with_breakfast: breakfast,
-              reason
+              reason: nextReason
             });
           }}
         >

@@ -6,7 +6,7 @@ import { proofFileProblem } from '@/lib/guest-contact';
 import { currency } from '@/lib/money';
 import { roomAmountLabel, roomOnlyChoiceEnabled, stayPricingFor } from '@/lib/hotel-pricing';
 import { paymentAccountForHotel, paymentInstructionLines } from '@/lib/payment-instructions';
-import { publicFormHold, quotePublicStay } from '@/lib/public-quote';
+import { clampGuestCount, publicFormHold, quotePublicStay } from '@/lib/public-quote';
 
 type BookRoom = Room & { quoted_rate?: number };
 type Receipt = {
@@ -36,6 +36,8 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
   const [loading, setLoading] = useState(false);
 
   const room = useMemo(() => rooms.find((item) => item.id === roomId) || rooms[0], [rooms, roomId]);
+  const capacity = Math.max(1, Math.floor(Number(room?.capacity || 1)));
+  const guests = clampGuestCount(guestCount, capacity);
   const datesReady = Boolean(checkIn && checkOut && checkOut > checkIn);
   const nightly = Number(room?.quoted_rate ?? room?.base_rate ?? 0);
   const quote = datesReady && room
@@ -45,7 +47,7 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
       nightlyRate: nightly,
       checkIn,
       checkOut,
-      guestCount,
+      guestCount: guests,
       withBreakfast,
       downpaymentType: hotel.downpayment_type,
       defaultPercent: Number(hotel.default_downpayment_percent || 0),
@@ -60,8 +62,8 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
     datesReady,
     checkIn,
     today,
-    guestCount,
-    capacity: Number(room?.capacity || 0),
+    guestCount: guests,
+    capacity,
     nights: quote?.nights || 0,
     paidText: paymentAmount,
     stayTotal: quote?.total,
@@ -99,8 +101,8 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
       setMessage('The payment cannot be more than the stay total.');
       return;
     }
-    if (guestCount > Number(room.capacity || 0)) {
-      setMessage(`This room allows up to ${room.capacity} guests.`);
+    if (guests > capacity) {
+      setMessage(`This room allows up to ${capacity} guests.`);
       return;
     }
     setMessage('');
@@ -108,7 +110,7 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
     const form = new FormData(formElement);
     form.set('hotel_id', hotel.id);
     form.set('room_id', room.id);
-    form.set('guest_count', String(guestCount));
+    form.set('guest_count', String(guests));
     form.set('with_breakfast', quote.withBreakfast ? 'true' : 'false');
     if (!payTo.gcash) form.set('payment_method', 'bank_transfer');
 
@@ -193,8 +195,12 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
         </div>
         <div className="space-y-2">
           <label>Number of guests</label>
-          <input name="guest_count" type="number" min="1" max={room.capacity} value={guestCount} onChange={(event) => setGuestCount(Number(event.target.value || 1))} className="public-field w-full" />
-          {hold.overCapacity ? <p className="text-sm text-red-700">This room allows up to {room.capacity} guests.</p> : null}
+          <select name="guest_count" value={guests} onChange={(event) => setGuestCount(clampGuestCount(Number(event.target.value || 1), capacity))} className="public-field w-full">
+            {Array.from({ length: capacity }, (_, index) => index + 1).map((count) => (
+              <option key={count} value={count}>{count}</option>
+            ))}
+          </select>
+          <p className="text-sm text-slate-600">This room allows up to {capacity} guests.</p>
         </div>
         <div className="space-y-2">
           <label>Breakfast</label>

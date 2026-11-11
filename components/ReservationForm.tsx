@@ -8,7 +8,7 @@ import { diffDays } from '@/lib/date';
 import { currency } from '@/lib/money';
 import { calculateDownpayment, downpaymentLabel } from '@/lib/downpayment';
 import { roomAmountLabel } from '@/lib/hotel-pricing';
-import { quotePublicStay } from '@/lib/public-quote';
+import { clampGuestCount, quotePublicStay } from '@/lib/public-quote';
 import { queueOfflineItem } from '@/lib/offline/db';
 
 export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Room[] }) {
@@ -80,6 +80,8 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
   }
 
   const nights = checkIn && checkOut && checkOut > checkIn ? Math.max(1, diffDays(checkIn, checkOut)) : 1;
+  const roomCapacity = Math.max(1, Math.floor(Number(selectedRoom?.capacity || 1)));
+  const guests = clampGuestCount(guestCount, roomCapacity);
   const quote = hotel && selectedRoom
     ? quotePublicStay({
       hotelSlug: hotel.slug,
@@ -87,7 +89,7 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
       nightlyRate: Number(selectedRoom.base_rate || 0),
       checkIn: checkIn || '2026-01-01',
       checkOut: checkOut && checkOut > (checkIn || '2026-01-01') ? checkOut : '2026-01-02',
-      guestCount,
+      guestCount: guests,
       withBreakfast,
       downpaymentType: hotel.downpayment_type,
       defaultPercent: Number(hotel.default_downpayment_percent || 0),
@@ -141,7 +143,7 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
     const form = new FormData(event.currentTarget);
     form.set('hotel_id', hotel.id);
     form.set('room_id', selectedRoom.id);
-    form.set('guest_count', String(guestCount));
+    form.set('guest_count', String(guests));
     form.set('with_breakfast', quote?.withBreakfast ? 'true' : 'false');
     form.set('posted_room_rate', String(quote?.nightlyRate || selectedRoom.base_rate));
     form.set('total_amount', String((quote?.roomTotal || 0) + surchargeAmount));
@@ -283,7 +285,12 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
       </div>
       <div className="space-y-2">
         <label>Number of guests</label>
-        <input name="guest_count" type="number" min="1" max={selectedRoom?.capacity || undefined} value={guestCount} onChange={(event) => setGuestCount(Math.max(1, Number(event.target.value || 1)))} className="w-full" />
+        <select name="guest_count" value={guests} onChange={(event) => setGuestCount(clampGuestCount(Number(event.target.value || 1), roomCapacity))} className="w-full">
+          {Array.from({ length: roomCapacity }, (_, index) => index + 1).map((count) => (
+            <option key={count} value={count}>{count}</option>
+          ))}
+        </select>
+        <p className="text-sm text-slate-600">This room allows up to {roomCapacity} guests.</p>
       </div>
       <div className="space-y-2">
         <label>Breakfast</label>

@@ -17,6 +17,12 @@ export function isAutoBreakfastCharge(charge: { category?: string | null; notes?
   return isAutoPostedCharge(charge);
 }
 
+/** Owners can delete any folio charge. A manager can delete the automatic extra bed, which records the removal marker. */
+export function canDeleteFolioCharge(role: string, charge: { category?: string | null; notes?: string | null } | null | undefined): boolean {
+  if (role === 'owner') return true;
+  return role === 'manager' && isAutoPostedCharge(charge);
+}
+
 /** A posted auto breakfast charge stays until staff remove it. Turning the flag off does not void it. */
 export function breakfastTurnOffBlocked(currentOn: boolean, nextValue: unknown, autoChargeExists: boolean): boolean {
   const turningOff = nextValue === false || nextValue === 'false';

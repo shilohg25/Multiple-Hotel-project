@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { shouldReleaseHoldOnReject } from './payment-reject.ts';
 import {
+  clampGuestCount,
   guestCountAllowed,
   isPastCheckIn,
   paymentCoversDownpayment,
@@ -63,6 +64,27 @@ describe('public stay quote', () => {
     assert.equal(guestCountAllowed(2, 2), true);
     assert.equal(guestCountAllowed(3, 2), false);
     assert.equal(guestCountAllowed(0, 2), false);
+    assert.equal(clampGuestCount(3, 2), 2);
+    assert.equal(clampGuestCount(1, 4), 1);
+  });
+
+  it('quotes an extra bed only when that guest count fits the room', () => {
+    const input = {
+      hotelSlug: 'navarro-hotel',
+      nightlyRate: 2500,
+      checkIn: '2026-11-12',
+      checkOut: '2026-11-13',
+      withBreakfast: true,
+      downpaymentType: 'percent',
+      defaultPercent: 50,
+      defaultAmount: 0
+    };
+    const capped = quotePublicStay({ ...input, guestCount: clampGuestCount(3, 2) });
+    assert.equal(capped.extraBedTotal, 0);
+    assert.equal(capped.extraBedLine, 'No extra bed');
+    const allowed = quotePublicStay({ ...input, guestCount: clampGuestCount(3, 4) });
+    assert.equal(guestCountAllowed(3, 4), true);
+    assert.equal(allowed.extraBedTotal, 850);
   });
 
   it('keeps submit off for a typed check-in before today and for too many guests', () => {

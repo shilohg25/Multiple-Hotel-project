@@ -4,7 +4,7 @@ import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { businessToday } from '@/lib/date';
 import { calculateDownpayment } from '@/lib/downpayment';
 import { confirmedPaymentLedgerRow } from '@/lib/confirmed-payment-ledger';
-import { quotePublicStay, staffBookingPayment } from '@/lib/public-quote';
+import { guestCountAllowed, quotePublicStay, staffBookingPayment } from '@/lib/public-quote';
 import { undoStayPieces } from '@/lib/undo-stay';
 import { ROOM_JUST_TAKEN } from '@/lib/room-overlap';
 import { supabaseAdmin } from '@/lib/supabase-admin';
@@ -41,10 +41,14 @@ export async function POST(request: Request) {
 
   const [{ data: hotelRaw }, { data: roomRaw }] = await Promise.all([
     supabaseAdmin.from('hotels').select('slug, timezone, downpayment_type, default_downpayment_percent, default_downpayment_amount').eq('id', hotelId).maybeSingle(),
-    supabaseAdmin.from('rooms').select('base_rate, room_type_name, hotel_id').eq('id', roomId).maybeSingle()
+    supabaseAdmin.from('rooms').select('base_rate, room_type_name, hotel_id, capacity').eq('id', roomId).maybeSingle()
   ]);
   if (!hotelRaw || !roomRaw || roomRaw.hotel_id !== hotelId) return jsonError('Room not found for this hotel.', 404);
   const guestCount = Math.max(1, Math.floor(Number(payload.guest_count || 1)));
+  const roomCapacity = Math.floor(Number(roomRaw.capacity || 0));
+  if (roomCapacity >= 1 && !guestCountAllowed(guestCount, roomCapacity)) {
+    return jsonError(`This room allows up to ${roomCapacity} guests.`);
+  }
   const surcharge = Math.max(0, Number(payload.surcharge_amount || 0));
   const quote = quotePublicStay({
     hotelSlug: hotelRaw.slug,

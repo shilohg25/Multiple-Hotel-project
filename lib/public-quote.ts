@@ -26,6 +26,13 @@ export function guestCountAllowed(guestCount: number, capacity: number): boolean
   return guests >= 1 && cap >= 1 && guests <= cap;
 }
 
+/** `rooms.capacity` is the most guests the room can take, extra bed included. */
+export function clampGuestCount(guestCount: number, capacity: number): number {
+  const cap = Math.max(1, Math.floor(Number(capacity) || 1));
+  const guests = Math.floor(Number(guestCount) || 1);
+  return Math.min(cap, Math.max(1, guests));
+}
+
 /** Statuses that hold a room against a new online request. Tentative still does not. */
 export const HOLDING_STATUSES = ['secured', 'checked_in', 'payment_submitted'] as const;
 

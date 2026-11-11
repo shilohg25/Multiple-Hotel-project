@@ -21,7 +21,7 @@ export function HelpPanel({
         {helpLabel}
       </button>
       {open ? (
-        <div className="absolute right-0 z-20 mt-2 w-[min(100vw-2rem,28rem)] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
+        <div className="absolute left-0 z-20 mt-2 w-[min(100vw-2rem,28rem)] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl sm:left-auto sm:right-0">
           {visible.map((guide) => (
             <article key={guide.id} className="mb-4">
               <h2 className="font-bold">{guide.title}</h2>

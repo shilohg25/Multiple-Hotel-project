@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import type { ReservationCharge, ServiceItem } from '@/types/app';
 import { currency } from '@/lib/money';
 import { balanceDueLabel } from '@/lib/stay-cleanup';
+import { isAutoPostedCharge } from '@/lib/breakfast-toggle';
 import { queueOfflineItem } from '@/lib/offline/db';
 import { serviceCategoryOptions } from '@/lib/service-categories';
 
@@ -138,8 +139,11 @@ export function ReservationFolio({
     }
   }
 
-  async function deleteCharge(chargeId: string) {
-    if (!window.confirm('Delete this charge from the reservation folio?')) return;
+  async function deleteCharge(chargeId: string, automatic = false) {
+    const prompt = automatic
+      ? 'Delete this automatic extra bed? It will not be added again.'
+      : 'Delete this charge from the reservation folio?';
+    if (!window.confirm(prompt)) return;
     setMessage('');
     setDeletingId(chargeId);
 
@@ -216,7 +220,10 @@ export function ReservationFolio({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {charges.map((charge) => (
+                {charges.map((charge) => {
+                  const automatic = isAutoPostedCharge(charge);
+                  const showDelete = canDelete || (canManage && automatic);
+                  return (
                   <tr key={charge.id}>
                     <td className="px-4 py-3 font-semibold">
                       {charge.description}
@@ -234,15 +241,16 @@ export function ReservationFolio({
                             Edit
                           </button>
                         ) : null}
-                        {canDelete ? (
-                          <button className="btn-secondary" type="button" disabled={deletingId === charge.id} onClick={() => void deleteCharge(charge.id)}>
+                        {showDelete ? (
+                          <button className="btn-secondary" type="button" disabled={deletingId === charge.id} onClick={() => void deleteCharge(charge.id, automatic)}>
                             {deletingId === charge.id ? 'Deleting...' : 'Delete'}
                           </button>
                         ) : null}
                       </td>
                     ) : null}
                   </tr>
-                ))}
+                  );
+                })}
                 {expectedExtraBed > 0 ? (
                   <tr>
                     <td className="px-4 py-3">{expectedExtraBedLine || 'Expected extra bed'}</td>

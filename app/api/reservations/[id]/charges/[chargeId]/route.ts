@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { canAccessHotel, canDeleteReservationCharges, canManageReservationCharges } from '@/lib/auth';
+import { canAccessHotel, canManageReservationCharges } from '@/lib/auth';
 import { businessToday } from '@/lib/date';
 import { lockedDayMessage } from '@/lib/day-lock';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
-import { AUTO_BREAKFAST_REMOVED_ACTION, isAutoBreakfastCharge } from '@/lib/breakfast-toggle';
+import { AUTO_BREAKFAST_REMOVED_ACTION, canDeleteFolioCharge, isAutoBreakfastCharge } from '@/lib/breakfast-toggle';
 import { stayFolioView } from '@/lib/stay-total';
 import { normalizeServiceCategory } from '@/lib/service-categories';
 import { supabaseAdmin } from '@/lib/supabase-admin';
@@ -132,13 +132,17 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const denied = denyUnless(auth.staff, 'approve');
   if (denied) return denied;
   const staff = auth.staff;
-  if (!canDeleteReservationCharges(staff.profile)) return jsonError('Only owners can delete reservation charges.', 403);
 
   const { id, chargeId } = await params;
   const { data: current, error: currentError } = await getCharge(chargeId);
   if (currentError || !current) return jsonError('Charge not found.', 404);
   if (current.reservation_id !== id) return jsonError('Charge does not belong to this reservation.', 400);
   if (!canAccessHotel(staff.profile, current.hotel_id)) return jsonError('Hotel access denied.', 403);
+  if (!canDeleteFolioCharge(staff.profile.role, current)) {
+    return jsonError(isAutoBreakfastCharge(current)
+      ? 'Only an owner or manager can delete the automatic extra bed.'
+      : 'Only owners can delete reservation charges.', 403);
+  }
   const { data: hotel } = await supabaseAdmin.from('hotels').select('timezone').eq('id', current.hotel_id).maybeSingle();
   const locked = await lockedDayMessage(current.hotel_id, businessToday(hotel?.timezone), null);
   if (locked) return jsonError(locked, 409);

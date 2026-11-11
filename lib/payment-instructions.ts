@@ -1,4 +1,4 @@
-import { NAVARRO_SLUG, TAGOSILANGAN_SLUG } from './hotel-pricing.ts';
+import { NAVARRO_SLUG, TAGOSILANGAN_SLUG, TEST_PRACTICE_HOTEL_SLUG } from './hotel-pricing.ts';
 
 export type HotelPaymentAccount = {
   gcash: { name: string; number: string } | null;
@@ -39,6 +39,9 @@ const ACCOUNTS: Record<string, HotelPaymentAccount> = {
 
 export function paymentAccountForHotel(hotel: { slug?: string | null }): HotelPaymentAccount {
   const slug = String(hotel.slug || '').trim().toLowerCase();
+  if (slug === TEST_PRACTICE_HOTEL_SLUG) {
+    return { ...PLACEHOLDER, gcash: null, bankName: 'Metrobank' };
+  }
   return ACCOUNTS[slug] || PLACEHOLDER;
 }
 

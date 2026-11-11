@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { AUTO_BREAKFAST_NOTE, AUTO_POST_SOURCE, breakfastTurnOffBlocked, isAutoPostedCharge, shouldPostAutoStayCharge } from './breakfast-toggle.ts';
+import { AUTO_BREAKFAST_NOTE, AUTO_POST_SOURCE, breakfastTurnOffBlocked, canDeleteFolioCharge, isAutoPostedCharge, shouldPostAutoStayCharge } from './breakfast-toggle.ts';
 import { currency } from './money.ts';
 import { buildBookingConfirmationDraft } from './email-drafts.ts';
 import { stayMoneyBreakdown } from './stay-total.ts';
@@ -65,6 +65,10 @@ describe('breakfast toggle', () => {
     assert.equal(isAutoPostedCharge({ category: 'breakfast', notes: AUTO_BREAKFAST_NOTE }), true);
     assert.equal(isAutoPostedCharge({ category: 'extra_bed', notes: AUTO_POST_SOURCE }), true);
     assert.equal(isAutoPostedCharge({ category: 'breakfast', notes: 'Extra breakfast added by staff' }), false);
+    assert.equal(canDeleteFolioCharge('owner', { category: 'extra_bed', notes: AUTO_POST_SOURCE }), true);
+    assert.equal(canDeleteFolioCharge('manager', { category: 'extra_bed', notes: AUTO_POST_SOURCE }), true);
+    assert.equal(canDeleteFolioCharge('manager', { category: 'laundry', notes: 'Staff added' }), false);
+    assert.equal(canDeleteFolioCharge('front_desk', { category: 'extra_bed', notes: AUTO_POST_SOURCE }), false);
   });
 
   it('does not post the automatic extra bed again after staff delete it', () => {

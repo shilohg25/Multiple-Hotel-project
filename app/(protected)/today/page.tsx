@@ -109,15 +109,15 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
           <p className="mt-1 text-sm text-slate-500">{label(locale, 'today.emptyHint')}</p>
           {copy.needsReview ? <p className="mt-1 text-sm text-amber-800">{label(locale, 'lang.review')}</p> : null}
         </div>
-        <form className="flex flex-wrap gap-2" method="get">
-          <select name="hotel" defaultValue={hotel.id} className="min-w-40">
+        <form className="grid w-full min-w-0 grid-cols-1 gap-2 sm:flex sm:flex-wrap" method="get">
+          <select name="hotel" defaultValue={hotel.id} className="w-full min-w-0 max-w-full sm:w-auto sm:min-w-40">
             {hotels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
-          <select name="outlet" defaultValue={outlet?.id || ''} className="min-w-40">
+          <select name="outlet" defaultValue={outlet?.id || ''} className="w-full min-w-0 max-w-full sm:w-auto sm:min-w-40">
             <option value="">Whole property</option>
             {outlets.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
-          <input name="date" type="date" defaultValue={date} />
+          <input name="date" type="date" defaultValue={date} className="w-full max-w-full sm:w-auto" />
           <button className="btn-secondary" type="submit">Show</button>
           <HelpPanel screen="today" helpLabel={label(locale, 'nav.helpButton')} allGuidesLabel={label(locale, 'help.allGuides')} guides={copy.guides} />
         </form>
