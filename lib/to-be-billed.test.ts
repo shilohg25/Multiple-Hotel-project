@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { outstandingToBeBilled } from './to-be-billed.ts';
+import { billLaterMarkerChangeBlocked, outstandingToBeBilled, toBeBilledForCheckIns } from './to-be-billed.ts';
 
 const stay = {
   id: 'stay-1',
@@ -45,5 +45,43 @@ describe('outstanding to be billed', () => {
       { ...stay, id: 'walk', modeOfPayment: null, source: 'walk_in' }
     ]);
     assert.equal(result.rows.length, 0);
+  });
+
+  it('keeps an LGU or company stay when the billing marker was cleared', () => {
+    const result = outstandingToBeBilled('2026-11-11', [
+      { ...stay, modeOfPayment: null }
+    ]);
+    assert.equal(result.rows.length, 1);
+    assert.equal(result.rows[0].source, 'company');
+    assert.equal(result.rows[0].reference, '');
+    assert.equal(result.rows[0].amountOwed, 5000);
+  });
+
+  it('limits a monthly total to check-ins in that month', () => {
+    const open = outstandingToBeBilled('2026-11-11', [
+      stay,
+      { ...stay, id: 'later', checkIn: '2026-12-02', openedOn: '2026-11-02' }
+    ]);
+    const month = toBeBilledForCheckIns(open.rows, '2026-11-01', '2026-11-30');
+    assert.equal(month.rows.length, 1);
+    assert.equal(month.total, 5000);
+  });
+
+  it('blocks a manager from clearing the billing marker while money is owed', () => {
+    assert.equal(billLaterMarkerChangeBlocked({
+      currentMode: 'to_be_billed:PO-9',
+      nextMode: '',
+      amountOwed: 500
+    }), true);
+    assert.equal(billLaterMarkerChangeBlocked({
+      currentMode: 'to_be_billed:PO-9',
+      nextMode: 'to_be_billed:PO-9',
+      amountOwed: 500
+    }), false);
+    assert.equal(billLaterMarkerChangeBlocked({
+      currentMode: 'to_be_billed:PO-9',
+      nextMode: '',
+      amountOwed: 0
+    }), false);
   });
 });

@@ -6,7 +6,7 @@ import { AUTO_BREAKFAST_REMOVED_ACTION } from './breakfast-toggle';
 import { expectedCashFromLedger } from './expected-cash';
 import { stayFolioView } from './stay-total';
 import { supabaseAdmin } from './supabase-admin';
-import { outstandingToBeBilled, type ToBeBilledRow } from './to-be-billed';
+import { outstandingToBeBilled, toBeBilledForCheckIns, type ToBeBilledRow } from './to-be-billed';
 import type { CashCount, Hotel, LedgerEntry, Payment, Remittance, Reservation, ReservationCharge } from '@/types/app';
 
 export async function getAccessibleHotels(profile: StaffContext['profile']) {
@@ -64,7 +64,7 @@ export async function listOutstandingToBeBilled(hotel: Pick<Hotel, 'id' | 'name'
     .from('reservations')
     .select('id, booking_source, mode_of_payment, status, check_in, check_out, total_amount, posted_room_rate, nights, guest_count, with_breakfast, created_at, guests(full_name), rooms(room_type_name)')
     .eq('hotel_id', hotel.id)
-    .like('mode_of_payment', 'to_be_billed:%')
+    .or('booking_source.eq.lgu,booking_source.eq.company,mode_of_payment.like.to_be_billed:%')
     .not('status', 'in', '(cancelled,no_show)');
   if (error) {
     console.error(error);
@@ -221,12 +221,7 @@ export async function getDailyReportData(staff: StaffContext, input: { hotelId?:
       checkOuts: reservations.filter((item) => item.check_out === date),
       confirmedPayments,
       pendingPayments,
-      tentativeFollowups: [
-        ...reservations.filter((item) => item.status === 'tentative' || item.status === 'payment_submitted'),
-        ...toBeBilled
-          .filter((row) => !reservations.some((item) => item.id === row.id && (item.status === 'tentative' || item.status === 'payment_submitted')))
-          .map((row) => ({ id: row.id, status: 'secured' }) as Reservation)
-      ],
+      tentativeFollowups: reservations.filter((item) => item.status === 'tentative' || item.status === 'payment_submitted'),
       toBeBilled,
       charges,
       ledgerEntries,
@@ -306,7 +301,7 @@ export async function getMonthlyReportData(staff: StaffContext, input: { hotelId
       dayTourSales: totalsByDay.reduce((sum, item) => sum + item.dayTourSales, 0),
       cancelledNoShow: totalsByDay.reduce((sum, item) => sum + item.cancelledNoShow, 0),
       remittanceDue: remittances.reduce((sum, item) => sum + Number(item.amount_due || 0), 0),
-      toBeBilled: toBeBilled.reduce((sum, row) => sum + row.amountOwed, 0)
+      toBeBilled: toBeBilledForCheckIns(toBeBilled, range.startDate, range.endDate).total
     }
   };
 }

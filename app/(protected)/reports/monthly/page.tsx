@@ -52,7 +52,7 @@ export default async function MonthlyReportPage({ searchParams }: { searchParams
         <Card label="Confirmed payments" value={currency(totals.confirmedPayments, hotel.default_currency)} />
         <Card label="Cancelled / no-show" value={totals.cancelledNoShow} />
         <Card label="Remittance due" value={currency(totals.remittanceDue, hotel.default_currency)} />
-        <Card label="To be billed" value={currency(totals.toBeBilled, hotel.default_currency)} />
+        <Card label="To be billed (check-ins this month)" value={currency(totals.toBeBilled, hotel.default_currency)} />
         <Card label="Occupancy signal" value={`${totalsByDay.filter((day) => day.roomRevenue > 0).length} active day(s)`} />
       </section>
       <section className="card overflow-hidden">

@@ -4,6 +4,8 @@ import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { AUTO_BREAKFAST_REMOVED_ACTION, AUTO_POST_SOURCE, BREAKFAST_TURN_OFF_BLOCKED, autoChargeRemovedFromRead, breakfastTurnOffBlocked, isAutoPostedCharge, shouldPostAutoStayCharge } from '@/lib/breakfast-toggle';
 import { priceStay } from '@/lib/hotel-pricing';
 import { isRoomOverlapError, ROOM_JUST_TAKEN } from '@/lib/room-overlap';
+import { billLaterMarkerChangeBlocked } from '@/lib/to-be-billed';
+import { loadStayMoney } from '@/lib/stay-money';
 import { decideReservationUpdate, RESERVATION_MONEY_FIELDS, type MoneyField, type PolicyStatus } from '@/lib/reservation-policy';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
@@ -28,6 +30,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (frontline) {
     const blocked = ['booking_source', 'check_in', 'check_out', 'guest_count', 'with_breakfast', 'surcharge_label', 'surcharge_amount', 'mode_of_payment', 'confirmed_by_name', 'notes', 'room_id', 'guest_id', 'posted_room_rate', 'total_amount', 'downpayment_required', 'guest_name', 'guest_email', 'guest_phone'];
     if (blocked.some((key) => key in payload)) return jsonError('Front desk can only check a guest in or out.', 403);
+  }
+
+  if ('mode_of_payment' in payload && String(currentRaw.mode_of_payment || '').startsWith('to_be_billed:')) {
+    const loaded = await loadStayMoney(id);
+    if (!loaded.ok) return jsonError(loaded.error, 500);
+    const owed = Math.round((loaded.money.total - loaded.money.confirmed) * 100) / 100;
+    if (billLaterMarkerChangeBlocked({
+      currentMode: currentRaw.mode_of_payment,
+      nextMode: payload.mode_of_payment,
+      amountOwed: owed
+    })) {
+      return jsonError('This stay is still to be billed. The billing marker cannot be changed while money is owed.', 409);
+    }
   }
 
   const update: Record<string, unknown> = {};

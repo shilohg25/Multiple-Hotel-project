@@ -49,7 +49,7 @@ export default async function DailyReportPage({ searchParams }: { searchParams?:
         <Card label="Check-outs" value={report.checkOuts.length} />
         <Card label="Pending proofs" value={report.pendingPayments.length} />
         <Card label="Tentative follow-ups" value={report.tentativeFollowups.length} />
-        <Card label="To be billed" value={currency(report.totals.toBeBilled, report.hotel.default_currency)} />
+        <Card label="To be billed" value={report.toBeBilled.length} />
       </section>
       <section className="grid gap-4 md:grid-cols-4">
         <Card label="Confirmed payments" value={currency(report.totals.roomPayments, report.hotel.default_currency)} />
@@ -62,6 +62,7 @@ export default async function DailyReportPage({ searchParams }: { searchParams?:
         <Card label="Bank/online received" value={currency(report.totals.bankOnlineReceived, report.hotel.default_currency)} />
         <Card label="Expected cash" value={currency(report.totals.expectedCash, report.hotel.default_currency)} />
         <Card label="Cash variance" value={currency(report.totals.variance, report.hotel.default_currency)} />
+        <Card label="To be billed still owed" value={currency(report.totals.toBeBilled, report.hotel.default_currency)} />
       </section>
       <section className="card overflow-hidden">
         <TableTitle title="Reservations" helper="Reservations touching this date or created today." />
@@ -104,7 +105,7 @@ export default async function DailyReportPage({ searchParams }: { searchParams?:
                   <td>{row.hotelName}</td>
                   <td>{row.checkIn} to {row.checkOut}</td>
                   <td className="capitalize">{row.source.replaceAll('_', ' ')}</td>
-                  <td>{row.reference}</td>
+                  <td>{row.reference || '—'}</td>
                   <td className="font-semibold">{currency(row.amountOwed, report.hotel.default_currency)}</td>
                   <td>{row.ageDays} day(s)</td>
                 </tr>

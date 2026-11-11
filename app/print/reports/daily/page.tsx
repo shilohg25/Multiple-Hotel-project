@@ -26,6 +26,7 @@ export default async function DailyReportPrintPage({ searchParams }: { searchPar
         <Box label="Check-outs" value={report.checkOuts.length} />
         <Box label="Pending proofs" value={report.pendingPayments.length} />
         <Box label="Tentative follow-ups" value={report.tentativeFollowups.length} />
+        <Box label="To be billed" value={report.toBeBilled.length} />
       </section>
       <table className="print-table">
         <tbody>
@@ -67,6 +68,27 @@ export default async function DailyReportPrintPage({ searchParams }: { searchPar
               );
             })}
             {!report.reservations.length ? <tr><td colSpan={7}>No reservations for this report date.</td></tr> : null}
+          </tbody>
+        </table>
+      </section>
+      <section>
+        <h2 className="mb-2 text-lg font-bold">To be billed</h2>
+        <p className="mb-2 text-sm">LGU and company stays that still owe money. A stay leaves this list once payments cover the total.</p>
+        <table className="print-table">
+          <thead><tr><th>Guest</th><th>Hotel</th><th>Dates</th><th>Source</th><th>Invoice / PO</th><th>Amount owed</th><th>Age</th></tr></thead>
+          <tbody>
+            {report.toBeBilled.map((row) => (
+              <tr key={row.id}>
+                <td>{row.guestName}</td>
+                <td>{row.hotelName}</td>
+                <td>{row.checkIn} to {row.checkOut}</td>
+                <td>{row.source.replaceAll('_', ' ')}</td>
+                <td>{row.reference || '—'}</td>
+                <td>{currency(row.amountOwed, report.hotel.default_currency)}</td>
+                <td>{row.ageDays} day(s)</td>
+              </tr>
+            ))}
+            {!report.toBeBilled.length ? <tr><td colSpan={7}>Nothing is waiting to be billed.</td></tr> : null}
           </tbody>
         </table>
       </section>
