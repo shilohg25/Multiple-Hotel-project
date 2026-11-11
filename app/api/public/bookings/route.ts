@@ -8,6 +8,7 @@ import { isRoomOverlapError, ROOM_JUST_TAKEN } from '@/lib/room-overlap';
 import { paymentAccountForHotel } from '@/lib/payment-instructions';
 import { MAX_PUBLIC_STAY_NIGHTS, guestCountAllowed, isPastCheckIn, paymentCoversDownpayment, paymentWithinStay, quotePublicStay } from '@/lib/public-quote';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { undoStayPieces } from '@/lib/undo-stay';
 
 export const runtime = 'nodejs';
 
@@ -21,9 +22,7 @@ function guestFailure(message: string, detail?: unknown) {
 }
 
 async function removeBooking(ids: { proofPath?: string; guestId?: string; reservationId?: string }) {
-  if (ids.reservationId) await supabaseAdmin.from('reservations').delete().eq('id', ids.reservationId);
-  if (ids.guestId) await supabaseAdmin.from('guests').delete().eq('id', ids.guestId);
-  if (ids.proofPath) await supabaseAdmin.storage.from('payment-proofs').remove([ids.proofPath]);
+  return undoStayPieces(ids);
 }
 
 export async function POST(request: Request) {
@@ -130,7 +129,7 @@ export async function POST(request: Request) {
     .single();
   if (guestError || !guestRaw) {
     await removeBooking({ proofPath });
-    return guestFailure('The booking could not be saved. Please try again.', guestError);
+    return guestFailure('The booking could not be saved. The room is not held.', guestError);
   }
 
   const noteParts = [form.get('notes') ? String(form.get('notes')) : ''];
@@ -160,9 +159,9 @@ export async function POST(request: Request) {
     .select('*')
     .single();
   if (reservationError || !reservationRaw) {
-    await removeBooking({ proofPath, guestId: guestRaw.id });
-    if (isRoomOverlapError(reservationError)) return guestFailure(ROOM_JUST_TAKEN, reservationError);
-    return guestFailure('The booking could not be saved. Please try again.', reservationError);
+    const undone = await removeBooking({ proofPath, guestId: guestRaw.id });
+    if (isRoomOverlapError(reservationError)) return guestFailure(undone.roomHeld ? undone.message : ROOM_JUST_TAKEN, reservationError);
+    return guestFailure(undone.roomHeld ? undone.message : `The booking could not be saved. ${undone.message}`, reservationError);
   }
 
   const { error: paymentError } = await supabaseAdmin.from('payments').insert({
@@ -177,8 +176,8 @@ export async function POST(request: Request) {
     status: 'submitted'
   });
   if (paymentError) {
-    await removeBooking({ proofPath, guestId: guestRaw.id, reservationId });
-    return guestFailure('The booking could not be saved. Please try again.', paymentError);
+    const undone = await removeBooking({ proofPath, guestId: guestRaw.id, reservationId });
+    return guestFailure(undone.roomHeld ? undone.message : `The payment could not be saved. ${undone.message}`, paymentError);
   }
 
   await supabaseAdmin.from('audit_logs').insert({

@@ -106,8 +106,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       supabaseAdmin.from('hotels').select('slug').eq('id', currentRaw.hotel_id).maybeSingle(),
       supabaseAdmin.from('rooms').select('room_type_name').eq('id', reservationRaw.room_id).maybeSingle()
     ]);
-    if (removedBreakfast.error) console.error(removedBreakfast.error);
-    if (existingCharges.error || hotelRow.error || roomRow.error) {
+    if (removedBreakfast.error) {
+      console.error(removedBreakfast.error);
+      const checkingIn = currentRaw.status !== 'checked_in';
+      if (checkingIn) {
+        const reverted = await supabaseAdmin.from('reservations').update({ status: currentRaw.status }).eq('id', id);
+        if (reverted.error) console.error(reverted.error);
+        return jsonError(reverted.error
+          ? 'Check-in was saved, but the extra bed was not posted because the removal record could not be read. Try again.'
+          : 'Check-in could not confirm whether the extra bed was already removed. Check-in was not saved. Try again.', reverted.error ? 500 : 503);
+      }
+    } else if (existingCharges.error || hotelRow.error || roomRow.error) {
       console.error(existingCharges.error || hotelRow.error || roomRow.error);
     } else {
       const price = priceStay({

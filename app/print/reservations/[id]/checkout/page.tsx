@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { requireStaff } from '@/lib/auth';
 import { currency } from '@/lib/money';
+import { balanceDueLabel } from '@/lib/stay-cleanup';
 import { getReservationPrintData, shortId } from '@/lib/print-data';
 import { PrintButton } from '@/components/PrintButton';
 import { PrintHeader } from '@/components/print/PrintHeader';
@@ -54,7 +55,7 @@ export default async function CheckoutPrintPage({ params }: { params: Promise<{ 
         <Summary label="Additional charges" value={currency(additionalChargesTotal + expectedExtraBed, reservation.hotels.default_currency)} />
         <Summary label="Grand total" value={currency(grandTotal, reservation.hotels.default_currency)} />
         <Summary label="Confirmed payments" value={currency(confirmedPaymentsTotal, reservation.hotels.default_currency)} />
-        <Summary label="Final balance" value={currency(balanceDue, reservation.hotels.default_currency)} strong />
+        <Summary label={balanceDueLabel(balanceDue).label === 'Refund due' ? 'Refund due' : 'Final balance'} value={currency(balanceDueLabel(balanceDue).amount, reservation.hotels.default_currency)} strong />
       </section>
       {balanceDue <= 0 ? (
         <section className="grid gap-8 pt-10 md:grid-cols-3">

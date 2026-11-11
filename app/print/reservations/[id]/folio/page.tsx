@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { requireStaff } from '@/lib/auth';
 import { currency } from '@/lib/money';
+import { balanceDueLabel } from '@/lib/stay-cleanup';
 import { formatDate } from '@/lib/date';
 import { getReservationPrintData, shortId } from '@/lib/print-data';
 import { PrintButton } from '@/components/PrintButton';
@@ -106,7 +107,7 @@ export default async function ReservationFolioPrintPage({ params }: { params: Pr
         <Summary label="Additional charges" value={currency(additionalChargesTotal + expectedExtraBed, reservation.hotels.default_currency)} />
         <Summary label="Grand total" value={currency(grandTotal, reservation.hotels.default_currency)} />
         <Summary label="Confirmed payments" value={currency(confirmedPaymentsTotal, reservation.hotels.default_currency)} />
-        <Summary label="Balance due" value={currency(balanceDue, reservation.hotels.default_currency)} strong />
+        <Summary label={balanceDueLabel(balanceDue).label} value={currency(balanceDueLabel(balanceDue).amount, reservation.hotels.default_currency)} strong />
         <p className="mt-3 text-xs text-slate-500">Official tax receipt handling can be added later if required by local rules.</p>
       </section>
 

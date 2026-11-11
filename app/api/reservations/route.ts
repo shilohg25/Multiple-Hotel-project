@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
+import { businessToday } from '@/lib/date';
 import { calculateDownpayment } from '@/lib/downpayment';
+import { confirmedPaymentLedgerRow } from '@/lib/confirmed-payment-ledger';
 import { quotePublicStay, staffBookingPayment } from '@/lib/public-quote';
+import { undoStayPieces } from '@/lib/undo-stay';
 import { ROOM_JUST_TAKEN } from '@/lib/room-overlap';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { hasReservationConflict } from '@/lib/availability';
@@ -37,7 +40,7 @@ export async function POST(request: Request) {
   if (conflict) return jsonError(ROOM_JUST_TAKEN);
 
   const [{ data: hotelRaw }, { data: roomRaw }] = await Promise.all([
-    supabaseAdmin.from('hotels').select('slug, downpayment_type, default_downpayment_percent, default_downpayment_amount').eq('id', hotelId).maybeSingle(),
+    supabaseAdmin.from('hotels').select('slug, timezone, downpayment_type, default_downpayment_percent, default_downpayment_amount').eq('id', hotelId).maybeSingle(),
     supabaseAdmin.from('rooms').select('base_rate, room_type_name, hotel_id').eq('id', roomId).maybeSingle()
   ]);
   if (!hotelRaw || !roomRaw || roomRaw.hotel_id !== hotelId) return jsonError('Room not found for this hotel.', 404);
@@ -112,13 +115,15 @@ export async function POST(request: Request) {
     .single();
 
   if (reservationError || !reservationRaw) {
-    await supabaseAdmin.from('guests').delete().eq('id', guestRaw.id);
-    return jsonError(reservationError?.message || 'Failed to create reservation.');
+    const undone = await undoStayPieces({ guestId: guestRaw.id });
+    const reason = reservationError?.message || 'Failed to create reservation.';
+    return jsonError(undone.roomHeld ? undone.message : `${reason} ${undone.message}`, 500);
   }
 
-  const { error: paymentError } = await supabaseAdmin.from('payments').insert({
+  const paymentAmount = Number(payload.desk_payment || payload.payment_amount || 0);
+  const { data: paymentRaw, error: paymentError } = await supabaseAdmin.from('payments').insert({
     reservation_id: reservationRaw.id,
-    amount: Number(payload.desk_payment || payload.payment_amount || 0),
+    amount: paymentAmount,
     method: paid.method,
     payer_name: guestName,
     payment_reference: paid.reference || null,
@@ -126,13 +131,36 @@ export async function POST(request: Request) {
     proof_path: paid.proofPath,
     status: paid.paymentStatus,
     confirmed_at: paid.paymentStatus === 'confirmed' ? new Date().toISOString() : null,
-    confirmed_by: paid.paymentStatus === 'confirmed' ? staff.userId : null
-  });
-  if (paymentError) {
+    confirmed_by: paid.paymentStatus === 'confirmed' ? staff.userId : null,
+    received_on: paid.paymentStatus === 'confirmed' ? businessToday(hotelRaw.timezone) : null
+  }).select('id').single();
+  if (paymentError || !paymentRaw) {
     console.error(paymentError);
-    await supabaseAdmin.from('reservations').delete().eq('id', reservationRaw.id);
-    await supabaseAdmin.from('guests').delete().eq('id', guestRaw.id);
-    return jsonError('The payment could not be saved, so the room was not held.', 500);
+    const undone = await undoStayPieces({ reservationId: reservationRaw.id, guestId: guestRaw.id });
+    return jsonError(undone.roomHeld ? undone.message : `The payment could not be saved. ${undone.message}`, 500);
+  }
+
+  if (paid.paymentStatus === 'confirmed') {
+    const ledger = confirmedPaymentLedgerRow({
+      hotelId,
+      reservationId: reservationRaw.id,
+      paymentId: paymentRaw.id,
+      amount: paymentAmount,
+      method: paid.method,
+      guestName,
+      entryDate: businessToday(hotelRaw.timezone),
+      actorId: staff.userId
+    });
+    const inserted = await supabaseAdmin.from('ledger_entries').insert(ledger).select('id').single();
+    if (inserted.error || !inserted.data) {
+      console.error(inserted.error);
+      const undone = await undoStayPieces({
+        paymentId: paymentRaw.id,
+        reservationId: reservationRaw.id,
+        guestId: guestRaw.id
+      });
+      return jsonError(undone.roomHeld ? undone.message : `The payment could not be recorded in the day book. ${undone.message}`, 500);
+    }
   }
 
   await recordProcessedOfflineRequest({

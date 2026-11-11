@@ -28,7 +28,7 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
   const [guestCount, setGuestCount] = useState(1);
-  const [withBreakfast, setWithBreakfast] = useState(false);
+  const [withBreakfast, setWithBreakfast] = useState(true);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [proofSelected, setProofSelected] = useState(false);
   const [message, setMessage] = useState('');

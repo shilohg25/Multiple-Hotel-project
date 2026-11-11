@@ -11,6 +11,7 @@ import {
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { AUTO_BREAKFAST_REMOVED_ACTION, autoChargeRemovedFromRead, isAutoBreakfastCharge } from '@/lib/breakfast-toggle';
 import { currency } from '@/lib/money';
+import { balanceDueLabel } from '@/lib/stay-cleanup';
 import { stayFolioView } from '@/lib/stay-total';
 import { formatDate } from '@/lib/date';
 import { ReservationStatusBadge } from '@/components/StatusBadge';
@@ -94,6 +95,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
   });
   const confirmedTotal = payments.filter((payment) => payment.status === 'confirmed').reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const balance = folio.total - confirmedTotal;
+  const due = balanceDueLabel(balance);
 
   return (
     <div className="space-y-6">
@@ -169,8 +171,8 @@ export default async function ReservationDetailPage({ params }: { params: Promis
             <p className="text-sm text-slate-500">Required DP {currency(folio.downpaymentRequired ?? reservation.downpayment_required, reservation.hotels.default_currency)}</p>
           </div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Balance</p>
-            <p className="mt-1 font-bold">{currency(balance, reservation.hotels.default_currency)}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{due.label}</p>
+            <p className="mt-1 font-bold">{currency(due.amount, reservation.hotels.default_currency)}</p>
             <p className="text-sm text-slate-500">Confirmed {currency(confirmedTotal, reservation.hotels.default_currency)}</p>
           </div>
         </div>

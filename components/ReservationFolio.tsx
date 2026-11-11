@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { ReservationCharge, ServiceItem } from '@/types/app';
 import { currency } from '@/lib/money';
+import { balanceDueLabel } from '@/lib/stay-cleanup';
 import { queueOfflineItem } from '@/lib/offline/db';
 import { serviceCategoryOptions } from '@/lib/service-categories';
 
@@ -58,6 +59,7 @@ export function ReservationFolio({
   const chargesSubtotal = charges.reduce((sum, charge) => sum + Number(charge.total_amount || 0), 0);
   const displayTotal = Number(roomTotal || 0) + chargesSubtotal + Number(expectedExtraBed || 0);
   const balance = displayTotal - Number(confirmedPaymentsTotal || 0);
+  const due = balanceDueLabel(balance);
   const draftTotal = Math.round(Number(quantity || 0) * Number(unitPrice || 0) * 100) / 100;
 
   useEffect(() => {
@@ -265,7 +267,7 @@ export function ReservationFolio({
             <SummaryItem label={roomLabel} value={currency(roomTotal, currencyCode)} />
             <SummaryItem label="Additional charges" value={currency(chargesSubtotal + Number(expectedExtraBed || 0), currencyCode)} />
             <SummaryItem label="Confirmed payments" value={currency(confirmedPaymentsTotal, currencyCode)} />
-            <SummaryItem label="Total balance" value={currency(balance, currencyCode)} />
+            <SummaryItem label={due.label === 'Refund due' ? 'Refund due' : 'Total balance'} value={currency(due.amount, currencyCode)} />
           </div>
           <p className="text-sm text-slate-500">Display total: {currency(displayTotal, currencyCode)}</p>
           {payments.length ? (
