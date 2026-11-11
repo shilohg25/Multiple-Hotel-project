@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { extraBedStillDue, shouldPostAutoStayCharge } from './breakfast-toggle.ts';
 import { priceStay, roomAmountLabel } from './hotel-pricing.ts';
 import { paymentAccountForHotel, paymentInstructionLines } from './payment-instructions.ts';
 import { paymentWithinStay, quotePublicStay } from './public-quote.ts';
@@ -199,6 +200,49 @@ describe('hotel stay pricing', () => {
     });
     assert.equal(afterCheckIn.expectedExtraBed, 0);
     assert.equal(afterCheckIn.total, 3550);
+  });
+
+  it('drops the expected extra bed after the auto charge is deleted', () => {
+    const stay = {
+      hotelSlug: 'navarro-hotel',
+      postedRoomRate: 2500,
+      roomTotal: 5000,
+      nights: 2,
+      guestCount: 3,
+      withBreakfast: true
+    };
+    const before = stayFolioView({ ...stay, charges: [], removed: false });
+    assert.equal(before.expectedExtraBed, 1700);
+    assert.equal(before.expectedExtraBedLine.includes('850'), true);
+    assert.equal(before.total, 6700);
+    assert.equal(shouldPostAutoStayCharge({
+      status: 'checked_in',
+      extraBedTotal: before.expectedExtraBed,
+      charges: [],
+      removed: false
+    }), true);
+
+    const posted = stayFolioView({
+      ...stay,
+      removed: false,
+      charges: [{ category: 'extra_bed', notes: 'source:auto', total_amount: 1700 }]
+    });
+    assert.equal(posted.expectedExtraBed, 0);
+    assert.equal(posted.total, 6700);
+
+    const deleted = stayFolioView({ ...stay, charges: [], removed: true });
+    assert.equal(extraBedStillDue({ extraBedTotal: 1700, charges: [], removed: true }), false);
+    assert.equal(shouldPostAutoStayCharge({
+      status: 'checked_in',
+      extraBedTotal: 1700,
+      charges: [],
+      removed: true
+    }), false);
+    assert.equal(deleted.expectedExtraBed, 0);
+    assert.equal(deleted.expectedExtraBedLine, '');
+    assert.equal(deleted.total, 5000);
+    assert.equal(paymentWithinStay(6700, deleted.total), false);
+    assert.equal(paymentWithinStay(deleted.total, deleted.total), true);
   });
 });
 

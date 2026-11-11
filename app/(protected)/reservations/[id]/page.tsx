@@ -9,7 +9,7 @@ import {
   canDeleteReservationCharges
 } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
-import { isAutoBreakfastCharge } from '@/lib/breakfast-toggle';
+import { AUTO_BREAKFAST_REMOVED_ACTION, autoChargeWasRemoved, isAutoBreakfastCharge } from '@/lib/breakfast-toggle';
 import { currency } from '@/lib/money';
 import { stayFolioView } from '@/lib/stay-total';
 import { formatDate } from '@/lib/date';
@@ -70,13 +70,15 @@ export default async function ReservationDetailPage({ params }: { params: Promis
     .eq('code', 'card_metrobank')
     .maybeSingle();
   const roomTypeId = reservation.rooms.room_type_id;
-  const [{ data: ratesRaw }, { data: overridesRaw }, { data: stayTimesRaw }] = await Promise.all([
+  const [{ data: ratesRaw }, { data: overridesRaw }, { data: stayTimesRaw }, removedBreakfast] = await Promise.all([
     roomTypeId
       ? supabaseAdmin.from('room_type_channel_rates').select('*').eq('room_type_id', roomTypeId)
       : Promise.resolve({ data: [] }),
     supabaseAdmin.from('rate_override_requests').select('*').eq('reservation_id', reservation.id).order('created_at', { ascending: false }),
-    supabaseAdmin.from('stay_time_requests').select('*').eq('reservation_id', reservation.id).order('created_at', { ascending: false })
+    supabaseAdmin.from('stay_time_requests').select('*').eq('reservation_id', reservation.id).order('created_at', { ascending: false }),
+    supabaseAdmin.from('audit_logs').select('id').eq('reservation_id', reservation.id).eq('action', AUTO_BREAKFAST_REMOVED_ACTION).limit(1)
   ]);
+  if (removedBreakfast.error) console.error(removedBreakfast.error);
   const charges = (chargesRaw || []) as ReservationCharge[];
   const serviceItems = (serviceItemsRaw || []) as ServiceItem[];
   const folio = stayFolioView({
@@ -87,6 +89,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
     nights: reservation.nights,
     guestCount: Number(reservation.guest_count || 1),
     withBreakfast: Boolean(reservation.with_breakfast),
+    removed: Boolean(removedBreakfast.error) || autoChargeWasRemoved(removedBreakfast.data),
     charges
   });
   const confirmedTotal = payments.filter((payment) => payment.status === 'confirmed').reduce((sum, payment) => sum + Number(payment.amount || 0), 0);

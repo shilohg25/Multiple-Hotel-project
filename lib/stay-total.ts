@@ -1,3 +1,4 @@
+import { extraBedStillDue } from './breakfast-toggle.ts';
 import { priceStay, roomAmountLabel } from './hotel-pricing.ts';
 import { stayNights } from './public-quote.ts';
 
@@ -40,7 +41,10 @@ export function stayMoneyBreakdown(input: {
   };
 }
 
-/** Shown total before check-in includes the extra bed priceStay expects, unless that charge is already posted. */
+/**
+ * Shown total includes the extra bed priceStay expects, unless it is already posted
+ * or the auto charge was deleted. `removed` is the same audit marker check-in uses.
+ */
 export function stayFolioView(input: {
   hotelSlug?: string | null;
   roomTypeName?: string | null;
@@ -49,7 +53,8 @@ export function stayFolioView(input: {
   nights?: number;
   guestCount: number;
   withBreakfast: boolean;
-  charges?: Array<{ category?: string | null; total_amount?: number | null }>;
+  removed?: boolean;
+  charges?: Array<{ category?: string | null; notes?: string | null; total_amount?: number | null }>;
 }) {
   const nights = Math.max(1, Math.floor(Number(input.nights) || 1));
   const nightlyRate = Number(input.postedRoomRate) > 0 ? Number(input.postedRoomRate) : money(Number(input.roomTotal || 0) / nights);
@@ -64,14 +69,18 @@ export function stayFolioView(input: {
   });
   const charges = input.charges || [];
   const chargesTotal = money(charges.reduce((sum, charge) => sum + Number(charge.total_amount || 0), 0));
-  const extraPosted = charges.some((charge) => charge.category === 'extra_bed');
-  const expectedExtraBed = extraPosted ? 0 : price.extraBedTotal;
+  const showExpected = extraBedStillDue({
+    extraBedTotal: price.extraBedTotal,
+    charges,
+    removed: Boolean(input.removed)
+  });
+  const expectedExtraBed = showExpected ? price.extraBedTotal : 0;
   const roomTotal = money(input.roomTotal);
   return {
     roomLabel: roomAmountLabel(price.breakfastIncluded),
     breakfastIncluded: price.breakfastIncluded,
     expectedExtraBed,
-    expectedExtraBedLine: price.extraBedLine,
+    expectedExtraBedLine: showExpected ? price.extraBedLine : '',
     chargesTotal,
     total: money(roomTotal + chargesTotal + expectedExtraBed)
   };

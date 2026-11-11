@@ -23,14 +23,31 @@ export function breakfastTurnOffBlocked(currentOn: boolean, nextValue: unknown, 
   return Boolean(currentOn) && turningOff && autoChargeExists;
 }
 
+/** The audit query found reservation.auto_breakfast_removed. Display and check-in both use this. */
+export function autoChargeWasRemoved(rows: Array<{ id?: string }> | null | undefined): boolean {
+  return Boolean(rows?.length);
+}
+
+/**
+ * An extra bed is still owed only when the price is above zero, nothing is posted,
+ * and the auto charge was not deleted. Check-in posts only when this is true.
+ */
+export function extraBedStillDue(input: {
+  extraBedTotal: number;
+  charges: Array<{ category?: string | null; notes?: string | null }>;
+  removed: boolean;
+}): boolean {
+  if (input.removed || !(Number(input.extraBedTotal) > 0)) return false;
+  return !input.charges.some((charge) => isAutoPostedCharge(charge) || charge.category === 'extra_bed');
+}
+
 export function shouldPostAutoStayCharge(input: {
   status: string;
   extraBedTotal: number;
   charges: Array<{ category?: string | null; notes?: string | null }>;
   removed: boolean;
 }): boolean {
-  if (input.status !== 'checked_in' || input.removed || !(Number(input.extraBedTotal) > 0)) return false;
-  return !input.charges.some((charge) => isAutoPostedCharge(charge) || charge.category === 'extra_bed');
+  return input.status === 'checked_in' && extraBedStillDue(input);
 }
 
 export const BREAKFAST_TURN_OFF_BLOCKED = 'This stay already has an automatic charge. Remove that charge before turning breakfast off.';
