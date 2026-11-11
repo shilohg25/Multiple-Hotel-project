@@ -17,7 +17,7 @@ export default async function NewReservationPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-black tracking-tight">New reservation</h1>
-        <p className="mt-1 text-slate-500">Reservations start tentative. Upload and confirm down payment to secure them.</p>
+        <p className="mt-1 text-slate-500">Pencil bookings are not allowed. A walk-in paid at the desk is saved as secured. Anything else needs a payment proof before the room is held.</p>
       </div>
       <ReservationForm hotels={hotels} rooms={rooms} />
     </div>

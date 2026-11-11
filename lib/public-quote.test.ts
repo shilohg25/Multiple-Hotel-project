@@ -7,7 +7,8 @@ import {
   paymentWithinStay,
   publicFormHold,
   quotePublicStay,
-  stayNights
+  stayNights,
+  walkInDeskStay
 } from './public-quote.ts';
 
 describe('public stay quote', () => {
@@ -107,6 +108,28 @@ describe('public stay quote', () => {
     });
     assert.equal(overpaid.paymentTooHigh, true);
     assert.equal(overpaid.submitDisabled, true);
+
+    const short = publicFormHold({
+      datesReady: true,
+      checkIn: '2026-11-10',
+      today: '2026-11-10',
+      guestCount: 2,
+      capacity: 2,
+      nights: 1,
+      paidText: '100',
+      stayTotal: 5000,
+      downpaymentRequired: 2500,
+      proofSelected: false
+    });
+    assert.equal(short.paymentTooLow, true);
+    assert.equal(short.missingProof, true);
+    assert.equal(short.submitDisabled, true);
+  });
+
+  it('lets a paid walk-in hold a room and refuses a pencil booking', () => {
+    assert.deepEqual(walkInDeskStay({ bookingSource: 'walk_in', deskPayment: 2500, downpaymentRequired: 2500 }), { ok: true, status: 'secured' });
+    assert.equal(walkInDeskStay({ bookingSource: 'walk_in', deskPayment: 100, downpaymentRequired: 2500 }).ok, false);
+    assert.equal(walkInDeskStay({ bookingSource: 'facebook', deskPayment: 2500, downpaymentRequired: 2500 }).ok, false);
   });
 
   it('bills a Tagosilangan extra bed once and does not add breakfast again', () => {

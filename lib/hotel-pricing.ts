@@ -1,12 +1,10 @@
 /**
  * Per-hotel stay pricing. Quote, staff totals, and check-in all call priceStay.
  *
- * Navarro room-only is undecided. Leave navarroRoomOnlyDiscount null until the owner
- * says how much cheaper a room without breakfast is. While it is null, the walk-in
- * rate includes breakfast for 2 and extra beds are ₱850. Set a number (pesos off
- * each night) to allow room only and the ₱600 extra bed.
+ * Navarro room only is ₱250 off each night. Extra beds are ₱850 with breakfast
+ * and ₱600 without. Tagosilangan has no room-only choice.
  */
-export const navarroRoomOnlyDiscount: number | null = null;
+export const navarroRoomOnlyDiscount: number | null = 250;
 
 export const NAVARRO_SLUG = 'navarro-hotel';
 export const TAGOSILANGAN_SLUG = 'tagosilangan';

@@ -84,19 +84,37 @@ export function publicFormHold(input: {
   nights: number;
   paidText?: string;
   stayTotal?: number;
+  downpaymentRequired?: number;
+  proofSelected?: boolean;
 }) {
   const pastCheckIn = isPastCheckIn(input.checkIn, input.today);
   const overCapacity = Math.floor(Number(input.guestCount)) > Math.floor(Number(input.capacity));
   const stayTooLong = input.nights > MAX_PUBLIC_STAY_NIGHTS;
   const paidText = String(input.paidText ?? '').trim();
   const paymentTooHigh = input.stayTotal != null && paidText !== '' && !paymentWithinStay(Number(paidText), input.stayTotal);
+  const paymentTooLow = input.downpaymentRequired != null && (paidText === '' || !paymentCoversDownpayment(Number(paidText), input.downpaymentRequired));
+  const missingProof = input.proofSelected === false;
   return {
     pastCheckIn,
     overCapacity,
     stayTooLong,
     paymentTooHigh,
-    submitDisabled: !input.datesReady || pastCheckIn || overCapacity || stayTooLong || paymentTooHigh
+    paymentTooLow,
+    missingProof,
+    submitDisabled: !input.datesReady || pastCheckIn || overCapacity || stayTooLong || paymentTooHigh || paymentTooLow || missingProof
   };
+}
+
+/** A walk-in paid at the desk is the only staff stay that may hold a room. */
+export function walkInDeskStay(input: { bookingSource: string; deskPayment: number; downpaymentRequired: number }):
+  { ok: true; status: 'secured' } | { ok: false; error: string } {
+  if (input.bookingSource !== 'walk_in') {
+    return { ok: false, error: 'Pencil bookings are not allowed. Only a walk-in paid at the desk can be saved here.' };
+  }
+  if (!paymentCoversDownpayment(input.deskPayment, input.downpaymentRequired)) {
+    return { ok: false, error: 'A room cannot be held without payment. Enter the amount paid at the desk. It must cover the down payment.' };
+  }
+  return { ok: true, status: 'secured' };
 }
 
 export type StayQuote = {

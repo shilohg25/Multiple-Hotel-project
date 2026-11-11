@@ -26,6 +26,8 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
   const [checkOut, setCheckOut] = useState('');
   const [guestCount, setGuestCount] = useState(1);
   const [withBreakfast, setWithBreakfast] = useState(true);
+  const [bookingSource, setBookingSource] = useState('walk_in');
+  const [deskPayment, setDeskPayment] = useState('');
   const [surcharge, setSurcharge] = useState('0');
   const [manualDownpayment, setManualDownpayment] = useState('0');
   const [message, setMessage] = useState('');
@@ -105,8 +107,16 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!hotel || !selectedRoom) {
+    if (!hotel || !selectedRoom || !quote) {
       setMessage('Choose a hotel and room before saving the reservation.');
+      return;
+    }
+    if (bookingSource !== 'walk_in') {
+      setMessage('Pencil bookings are not allowed. Only a walk-in paid at the desk can be saved here.');
+      return;
+    }
+    if (Number(deskPayment || 0) + 0.001 < downpayment) {
+      setMessage('A room cannot be held without payment. The desk amount must cover the down payment.');
       return;
     }
 
@@ -120,6 +130,8 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
     form.set('posted_room_rate', String(quote?.nightlyRate || selectedRoom.base_rate));
     form.set('total_amount', String((quote?.roomTotal || 0) + surchargeAmount));
     form.set('downpayment_required', String(downpayment));
+    form.set('booking_source', 'walk_in');
+    form.set('desk_payment', String(Number(deskPayment || 0)));
     form.set('surcharge_amount', String(Number(surcharge || 0)));
     const payload = Object.fromEntries(form.entries());
 
@@ -137,7 +149,7 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
       router.push(`/reservations/${json.reservation.id}`);
     } catch {
       setOfflineDraft(payload);
-      setMessage('Network unavailable. You can save this reservation locally as a tentative draft and sync it later.');
+      setMessage('Network unavailable. A local draft does not hold the room.');
     } finally {
       setLoading(false);
     }
@@ -149,7 +161,7 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
     try {
       await queueOfflineItem('reservation_draft', { ...offlineDraft, status: 'tentative' });
       setOfflineDraft(null);
-      setMessage('Saved locally. Sync when internet returns. Offline drafts never secure or block room dates.');
+      setMessage('Saved locally. It will not hold a room until it syncs as a paid walk-in.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to save offline draft.');
     } finally {
@@ -216,7 +228,7 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
       </div>
       <div className="space-y-2">
         <label>Booking source</label>
-        <select name="booking_source" className="w-full">
+        <select name="booking_source" className="w-full" value={bookingSource} onChange={(event) => setBookingSource(event.target.value)}>
           <option value="walk_in">Walk-in</option>
           <option value="facebook">Facebook</option>
           <option value="phone">Phone</option>
@@ -225,6 +237,7 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
           <option value="online">Online booking form</option>
           <option value="other">Other</option>
         </select>
+        {bookingSource !== 'walk_in' ? <p className="text-sm text-red-700">Pencil bookings are not allowed. Only a walk-in paid at the desk can be saved here.</p> : null}
       </div>
 
       <div className="space-y-2">
@@ -253,6 +266,11 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
         )}
       </div>
       <div className="space-y-2">
+        <label>Amount paid at the desk</label>
+        <input name="desk_payment" type="number" min="0" step="0.01" value={deskPayment} onChange={(event) => setDeskPayment(event.target.value)} className="w-full" />
+        <p className="text-sm text-slate-600">Must cover the down payment of {currency(downpayment, hotel.default_currency)}. The room is held only after this cash is recorded.</p>
+      </div>
+      <div className="space-y-2">
         <label>Surcharge label</label>
         <input name="surcharge_label" placeholder="Extra bed, early check-in, pet fee" className="w-full" />
       </div>
@@ -279,11 +297,11 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
           <div><p className="text-xs text-slate-500">Stay total</p><p className="font-bold">{currency(stayTotal, hotel.default_currency)}</p></div>
           <div><p className="text-xs text-slate-500">Required down payment</p><p className="font-bold">{currency(downpayment, hotel.default_currency)}</p></div>
         </div>
-        <p className="mt-3 text-xs text-slate-500">Down payment rule: {downpaymentLabel(hotel.downpayment_type)}. New staff-created reservations are tentative until payment is confirmed.</p>
+        <p className="mt-3 text-xs text-slate-500">Down payment rule: {downpaymentLabel(hotel.downpayment_type)}. A paid walk-in is saved as secured. A stay without payment does not hold the room.</p>
       </div>
 
       <div className="lg:col-span-2">
-        <button className="btn-primary" disabled={loading} type="submit">{loading ? 'Saving...' : 'Create tentative reservation'}</button>
+        <button className="btn-primary" disabled={loading || bookingSource !== 'walk_in'} type="submit">{loading ? 'Saving...' : 'Save paid walk-in'}</button>
         {offlineDraft ? (
           <button className="btn-secondary ml-2" disabled={loading} type="button" onClick={() => void saveOfflineDraft()}>
             Save offline draft

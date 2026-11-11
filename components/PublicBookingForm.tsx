@@ -30,6 +30,7 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
   const [guestCount, setGuestCount] = useState(1);
   const [withBreakfast, setWithBreakfast] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
+  const [proofSelected, setProofSelected] = useState(false);
   const [message, setMessage] = useState('');
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [loading, setLoading] = useState(false);
@@ -63,7 +64,9 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
     capacity: Number(room?.capacity || 0),
     nights: quote?.nights || 0,
     paidText: paymentAmount,
-    stayTotal: quote?.total
+    stayTotal: quote?.total,
+    downpaymentRequired: quote?.downpaymentRequired,
+    proofSelected
   });
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -71,12 +74,18 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
     if (!room || !quote) return;
     const formElement = event.currentTarget;
     const proof = formElement.querySelector<HTMLInputElement>('input[name="proof"]')?.files?.[0];
-    if (proof) {
-      const problem = proofFileProblem(proof);
-      if (problem) {
-        setMessage(problem);
-        return;
-      }
+    if (!proof) {
+      setMessage('Payment proof is required before the room can be held.');
+      return;
+    }
+    const problem = proofFileProblem(proof);
+    if (problem) {
+      setMessage(problem);
+      return;
+    }
+    if (hold.paymentTooLow) {
+      setMessage(`The payment must be at least the required down payment of ${currency(quote.downpaymentRequired, hotel.default_currency)}.`);
+      return;
     }
     if (hold.pastCheckIn) {
       setMessage(`Check-in cannot be before ${today}.`);
@@ -214,6 +223,7 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
         <div className="space-y-2">
           <label>Amount paid{quote ? ` (up to ${currency(quote.total, hotel.default_currency)})` : ''}</label>
           <input name="payment_amount" type="number" min="1" step="0.01" max={quote?.total || undefined} required value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} className="public-field w-full" />
+          {hold.paymentTooLow && paymentAmount.trim() !== '' ? <p className="text-sm text-red-700">The payment must be at least the required down payment{quote ? ` of ${currency(quote.downpaymentRequired, hotel.default_currency)}` : ''}.</p> : null}
           {hold.paymentTooHigh ? <p className="text-sm text-red-700">The payment cannot be more than the stay total.</p> : null}
         </div>
         <div className="space-y-2">
@@ -226,7 +236,8 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
         </div>
         <div className="space-y-2 md:col-span-2">
           <label>Payment proof (JPG, PNG, or PDF, up to 4 MB)</label>
-          <input name="proof" type="file" accept="image/jpeg,image/png,application/pdf" required className="public-field w-full" />
+          <input name="proof" type="file" accept="image/jpeg,image/png,application/pdf" required className="public-field w-full" onChange={(event) => setProofSelected(Boolean(event.target.files?.length))} />
+          {!proofSelected ? <p className="text-sm text-slate-600">Upload a payment proof. The room is not held without it.</p> : null}
         </div>
         <div className="space-y-2 md:col-span-2">
           <label>Booking notes</label>
@@ -248,7 +259,7 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
       </div>
 
       <PaymentInstructions slug={hotel.slug} />
-      <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">A submitted request holds the room against another online request for the same dates. The stay is secured only after the hotel confirms the payment.</p>
+      <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">The room is held only after this proof is saved. If the hotel rejects the payment, the room is released. A request without payment does not hold the room.</p>
       <button className="btn-primary w-full" disabled={loading || hold.submitDisabled} type="submit">{loading ? 'Submitting...' : 'Submit booking request'}</button>
     </form>
   );

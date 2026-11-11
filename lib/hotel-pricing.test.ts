@@ -57,39 +57,43 @@ describe('hotel stay pricing', () => {
     assert.equal(three.roomTotal + posted.extraBedTotal, three.total);
   });
 
-  it('prices Navarro while room-only is undecided: breakfast stays in the rate and extra beds are ₱850', () => {
-    const two = quotePublicStay({
+  it('prices Navarro at ₱2,500 for 2 nights, with and without breakfast', () => {
+    const base = {
       hotelSlug: 'navarro-hotel',
-      roomTypeName: 'Deluxe Queen',
+      roomTypeName: 'Deluxe King',
       nightlyRate: 2500,
       ...nights,
-      guestCount: 2,
-      withBreakfast: false,
       downpaymentType: 'percent',
       defaultPercent: 50,
       defaultAmount: 0
-    });
-    assert.equal(two.breakfastChoiceEnabled, false);
-    assert.equal(two.roomTotal, 5000);
-    assert.equal(two.extraBedTotal, 0);
-    assert.equal(two.total, 5000);
-    assert.equal(two.downpaymentRequired, 2500);
+    };
+    const twoBreakfast = quotePublicStay({ ...base, guestCount: 2, withBreakfast: true });
+    assert.equal(twoBreakfast.breakfastChoiceEnabled, true);
+    assert.equal(twoBreakfast.roomTotal, 5000);
+    assert.equal(twoBreakfast.extraBedTotal, 0);
+    assert.equal(twoBreakfast.total, 5000);
 
-    const three = quotePublicStay({
-      hotelSlug: 'navarro-hotel',
-      roomTypeName: 'Barkada',
-      nightlyRate: 2500,
-      ...nights,
-      guestCount: 3,
-      withBreakfast: false,
-      downpaymentType: 'fixed',
-      defaultPercent: 0,
-      defaultAmount: 100
-    });
-    assert.equal(three.extraBedRate, 850);
-    assert.equal(three.extraBedTotal, 1700);
-    assert.equal(three.total, 6700);
-    assert.equal(three.downpaymentRequired, 3350);
+    const twoRoomOnly = quotePublicStay({ ...base, guestCount: 2, withBreakfast: false });
+    assert.equal(twoRoomOnly.withBreakfast, false);
+    assert.equal(twoRoomOnly.roomTotal, 4500);
+    assert.equal(twoRoomOnly.total, 4500);
+    assert.equal(roomAmountLabel(twoRoomOnly.breakfastIncluded), 'Room only');
+
+    const threeRoomOnly = quotePublicStay({ ...base, guestCount: 3, withBreakfast: false });
+    assert.equal(threeRoomOnly.roomTotal, 4500);
+    assert.equal(threeRoomOnly.extraBedRate, 600);
+    assert.equal(threeRoomOnly.extraBedTotal, 1200);
+    assert.equal(threeRoomOnly.total, 5700);
+
+    const threeBreakfast = quotePublicStay({ ...base, guestCount: 3, withBreakfast: true });
+    assert.equal(threeBreakfast.roomTotal, 5000);
+    assert.equal(threeBreakfast.extraBedRate, 850);
+    assert.equal(threeBreakfast.extraBedTotal, 1700);
+    assert.equal(threeBreakfast.total, 6700);
+
+    const practice = quotePublicStay({ ...base, hotelSlug: 'test-practice-hotel', guestCount: 2, withBreakfast: false });
+    assert.equal(practice.breakfastChoiceEnabled, true);
+    assert.equal(practice.total, 4500);
   });
 
   it('applies a Navarro room-only discount only when that amount is set', () => {
