@@ -10,6 +10,9 @@ type ServiceDraft = {
   name: string;
   category: string;
   default_price: string;
+  charge_unit: string;
+  outlet_owed_amount: string;
+  outlet_owed_unit: string;
   description: string;
   remittance_required: boolean;
   remittance_note: string;
@@ -21,6 +24,9 @@ function draftFromService(item: ServiceItem): ServiceDraft {
     name: item.name || '',
     category: item.category || 'other',
     default_price: String(Number(item.default_price || 0)),
+    charge_unit: item.charge_unit || 'each',
+    outlet_owed_amount: String(Number(item.outlet_owed_amount || 0)),
+    outlet_owed_unit: item.outlet_owed_unit || 'none',
     description: item.description || '',
     remittance_required: Boolean(item.remittance_required),
     remittance_note: item.remittance_note || '',
@@ -119,6 +125,9 @@ export function ServiceCatalogManager({ hotels, serviceItems }: { hotels: Hotel[
           name: draft.name,
           category: draft.category,
           default_price: Number(draft.default_price || 0),
+          charge_unit: draft.charge_unit,
+          outlet_owed_amount: Number(draft.outlet_owed_amount || 0),
+          outlet_owed_unit: draft.outlet_owed_unit,
           description: draft.description,
           remittance_required: draft.remittance_required,
           remittance_note: draft.remittance_note,
@@ -154,7 +163,7 @@ export function ServiceCatalogManager({ hotels, serviceItems }: { hotels: Hotel[
           <div>
             <h2 className="text-lg font-bold">Services & Charges</h2>
             <p className="mt-1 text-sm text-slate-500">
-              &ldquo;Changing default service price affects new charges only. Existing reservation charges keep their saved unit price.&rdquo;
+              Breakfast is priced per room per day. The café or resto is owed a separate amount per head. Changing a default price affects new charges only.
             </p>
           </div>
           <div className="space-y-2">
@@ -165,6 +174,37 @@ export function ServiceCatalogManager({ hotels, serviceItems }: { hotels: Hotel[
           </div>
         </div>
       </section>
+
+      {selectedHotel ? (
+        <form
+          className="card grid gap-3 p-4 md:grid-cols-3"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            setMessage('');
+            const response = await fetch('/api/settings/breakfast', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                hotel_id: selectedHotel.id,
+                breakfast_rate_per_room: Number(form.get('breakfast_rate_per_room')),
+                breakfast_outlet_portion_per_head: Number(form.get('breakfast_outlet_portion_per_head'))
+              })
+            });
+            const json = await response.json().catch(() => ({}));
+            setMessage(response.ok ? 'Breakfast settings saved.' : json.error || 'Could not save breakfast settings.');
+            if (response.ok) router.refresh();
+          }}
+        >
+          <label className="space-y-1">Breakfast per room / day
+            <input name="breakfast_rate_per_room" type="number" min="0" step="0.01" defaultValue={Number(selectedHotel.breakfast_rate_per_room ?? 500)} className="w-full" />
+          </label>
+          <label className="space-y-1">Outlet portion per head
+            <input name="breakfast_outlet_portion_per_head" type="number" min="0" step="0.01" defaultValue={Number(selectedHotel.breakfast_outlet_portion_per_head ?? 250)} className="w-full" />
+          </label>
+          <button className="btn-secondary self-end" type="submit">Save breakfast settings</button>
+        </form>
+      ) : null}
 
       {message ? <div className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">{message}</div> : null}
 
@@ -204,6 +244,28 @@ export function ServiceCatalogManager({ hotels, serviceItems }: { hotels: Hotel[
                   <div className="space-y-2 lg:col-span-3">
                     <label>Description</label>
                     <input value={draft.description} onChange={(event) => updateDraft(item, 'description', event.target.value)} className="w-full" />
+                  </div>
+                  <div className="space-y-2">
+                    <label>Charge unit</label>
+                    <select value={draft.charge_unit} onChange={(event) => updateDraft(item, 'charge_unit', event.target.value)} className="w-full">
+                      <option value="each">Each</option>
+                      <option value="per_room_per_day">Per room / day</option>
+                      <option value="per_head">Per head</option>
+                      <option value="per_hour">Per hour</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label>Owed to outlet</label>
+                    <input value={draft.outlet_owed_amount} onChange={(event) => updateDraft(item, 'outlet_owed_amount', event.target.value)} type="number" min="0" step="0.01" className="w-full" />
+                  </div>
+                  <div className="space-y-2">
+                    <label>Owed unit</label>
+                    <select value={draft.outlet_owed_unit} onChange={(event) => updateDraft(item, 'outlet_owed_unit', event.target.value)} className="w-full">
+                      <option value="none">None</option>
+                      <option value="per_head">Per head</option>
+                      <option value="per_room">Per room</option>
+                      <option value="flat">Flat</option>
+                    </select>
                   </div>
                   <label className="flex items-center gap-2 text-sm lg:col-span-1">
                     <input type="checkbox" checked={draft.remittance_required} onChange={(event) => updateDraft(item, 'remittance_required', event.target.checked)} />
