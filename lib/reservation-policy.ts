@@ -1,4 +1,4 @@
-export type PolicyRole = 'owner' | 'manager' | 'front_desk';
+export type PolicyRole = 'owner' | 'manager' | 'front_desk' | 'cashier' | 'restaurant_staff';
 export type PolicyStatus =
   | 'tentative'
   | 'payment_submitted'
@@ -57,7 +57,7 @@ export function decideReservationUpdate(input: {
     if (!STATUSES.includes(input.nextStatus)) {
       return { ok: false, status: 400, error: 'Unknown reservation status.' };
     }
-    if (input.role === 'front_desk') {
+    if (input.role === 'front_desk' || input.role === 'cashier' || input.role === 'restaurant_staff') {
       const allowed = FRONT_DESK_STATUS_TARGETS[input.currentStatus] || [];
       if (!allowed.includes(input.nextStatus)) {
         return {
@@ -77,7 +77,7 @@ export function decideReservationUpdate(input: {
       return { ok: false, status: 400, error: 'Rate, total, and down payment must be zero or more.' };
     }
     if (numbersEqual(input.currentMoney[field], after)) continue;
-    if (input.role === 'front_desk') {
+    if (input.role === 'front_desk' || input.role === 'cashier' || input.role === 'restaurant_staff') {
       return {
         ok: false,
         status: 403,
@@ -88,7 +88,7 @@ export function decideReservationUpdate(input: {
   }
 
   const needsReason = changes.some((change) => change.field === 'status' || RESERVATION_MONEY_FIELDS.includes(change.field as MoneyField));
-  if (needsReason && input.role !== 'front_desk' && !String(input.reason || '').trim()) {
+  if (needsReason && input.role !== 'front_desk' && input.role !== 'cashier' && input.role !== 'restaurant_staff' && !String(input.reason || '').trim()) {
     return { ok: false, status: 400, error: 'A reason is required when a manager changes the rate, total, down payment, or status.' };
   }
 

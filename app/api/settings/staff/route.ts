@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel, canManageStaff } from '@/lib/auth';
-import { jsonError, requireApiStaff, isUUID } from '@/lib/api';
+import { jsonError, requireApiStaff, isUUID, denyUnless } from '@/lib/api';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import type { Role } from '@/types/app';
 
@@ -26,6 +26,8 @@ function validateAssignment(role: Role, hotelId: string | null) {
 export async function POST(request: Request) {
   const auth = await requireApiStaff();
   if (!auth.ok) return auth.response;
+  const denied = denyUnless(auth.staff, 'owner');
+  if (denied) return denied;
   const staff = auth.staff;
   if (!canManageStaff(staff.profile)) return jsonError('Only owners can manage staff profiles.', 403);
 

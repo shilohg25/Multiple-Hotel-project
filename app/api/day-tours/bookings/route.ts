@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel, canAddReservationCharges } from '@/lib/auth';
-import { jsonError, requireApiStaff } from '@/lib/api';
+import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 export const runtime = 'nodejs';
@@ -28,6 +28,8 @@ async function getSecuredGuestCount(packageId: string, tourDate: string) {
 export async function POST(request: Request) {
   const auth = await requireApiStaff();
   if (!auth.ok) return auth.response;
+  const denied = denyUnless(auth.staff, 'settings');
+  if (denied) return denied;
   const staff = auth.staff;
   if (!canAddReservationCharges(staff.profile)) return jsonError('You do not have permission to create day tour bookings.', 403);
 

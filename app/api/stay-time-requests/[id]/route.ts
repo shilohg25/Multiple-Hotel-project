@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel, canManagePricingSetup } from '@/lib/auth';
-import { jsonError, requireApiStaff } from '@/lib/api';
+import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
+import { unavailableDatabaseFunction } from '@/lib/supabase-errors';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiStaff();
   if (!auth.ok) return auth.response;
+  const denied = denyUnless(auth.staff, 'approve');
+  if (denied) return denied;
   if (!canManagePricingSetup(auth.staff.profile)) return jsonError('Only a manager or owner can approve this charge.', 403);
 
   const { id } = await params;
@@ -27,6 +30,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     p_actor: auth.staff.userId
   });
   if (error) {
+    const unavailable = unavailableDatabaseFunction(error);
+    if (unavailable) return jsonError(unavailable, 503);
     const message = error.message || 'Could not review this request.';
     return jsonError(message, /already reviewed/i.test(message) ? 409 : 400);
   }

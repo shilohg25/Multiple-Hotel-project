@@ -19,7 +19,9 @@ begin
     insert into auth.users (id, email) values
       ('10000000-0000-4000-8000-000000000001', 'test-owner@example.test'),
       ('10000000-0000-4000-8000-000000000002', 'test-manager@example.test'),
-      ('10000000-0000-4000-8000-000000000003', 'test-front-desk@example.test')
+      ('10000000-0000-4000-8000-000000000003', 'test-front-desk@example.test'),
+      ('10000000-0000-4000-8000-000000000004', 'test-cashier@example.test'),
+      ('10000000-0000-4000-8000-000000000005', 'test-restaurant@example.test')
     on conflict (id) do update set email = excluded.email;
   end if;
 end $$;
@@ -65,6 +67,18 @@ insert into public.profiles (id, full_name, role, hotel_id)
 select u.id, 'TEST- Manager', 'manager', '11111111-1111-4111-8111-111111111111'
 from auth.users u
 where u.email = 'test-manager@example.test'
+on conflict (id) do update set full_name = excluded.full_name, role = excluded.role, hotel_id = excluded.hotel_id;
+
+insert into public.profiles (id, full_name, role, hotel_id)
+select u.id, 'TEST- Cashier', 'cashier', '11111111-1111-4111-8111-111111111111'
+from auth.users u
+where u.email = 'test-cashier@example.test'
+on conflict (id) do update set full_name = excluded.full_name, role = excluded.role, hotel_id = excluded.hotel_id;
+
+insert into public.profiles (id, full_name, role, hotel_id)
+select u.id, 'TEST- Restaurant', 'restaurant_staff', '11111111-1111-4111-8111-111111111111'
+from auth.users u
+where u.email = 'test-restaurant@example.test'
 on conflict (id) do update set full_name = excluded.full_name, role = excluded.role, hotel_id = excluded.hotel_id;
 
 insert into public.profiles (id, full_name, role, hotel_id)

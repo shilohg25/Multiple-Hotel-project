@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel, canManagePricingSetup } from '@/lib/auth';
-import { jsonError, requireApiStaff } from '@/lib/api';
+import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiStaff();
   if (!auth.ok) return auth.response;
+  const denied = denyUnless(auth.staff, 'settings');
+  if (denied) return denied;
   if (!canManagePricingSetup(auth.staff.profile)) return jsonError('Only a manager or owner can edit payment channels.', 403);
 
   const { id } = await params;

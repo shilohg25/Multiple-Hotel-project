@@ -1,4 +1,4 @@
-export type Role = 'owner' | 'manager' | 'front_desk';
+export type Role = 'owner' | 'manager' | 'front_desk' | 'cashier' | 'restaurant_staff';
 
 export type RoomType = {
   id: string;

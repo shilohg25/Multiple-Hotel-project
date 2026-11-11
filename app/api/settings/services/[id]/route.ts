@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel, canManageServiceCatalog } from '@/lib/auth';
-import { jsonError, requireApiStaff } from '@/lib/api';
+import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { normalizeServiceCategory } from '@/lib/service-categories';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
@@ -16,6 +16,8 @@ function moneyChanged(oldValue: unknown, newValue: number) {
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiStaff();
   if (!auth.ok) return auth.response;
+  const denied = denyUnless(auth.staff, 'settings');
+  if (denied) return denied;
   const staff = auth.staff;
   if (!canManageServiceCatalog(staff.profile)) return jsonError('Only owners can manage service items.', 403);
 

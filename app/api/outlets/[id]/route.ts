@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireApiStaff, jsonError } from '@/lib/api';
+import { requireApiStaff, jsonError, denyUnless } from '@/lib/api';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 function optionalText(value: unknown) {
@@ -10,6 +10,8 @@ function optionalText(value: unknown) {
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiStaff();
   if (!auth.ok) return auth.response;
+  const denied = denyUnless(auth.staff, 'owner');
+  if (denied) return denied;
   if (auth.staff.profile.role !== 'owner') return jsonError('Only owners can edit outlets.', 403);
 
   const { id } = await params;
