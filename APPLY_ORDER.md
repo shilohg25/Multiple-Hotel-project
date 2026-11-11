@@ -29,6 +29,11 @@ These three `0002_*.sql` files overlap. The live database has no `supabase_migra
 | 7 | `supabase/migrations/20261110015000_staff_roles.sql` | `supabase/rollbacks/20261110015000_staff_roles.rollback.sql` |
 | 8 | `supabase/migrations/20261110015100_operational_write_guards.sql` | `supabase/rollbacks/20261110015100_operational_write_guards.rollback.sql` |
 | 8b | `supabase/migrations/20261110015200_operational_write_guard_tightening.sql` | `supabase/rollbacks/20261110015200_operational_write_guard_tightening.rollback.sql` |
+| 9 | `supabase/migrations/20261110026000_day_close.sql` | `supabase/rollbacks/20261110026000_day_close.rollback.sql` |
+| 10 | `supabase/migrations/20261110026100_ledger_outlet_and_shortage_status.sql` | `supabase/rollbacks/20261110026100_ledger_outlet_and_shortage_status.rollback.sql` |
+| 11 | `supabase/migrations/20261110026200_confirm_payment.sql` | `supabase/rollbacks/20261110026200_confirm_payment.rollback.sql` |
+
+Before applying row 10 on a database that already has shortage charges, run the read-only query in `supabase/checks/pre_026100_duplicate_shortages.sql`. If it returns any rows, keep one shortage charge per `day_close_id` before applying that migration. The migration file itself is unchanged.
 
 `20261110000200_hotel_timezone.sql` only adds `hotels.timezone` (default `Asia/Manila`). It does not depend on which `0002` file was used.
 

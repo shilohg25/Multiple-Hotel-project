@@ -41,7 +41,7 @@ export function canOpenPath(role: string | null | undefined, pathname: string): 
   if (DAILY_EXACT.has(pathname) || pathname === '/dashboard') return true;
   if (pathname.startsWith('/today/')) return true;
   if (pathname.startsWith('/sales/')) return true;
-  if (pathname.startsWith('/print/reports/daily')) return true;
+  if (pathname.startsWith('/print/reports/daily') || pathname.startsWith('/print/reports/day-close')) return true;
   if (pathname.startsWith('/print/reservations/')) return true;
   if (pathname.startsWith('/reservations/') && pathname !== '/reservations') return true;
   return false;

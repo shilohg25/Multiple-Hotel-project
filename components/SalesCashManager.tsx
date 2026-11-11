@@ -15,13 +15,15 @@ export function SalesCashManager({
   selectedDate,
   ledgerEntries,
   cashCounts,
-  breakdown
+  breakdown,
+  outletId
 }: {
   hotels: Hotel[];
   selectedHotel: Hotel;
   selectedDate: string;
   ledgerEntries: LedgerEntry[];
   cashCounts: CashCount[];
+  outletId?: string | null;
   breakdown?: {
     roomPayments: number;
     serviceCharges: number;
@@ -44,10 +46,12 @@ export function SalesCashManager({
   }, [cashCounts]);
 
   const totals = useMemo(() => {
-    const salesTotal = ledgerEntries.filter((entry) => !entry.is_collectible).reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-    const collectibleTotal = ledgerEntries.filter((entry) => entry.is_collectible).reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+    const isCollectible = (entry: LedgerEntry) => entry.is_collectible || entry.category === 'collectible';
+    const isExpense = (entry: LedgerEntry) => entry.category === 'expense' || entry.category === 'expenses';
+    const salesTotal = ledgerEntries.filter((entry) => !isCollectible(entry) && !isExpense(entry)).reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+    const collectibleTotal = ledgerEntries.filter((entry) => isCollectible(entry)).reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
     const cashSales = ledgerEntries
-      .filter((entry) => !entry.is_collectible && entry.payment_method === 'cash')
+      .filter((entry) => !isCollectible(entry) && !isExpense(entry) && entry.payment_method === 'cash')
       .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
     const cashTotal = denominations.reduce((sum, denomination) => sum + denomination * Number(cashCountMap.get(denomination) || 0), 0);
     return { salesTotal, collectibleTotal, cashSales, cashTotal, variance: cashTotal - cashSales };
@@ -63,10 +67,13 @@ export function SalesCashManager({
     setMessage('');
     setLedgerLoading(true);
     const form = new FormData(formElement);
+    const body = Object.fromEntries(form.entries()) as Record<string, FormDataEntryValue>;
+    if (body.category === 'collectible') body.is_collectible = 'true';
+    if (outletId) body.outlet_id = outletId;
     const response = await fetch('/api/ledger', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.fromEntries(form.entries()))
+      body: JSON.stringify(body)
     });
     setLedgerLoading(false);
     const json = await response.json().catch(() => ({}));
@@ -206,8 +213,9 @@ export function SalesCashManager({
                 <option value="room_payment">Room payment</option>
                 <option value="add_on">Add-on</option>
                 <option value="deposit">Deposit</option>
-                <option value="collectible">Collectible</option>
-                <option value="other">Other</option>
+            <option value="collectible">Collectible</option>
+            <option value="expense">Expense</option>
+            <option value="other">Other</option>
               </select>
             </div>
             <div className="space-y-2">
