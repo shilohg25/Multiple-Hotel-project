@@ -96,7 +96,7 @@ export function ReservationFolio({
       setNotes('');
       setMessage('Charge added to folio.');
       router.refresh();
-    } catch (error) {
+    } catch {
       setOfflineDraft({
         reservation_id: reservationId,
         service_item_id: serviceItemId,

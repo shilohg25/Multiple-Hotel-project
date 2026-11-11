@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel, canManagePayments } from '@/lib/auth';
+import { businessToday } from '@/lib/date';
 import { jsonError, requireApiStaff } from '@/lib/api';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import type { Guest, Hotel, Reservation } from '@/types/app';
@@ -57,7 +58,7 @@ export async function PATCH(_request: Request, { params }: { params: Promise<{ i
   await supabaseAdmin.from('ledger_entries').insert({
     hotel_id: reservation.hotel_id,
     reservation_id: reservation.id,
-    entry_date: new Date().toISOString().slice(0, 10),
+    entry_date: businessToday(reservation.hotels?.timezone),
     category: 'room_payment',
     description: `Confirmed payment for ${reservation.guests?.full_name || 'guest'} (${id})`,
     amount: Number(payment.amount || 0),

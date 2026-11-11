@@ -62,6 +62,8 @@ export function OfflineQueueManager() {
     void load();
     window.addEventListener('offline-store-changed', load);
     return () => window.removeEventListener('offline-store-changed', load);
+    // Mount-only: load is recreated each render and would retrigger the effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function syncNow() {

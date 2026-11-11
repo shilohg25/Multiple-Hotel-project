@@ -9,13 +9,13 @@ type SearchParams = { hotel?: string; from?: string; to?: string };
 export default async function ReservationsPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const params = (await searchParams) || {};
   const staff = await requireStaff();
-  const { from: defaultFrom, to: defaultTo } = monthRange();
-  const from = params.from || defaultFrom;
-  const to = params.to || defaultTo;
 
   const { data: hotelsRaw } = await supabaseAdmin.from('hotels').select('*').eq('active', true).order('name');
   const hotels = ((hotelsRaw || []) as Hotel[]).filter((hotel) => canAccessHotel(staff.profile, hotel.id));
   const hotel = hotels.find((item) => item.id === params.hotel) || hotels[0];
+  const { from: defaultFrom, to: defaultTo } = monthRange(new Date(), hotel?.timezone);
+  const from = params.from || defaultFrom;
+  const to = params.to || defaultTo;
 
   if (!hotel) {
     return (

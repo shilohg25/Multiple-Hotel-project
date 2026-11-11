@@ -20,6 +20,7 @@ export type Hotel = {
   default_downpayment_amount: number;
   house_rules: string;
   booking_terms: string;
+  timezone?: string | null;
   active: boolean;
 };
 

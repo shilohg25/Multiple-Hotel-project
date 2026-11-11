@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
+import { businessDateForHotel } from '@/lib/business-date';
 import { jsonError, requireApiStaff } from '@/lib/api';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { getProcessedOfflineRequest, recordProcessedOfflineRequest } from '@/lib/idempotency';
@@ -10,7 +11,7 @@ export async function POST(request: Request) {
   const staff = auth.staff;
   const payload = await request.json();
   const hotelId = String(payload.hotel_id || '');
-  const countDate = String(payload.count_date || new Date().toISOString().slice(0, 10));
+  const countDate = await businessDateForHotel(hotelId, payload.count_date);
   const clientRequestId = String(payload.client_request_id || payload.offline_id || '').trim() || null;
 
   const processed = await getProcessedOfflineRequest(clientRequestId, 'cash_count.save');

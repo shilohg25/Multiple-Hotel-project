@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { requireStaff, canAccessHotel } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { businessToday, localDayBounds } from '@/lib/date';
 import { currency } from '@/lib/money';
 import { getAccessibleHotels } from '@/lib/report-data';
 import { PrintButton } from '@/components/PrintButton';
@@ -17,10 +18,12 @@ export default async function RemittanceReportPrintPage({ searchParams }: { sear
   const hotel = hotels.find((item) => item.id === params.hotel) || hotels[0];
   if (!hotel) return <div className="print-page">No hotel selected.</div>;
   if (!canAccessHotel(staff.profile, hotel.id)) return <div className="print-page">Access denied.</div>;
-  const from = params.from || new Date().toISOString().slice(0, 10);
+  const from = params.from || businessToday(hotel.timezone);
   const to = params.to || from;
+  const fromStart = localDayBounds(from, hotel.timezone).start;
+  const toEnd = localDayBounds(to, hotel.timezone).end;
   const [{ data: dueRaw }, { data: remittancesRaw }] = await Promise.all([
-    supabaseAdmin.from('reservation_charges').select('*').eq('hotel_id', hotel.id).eq('remittance_required', true).gte('created_at', `${from}T00:00:00.000Z`).lte('created_at', `${to}T23:59:59.999Z`),
+    supabaseAdmin.from('reservation_charges').select('*').eq('hotel_id', hotel.id).eq('remittance_required', true).gte('created_at', fromStart).lte('created_at', toEnd),
     supabaseAdmin.from('remittances').select('*, outlets:to_outlet_id(id,name,outlet_type)').eq('from_hotel_id', hotel.id).gte('period_start', from).lte('period_end', to)
   ]);
   const dueItems = (dueRaw || []) as ReservationCharge[];

@@ -1,19 +1,11 @@
 import { requireStaff, canAccessHotel, canManageRemittances } from '@/lib/auth';
+import { businessMonth, businessToday, localDayBounds } from '@/lib/date';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { RemittanceManager } from '@/components/RemittanceManager';
 import type { Hotel, Outlet, Remittance, ReservationCharge } from '@/types/app';
 import Link from 'next/link';
 
 type SearchParams = { hotel?: string; outlet?: string; from?: string; to?: string };
-
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function monthStartISO() {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
-}
 
 export default async function RemittancesPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const params = (await searchParams) || {};
@@ -26,8 +18,10 @@ export default async function RemittancesPage({ searchParams }: { searchParams?:
     return <div className="card p-6 text-sm text-slate-500">Create a hotel before using remittances.</div>;
   }
 
-  const periodStart = params.from || monthStartISO();
-  const periodEnd = params.to || todayISO();
+  const periodStart = params.from || `${businessMonth(selectedHotel.timezone)}-01`;
+  const periodEnd = params.to || businessToday(selectedHotel.timezone);
+  const periodBoundsStart = localDayBounds(periodStart, selectedHotel.timezone).start;
+  const periodBoundsEnd = localDayBounds(periodEnd, selectedHotel.timezone).end;
   const selectedOutletId = params.outlet || '';
 
   const [{ data: outletsRaw }, { data: remittancesRaw }, { data: dueItemsRaw }] = await Promise.all([
@@ -44,8 +38,8 @@ export default async function RemittancesPage({ searchParams }: { searchParams?:
       .select('*')
       .eq('hotel_id', selectedHotel.id)
       .eq('remittance_required', true)
-      .gte('created_at', `${periodStart}T00:00:00.000Z`)
-      .lte('created_at', `${periodEnd}T23:59:59.999Z`)
+      .gte('created_at', periodBoundsStart)
+      .lte('created_at', periodBoundsEnd)
       .order('created_at', { ascending: false })
   ]);
 

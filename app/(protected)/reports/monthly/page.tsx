@@ -6,15 +6,10 @@ import { SavePrintSnapshotButton } from '@/components/offline/SavePrintSnapshotB
 
 type SearchParams = { hotel?: string; month?: string };
 
-function currentMonth() {
-  return new Date().toISOString().slice(0, 7);
-}
-
 export default async function MonthlyReportPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const params = (await searchParams) || {};
   const staff = await requireStaff();
-  const month = params.month || currentMonth();
-  const { hotels, hotel, totalsByDay, totals } = await getMonthlyReportData(staff, { hotelId: params.hotel, month });
+  const { hotels, hotel, month, totalsByDay, totals } = await getMonthlyReportData(staff, { hotelId: params.hotel, month: params.month });
 
   if (!hotel || !totals) return <div className="card p-6 text-sm text-slate-500">Create a hotel before viewing reports.</div>;
 

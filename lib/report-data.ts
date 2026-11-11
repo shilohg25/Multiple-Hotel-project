@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { canAccessHotel, type StaffContext } from './auth';
+import { businessMonth, businessTimeZone, businessToday, localDayBounds, localMonthBounds, timestampInRange } from './date';
 import { supabaseAdmin } from './supabase-admin';
 import type { CashCount, Hotel, LedgerEntry, Payment, Remittance, Reservation, ReservationCharge } from '@/types/app';
 
@@ -9,24 +10,12 @@ export async function getAccessibleHotels(profile: StaffContext['profile']) {
   return ((data || []) as Hotel[]).filter((hotel) => canAccessHotel(profile, hotel.id));
 }
 
-export function dayBounds(date: string) {
-  return {
-    start: `${date}T00:00:00.000Z`,
-    end: `${date}T23:59:59.999Z`
-  };
+export function dayBounds(date: string, timeZone?: string | null) {
+  return localDayBounds(date, businessTimeZone(timeZone));
 }
 
-export function monthRange(month: string) {
-  const [yearText, monthText] = month.split('-');
-  const year = Number(yearText);
-  const monthIndex = Number(monthText) - 1;
-  const start = new Date(Date.UTC(year, monthIndex, 1));
-  const end = new Date(Date.UTC(year, monthIndex + 1, 0));
-  return {
-    startDate: start.toISOString().slice(0, 10),
-    endDate: end.toISOString().slice(0, 10),
-    days: Array.from({ length: end.getUTCDate() }, (_, index) => new Date(Date.UTC(year, monthIndex, index + 1)).toISOString().slice(0, 10))
-  };
+export function monthRange(month: string, timeZone?: string | null) {
+  return localMonthBounds(month, businessTimeZone(timeZone));
 }
 
 export type DailyReportData = {
@@ -58,18 +47,19 @@ export type DailyReportData = {
   };
 };
 
-export async function getDailyReportData(staff: StaffContext, input: { hotelId?: string; date: string }): Promise<{ hotels: Hotel[]; report: DailyReportData | null }> {
+export async function getDailyReportData(staff: StaffContext, input: { hotelId?: string; date?: string }): Promise<{ hotels: Hotel[]; report: DailyReportData | null }> {
   const hotels = await getAccessibleHotels(staff.profile);
   const hotel = hotels.find((item) => item.id === input.hotelId) || hotels[0];
   if (!hotel) return { hotels, report: null };
 
-  const { start, end } = dayBounds(input.date);
+  const date = input.date || businessToday(hotel.timezone);
+  const { start, end } = dayBounds(date, hotel.timezone);
   const [{ data: reservationsRaw }, { data: paymentsRaw }, { data: pendingPaymentsRaw }, { data: chargesRaw }, { data: ledgerRaw }, { data: cashRaw }, { data: dayToursRaw }, { data: remittancesRaw }] = await Promise.all([
     supabaseAdmin
       .from('reservations')
       .select('*, guests(full_name,email,phone), rooms(name,room_type_name)')
       .eq('hotel_id', hotel.id)
-      .or(`check_in.eq.${input.date},check_out.eq.${input.date},created_at.gte.${start}`)
+      .or(`check_in.eq.${date},check_out.eq.${date},created_at.gte.${start}`)
       .lte('created_at', end)
       .order('created_at', { ascending: false }),
     supabaseAdmin
@@ -94,24 +84,24 @@ export async function getDailyReportData(staff: StaffContext, input: { hotelId?:
       .from('ledger_entries')
       .select('*')
       .eq('hotel_id', hotel.id)
-      .eq('entry_date', input.date),
+      .eq('entry_date', date),
     supabaseAdmin
       .from('cash_counts')
       .select('*')
       .eq('hotel_id', hotel.id)
-      .eq('count_date', input.date),
+      .eq('count_date', date),
     supabaseAdmin
       .from('day_tour_bookings')
       .select('total_amount')
       .eq('hotel_id', hotel.id)
-      .eq('tour_date', input.date)
+      .eq('tour_date', date)
       .in('status', ['secured', 'completed']),
     supabaseAdmin
       .from('remittances')
       .select('*')
       .eq('from_hotel_id', hotel.id)
-      .lte('period_start', input.date)
-      .gte('period_end', input.date)
+      .lte('period_start', date)
+      .gte('period_end', date)
   ]);
 
   const reservations = (reservationsRaw || []) as Reservation[];
@@ -136,10 +126,10 @@ export async function getDailyReportData(staff: StaffContext, input: { hotelId?:
     hotels,
     report: {
       hotel,
-      date: input.date,
+      date,
       reservations,
-      checkIns: reservations.filter((item) => item.check_in === input.date),
-      checkOuts: reservations.filter((item) => item.check_out === input.date),
+      checkIns: reservations.filter((item) => item.check_in === date),
+      checkOuts: reservations.filter((item) => item.check_out === date),
       confirmedPayments,
       pendingPayments,
       tentativeFollowups: reservations.filter((item) => item.status === 'tentative' || item.status === 'payment_submitted'),
@@ -165,13 +155,14 @@ export async function getDailyReportData(staff: StaffContext, input: { hotelId?:
   };
 }
 
-export async function getMonthlyReportData(staff: StaffContext, input: { hotelId?: string; month: string }) {
+export async function getMonthlyReportData(staff: StaffContext, input: { hotelId?: string; month?: string }) {
   const hotels = await getAccessibleHotels(staff.profile);
   const hotel = hotels.find((item) => item.id === input.hotelId) || hotels[0];
-  if (!hotel) return { hotels, hotel: null, days: [], totalsByDay: [], totals: null };
-  const range = monthRange(input.month);
-  const startIso = `${range.startDate}T00:00:00.000Z`;
-  const endIso = `${range.endDate}T23:59:59.999Z`;
+  if (!hotel) return { hotels, hotel: null, month: input.month || '', days: [], totalsByDay: [], totals: null };
+  const month = input.month || businessMonth(hotel.timezone);
+  const range = monthRange(month, hotel.timezone);
+  const startIso = range.start;
+  const endIso = range.end;
 
   const [{ data: reservationsRaw }, { data: paymentsRaw }, { data: chargesRaw }, { data: dayToursRaw }, { data: remittancesRaw }] = await Promise.all([
     supabaseAdmin.from('reservations').select('*').eq('hotel_id', hotel.id).gte('check_in', range.startDate).lte('check_in', range.endDate),
@@ -188,11 +179,10 @@ export async function getMonthlyReportData(staff: StaffContext, input: { hotelId
   const remittances = (remittancesRaw || []) as Remittance[];
 
   const totalsByDay = range.days.map((day) => {
-    const dayStart = `${day}T00:00:00.000Z`;
-    const dayEnd = `${day}T23:59:59.999Z`;
+    const { start: dayStart, end: dayEnd } = dayBounds(day, hotel.timezone);
     const dayReservations = reservations.filter((item) => item.check_in === day);
-    const dayCharges = charges.filter((item) => item.created_at >= dayStart && item.created_at <= dayEnd);
-    const dayPayments = payments.filter((item) => item.confirmed_at && item.confirmed_at >= dayStart && item.confirmed_at <= dayEnd);
+    const dayCharges = charges.filter((item) => timestampInRange(item.created_at, dayStart, dayEnd));
+    const dayPayments = payments.filter((item) => timestampInRange(item.confirmed_at, dayStart, dayEnd));
     const dayTourRows = dayTours.filter((item) => item.tour_date === day && ['secured', 'completed'].includes(item.status));
     return {
       day,
@@ -208,6 +198,7 @@ export async function getMonthlyReportData(staff: StaffContext, input: { hotelId
   return {
     hotels,
     hotel,
+    month,
     days: range.days,
     totalsByDay,
     totals: {

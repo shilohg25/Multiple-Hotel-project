@@ -11,8 +11,8 @@ type SearchParams = { hotel?: string; date?: string };
 export default async function DailyReportPrintPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const params = (await searchParams) || {};
   const staff = await requireStaff();
-  const date = params.date || new Date().toISOString().slice(0, 10);
-  const { report } = await getDailyReportData(staff, { hotelId: params.hotel, date });
+  const { report } = await getDailyReportData(staff, { hotelId: params.hotel, date: params.date });
+  const date = report?.date || params.date || '';
   if (!report) return <div className="print-page">No report data.</div>;
   const printedAt = new Date();
 
