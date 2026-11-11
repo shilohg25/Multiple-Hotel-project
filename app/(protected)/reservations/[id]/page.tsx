@@ -9,8 +9,13 @@ import {
   canDeleteReservationCharges
 } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { AUTO_BREAKFAST_REMOVED_ACTION, autoChargeRemovedFromRead, isAutoBreakfastCharge } from '@/lib/breakfast-toggle';
 import { currency } from '@/lib/money';
+import { balanceDueLabel } from '@/lib/stay-cleanup';
+import { readToBeBilled } from '@/lib/public-quote';
+import { stayFolioView } from '@/lib/stay-total';
 import { formatDate } from '@/lib/date';
+import { BillingReferenceField } from '@/components/BillingReferenceField';
 import { ReservationStatusBadge } from '@/components/StatusBadge';
 import { PaymentPanel } from '@/components/PaymentPanel';
 import { EmailDraftPanel } from '@/components/EmailDraftPanel';
@@ -68,18 +73,32 @@ export default async function ReservationDetailPage({ params }: { params: Promis
     .eq('code', 'card_metrobank')
     .maybeSingle();
   const roomTypeId = reservation.rooms.room_type_id;
-  const [{ data: ratesRaw }, { data: overridesRaw }, { data: stayTimesRaw }] = await Promise.all([
+  const [{ data: ratesRaw }, { data: overridesRaw }, { data: stayTimesRaw }, removedBreakfast] = await Promise.all([
     roomTypeId
       ? supabaseAdmin.from('room_type_channel_rates').select('*').eq('room_type_id', roomTypeId)
       : Promise.resolve({ data: [] }),
     supabaseAdmin.from('rate_override_requests').select('*').eq('reservation_id', reservation.id).order('created_at', { ascending: false }),
-    supabaseAdmin.from('stay_time_requests').select('*').eq('reservation_id', reservation.id).order('created_at', { ascending: false })
+    supabaseAdmin.from('stay_time_requests').select('*').eq('reservation_id', reservation.id).order('created_at', { ascending: false }),
+    supabaseAdmin.from('audit_logs').select('id').eq('reservation_id', reservation.id).eq('action', AUTO_BREAKFAST_REMOVED_ACTION).limit(1)
   ]);
+  if (removedBreakfast.error) console.error(removedBreakfast.error);
   const charges = (chargesRaw || []) as ReservationCharge[];
   const serviceItems = (serviceItemsRaw || []) as ServiceItem[];
-  const chargesSubtotal = charges.reduce((sum, charge) => sum + Number(charge.total_amount || 0), 0);
+  const folio = stayFolioView({
+    hotelSlug: reservation.hotels.slug,
+    roomTypeName: reservation.rooms.room_type_name,
+    postedRoomRate: Number(reservation.posted_room_rate || 0),
+    roomTotal: Number(reservation.total_amount || 0),
+    nights: reservation.nights,
+    guestCount: Number(reservation.guest_count || 1),
+    withBreakfast: Boolean(reservation.with_breakfast),
+    removed: autoChargeRemovedFromRead(removedBreakfast.error, removedBreakfast.data),
+    charges
+  });
   const confirmedTotal = payments.filter((payment) => payment.status === 'confirmed').reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-  const balance = Number(reservation.total_amount || 0) + chargesSubtotal - confirmedTotal;
+  const balance = folio.total - confirmedTotal;
+  const billed = readToBeBilled(reservation.mode_of_payment);
+  const due = balanceDueLabel(balance, { toBeBilled: Boolean(billed) });
 
   return (
     <div className="space-y-6">
@@ -125,7 +144,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
               payments: payments.map(({ proof_url: _proofUrl, ...payment }) => payment),
               totals: {
                 room_total: Number(reservation.total_amount || 0),
-                additional_charges_total: chargesSubtotal,
+                additional_charges_total: folio.chargesTotal,
                 confirmed_payments_total: confirmedTotal,
                 balance_due: balance
               }
@@ -149,17 +168,24 @@ export default async function ReservationDetailPage({ params }: { params: Promis
           </div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Amounts</p>
-            <p className="mt-1 font-bold">Room total {currency(reservation.total_amount, reservation.hotels.default_currency)}</p>
-            <p className="text-sm text-slate-500">Required DP {currency(reservation.downpayment_required, reservation.hotels.default_currency)}</p>
+            <p className="mt-1 font-bold">{folio.roomLabel} {currency(reservation.total_amount, reservation.hotels.default_currency)}</p>
+            {folio.expectedExtraBed > 0 ? <p className="text-sm text-slate-500">Expected extra bed {currency(folio.expectedExtraBed, reservation.hotels.default_currency)}</p> : null}
+            <p className="text-sm text-slate-500">Stay total {currency(folio.total, reservation.hotels.default_currency)}</p>
+            <p className="text-sm text-slate-500">Required DP {currency(folio.downpaymentRequired ?? reservation.downpayment_required, reservation.hotels.default_currency)}</p>
           </div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Balance</p>
-            <p className="mt-1 font-bold">{currency(balance, reservation.hotels.default_currency)}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{due.label}</p>
+            <p className="mt-1 font-bold">{currency(due.amount, reservation.hotels.default_currency)}</p>
+            {billed?.reference ? <p className="text-sm text-slate-500">Billing reference {billed.reference}</p> : null}
+            {(staff.profile.role === 'owner' || staff.profile.role === 'manager') && billed ? (
+              <BillingReferenceField reservationId={reservation.id} reference={billed.reference} />
+            ) : null}
             <p className="text-sm text-slate-500">Confirmed {currency(confirmedTotal, reservation.hotels.default_currency)}</p>
           </div>
         </div>
         <div className="mt-6 grid gap-5 md:grid-cols-3">
           <Info label="Booking source" value={reservation.booking_source.replaceAll('_', ' ')} />
+          <Info label="Guests" value={String(reservation.guest_count || 1)} />
           <Info label="Breakfast" value={reservation.with_breakfast ? 'Yes' : 'No - room only'} />
           <Info label="Surcharge" value={reservation.surcharge_label ? `${reservation.surcharge_label}: ${currency(reservation.surcharge_amount, reservation.hotels.default_currency)}` : '-'} />
           <Info label="House rules email draft" value={reservation.house_rules_sent_at ? 'Marked sent' : 'Not marked sent'} />
@@ -194,7 +220,10 @@ export default async function ReservationDetailPage({ params }: { params: Promis
         status={reservation.status}
         postedRoomRate={Number(reservation.posted_room_rate || 0)}
         totalAmount={Number(reservation.total_amount || 0)}
-        downpaymentRequired={Number(reservation.downpayment_required || 0)}
+        roomLabel={folio.roomLabel}
+        downpaymentRequired={Number(folio.downpaymentRequired ?? reservation.downpayment_required ?? 0)}
+        withBreakfast={Boolean(reservation.with_breakfast)}
+        breakfastCharged={charges.some((charge) => isAutoBreakfastCharge(charge))}
         role={staff.profile.role}
       />
 
@@ -202,12 +231,17 @@ export default async function ReservationDetailPage({ params }: { params: Promis
         reservationId={reservation.id}
         currencyCode={reservation.hotels.default_currency}
         roomTotal={Number(reservation.total_amount || 0)}
+        roomLabel={folio.roomLabel}
+        expectedExtraBed={folio.expectedExtraBed}
+        expectedExtraBedLine={folio.expectedExtraBedLine}
         confirmedPaymentsTotal={confirmedTotal}
         charges={charges}
+        payments={payments}
         serviceItems={serviceItems}
         canAdd={canAddReservationCharges(staff.profile)}
         canManage={canManageReservationCharges(staff.profile)}
         canDelete={canDeleteReservationCharges(staff.profile)}
+        toBeBilled={Boolean(billed)}
       />
 
       <EmailDraftPanel hotel={reservation.hotels} reservation={reservation} guest={reservation.guests} />
@@ -219,6 +253,8 @@ export default async function ReservationDetailPage({ params }: { params: Promis
         canConfirm={canManagePayments(staff.profile)}
         cardSurchargePercent={Number(cardChannel?.surcharge_percent ?? 3)}
         cardMdrPercent={Number(cardChannel?.mdr_percent ?? 3.5)}
+        stayTotal={folio.total}
+        toBeBilled={Boolean(billed)}
       />
     </div>
   );

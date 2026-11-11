@@ -5,6 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { requireStaff, canAccessHotel } from '@/lib/auth';
 import { businessToday, localDayBounds } from '@/lib/date';
 import { currency } from '@/lib/money';
+import { BookingAlerts, type BookingAlert } from '@/components/BookingAlerts';
 import { StatCard } from '@/components/StatCard';
 import { ReservationStatusBadge, PaymentStatusBadge } from '@/components/StatusBadge';
 import type { Hotel, Payment, Reservation } from '@/types/app';
@@ -76,6 +77,36 @@ export default async function DashboardPage() {
     if (room.active) activeRoomCountByHotel.set(room.hotel_id, (activeRoomCountByHotel.get(room.hotel_id) || 0) + 1);
   });
   const hotelsNeedingRooms = hotels.filter((hotel) => (activeRoomCountByHotel.get(hotel.id) || 0) === 0);
+  const alertSelect = 'id, check_in, guest_count, with_breakfast, guests(full_name)';
+  const [onlineResult, pastResult] = hotelIds.length
+    ? await Promise.all([
+      supabaseAdmin
+        .from('reservations')
+        .select(alertSelect, { count: 'exact' })
+        .in('hotel_id', hotelIds)
+        .eq('booking_source', 'online')
+        .eq('status', 'payment_submitted')
+        .order('created_at', { ascending: false })
+        .limit(20),
+      supabaseAdmin
+        .from('reservations')
+        .select(alertSelect, { count: 'exact' })
+        .in('hotel_id', hotelIds)
+        .in('status', ['tentative', 'payment_submitted', 'secured'])
+        .lt('check_in', today)
+        .order('check_in', { ascending: true })
+        .limit(20)
+    ])
+    : [{ data: [], error: null, count: 0 }, { data: [], error: null, count: 0 }];
+  if (onlineResult.error) console.error(onlineResult.error);
+  if (pastResult.error) console.error(pastResult.error);
+  type AlertRow = { id: string; check_in: string; guest_count: number; with_breakfast: boolean; guests?: { full_name?: string } | { full_name?: string }[] | null };
+  const toAlert = (row: AlertRow): BookingAlert => {
+    const guest = Array.isArray(row.guests) ? row.guests[0] : row.guests;
+    return { id: row.id, guestName: guest?.full_name || 'Guest', checkIn: row.check_in, guestCount: Number(row.guest_count || 1), withBreakfast: Boolean(row.with_breakfast) };
+  };
+  const onlineAlerts = ((onlineResult.data || []) as AlertRow[]).map(toAlert);
+  const pastAlerts = ((pastResult.data || []) as AlertRow[]).map(toAlert);
 
   return (
     <div className="space-y-6">
@@ -89,6 +120,8 @@ export default async function DashboardPage() {
           <Link href={hotels[0] ? `/book/${hotels[0].slug}` : '/hotels'} className="btn-secondary">Public booking page</Link>
         </div>
       </div>
+
+      <BookingAlerts online={onlineAlerts} past={pastAlerts} onlineCount={onlineResult.count ?? onlineAlerts.length} pastCount={pastResult.count ?? pastAlerts.length} />
 
       <div className="flex flex-wrap gap-2">
         <Link href="/reports/daily" className="btn-secondary">Daily Report</Link>

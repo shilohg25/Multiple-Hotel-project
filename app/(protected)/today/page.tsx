@@ -3,6 +3,7 @@ import { canAccessHotel, requireStaff } from '@/lib/auth';
 import { businessToday } from '@/lib/date';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { roomStatus, type StaySlice } from '@/lib/today-board';
+import { BookingAlerts, type BookingAlert } from '@/components/BookingAlerts';
 import { StayActionLinks } from '@/components/StayActionLinks';
 import { HelpPanel } from '@/components/HelpPanel';
 import { getLocale, label, messagesFor } from '@/lib/i18n';
@@ -69,6 +70,34 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
   const inHouse = cards.filter((card) => card.status === 'in_house');
   const departures = cards.filter((card) => card.status === 'departure');
   const actionable = [...inHouse, ...arrivals, ...departures].filter((card) => card.stay);
+  const alertSelect = 'id, check_in, guest_count, with_breakfast, guests(full_name)';
+  const [onlineResult, pastResult] = await Promise.all([
+    supabaseAdmin
+      .from('reservations')
+      .select(alertSelect, { count: 'exact' })
+      .eq('hotel_id', hotel.id)
+      .eq('booking_source', 'online')
+      .eq('status', 'payment_submitted')
+      .order('created_at', { ascending: false })
+      .limit(20),
+    supabaseAdmin
+      .from('reservations')
+      .select(alertSelect, { count: 'exact' })
+      .eq('hotel_id', hotel.id)
+      .in('status', ['tentative', 'payment_submitted', 'secured'])
+      .lt('check_in', date)
+      .order('check_in', { ascending: true })
+      .limit(20)
+  ]);
+  if (onlineResult.error) console.error(onlineResult.error);
+  if (pastResult.error) console.error(pastResult.error);
+  type AlertRow = { id: string; check_in: string; guest_count: number; with_breakfast: boolean; guests?: { full_name?: string } | { full_name?: string }[] | null };
+  const toAlert = (row: AlertRow): BookingAlert => {
+    const guest = Array.isArray(row.guests) ? row.guests[0] : row.guests;
+    return { id: row.id, guestName: guest?.full_name || 'Guest', checkIn: row.check_in, guestCount: Number(row.guest_count || 1), withBreakfast: Boolean(row.with_breakfast) };
+  };
+  const onlineAlerts = ((onlineResult.data || []) as AlertRow[]).map(toAlert);
+  const pastAlerts = ((pastResult.data || []) as AlertRow[]).map(toAlert);
   const query = `hotel=${hotel.id}&date=${date}${outlet ? `&outlet=${outlet.id}` : ''}`;
 
   return (
@@ -80,19 +109,21 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
           <p className="mt-1 text-sm text-slate-500">{label(locale, 'today.emptyHint')}</p>
           {copy.needsReview ? <p className="mt-1 text-sm text-amber-800">{label(locale, 'lang.review')}</p> : null}
         </div>
-        <form className="flex flex-wrap gap-2" method="get">
-          <select name="hotel" defaultValue={hotel.id} className="min-w-40">
+        <form className="grid w-full min-w-0 grid-cols-1 gap-2 sm:flex sm:flex-wrap" method="get">
+          <select name="hotel" defaultValue={hotel.id} className="w-full min-w-0 max-w-full sm:w-auto sm:min-w-40">
             {hotels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
-          <select name="outlet" defaultValue={outlet?.id || ''} className="min-w-40">
+          <select name="outlet" defaultValue={outlet?.id || ''} className="w-full min-w-0 max-w-full sm:w-auto sm:min-w-40">
             <option value="">Whole property</option>
             {outlets.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
-          <input name="date" type="date" defaultValue={date} />
+          <input name="date" type="date" defaultValue={date} className="w-full max-w-full sm:w-auto" />
           <button className="btn-secondary" type="submit">Show</button>
           <HelpPanel screen="today" helpLabel={label(locale, 'nav.helpButton')} allGuidesLabel={label(locale, 'help.allGuides')} guides={copy.guides} />
         </form>
       </div>
+
+      <BookingAlerts online={onlineAlerts} past={pastAlerts} onlineCount={onlineResult.count ?? onlineAlerts.length} pastCount={pastResult.count ?? pastAlerts.length} />
 
       <StayActionLinks
         stays={actionable.map((card) => ({ id: card.stay!.id, label: `${label(locale, 'today.room')} ${card.room.name} · ${card.stay!.guest_name}` }))}

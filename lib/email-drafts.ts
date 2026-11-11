@@ -1,6 +1,8 @@
 import type { Guest, Hotel, Reservation } from '@/types/app';
-import { formatDate } from './date';
-import { currency } from './money';
+import { formatDate } from './date.ts';
+import { currency } from './money.ts';
+import { paymentInstructionLines } from './payment-instructions.ts';
+import { stayMoneyBreakdown } from './stay-total.ts';
 
 export type EmailDraftKind = 'house_rules' | 'booking_confirmation';
 
@@ -57,6 +59,17 @@ export function buildBookingConfirmationDraft(input: {
   guest: Guest;
 }): EmailDraft {
   const { hotel, reservation, guest } = input;
+  const amounts = stayMoneyBreakdown({
+    hotelSlug: hotel.slug,
+    roomTypeName: reservation.rooms?.room_type_name,
+    roomTotal: Number(reservation.total_amount || 0),
+    postedRoomRate: Number(reservation.posted_room_rate || 0),
+    checkIn: reservation.check_in,
+    checkOut: reservation.check_out,
+    nights: reservation.nights,
+    guestCount: Number(reservation.guest_count || 1),
+    withBreakfast: Boolean(reservation.with_breakfast)
+  });
   const subject = `${hotel.name} booking confirmation`;
   const body = [
     `Hello ${guestLine(guest)},`,
@@ -65,8 +78,14 @@ export function buildBookingConfirmationDraft(input: {
     '',
     `Hotel: ${hotel.name}`,
     `Room booking dates: ${formatDate(reservation.check_in)} to ${formatDate(reservation.check_out)}`,
-    `Total amount: ${currency(reservation.total_amount, hotel.default_currency)}`,
+    `Room: ${currency(amounts.room, hotel.default_currency)}`,
+    `Breakfast: ${amounts.breakfastLine}`,
+    ...(amounts.extraBed > 0 ? [`Extra bed: ${currency(amounts.extraBed, hotel.default_currency)}`] : []),
+    `Total: ${currency(amounts.total, hotel.default_currency)}`,
     `Confirmed down payment requirement: ${currency(reservation.downpayment_required, hotel.default_currency)}`,
+    '',
+    'Pay here:',
+    ...paymentInstructionLines(hotel),
     '',
     'Please bring a valid ID and keep your payment proof for verification at check-in.',
     '',

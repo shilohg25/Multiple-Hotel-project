@@ -4,6 +4,9 @@ import { businessToday } from '@/lib/date';
 import { paymentReceiptDate } from '@/lib/payment-confirm';
 import { lockedDayMessage } from '@/lib/day-lock';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
+import { isRoomOverlapError, ROOM_JUST_TAKEN } from '@/lib/room-overlap';
+import { amountConfirmed, confirmFitsStay } from '@/lib/payment-cap';
+import { loadStayMoney } from '@/lib/stay-money';
 import { unavailableDatabaseFunction } from '@/lib/supabase-errors';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import type { Guest, Hotel, Reservation } from '@/types/app';
@@ -38,6 +41,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const locked = await lockedDayMessage(reservation.hotel_id, entryDate, null);
   if (locked) return jsonError(locked, 409);
 
+  if (payment.status === 'submitted') {
+    const loaded = await loadStayMoney(reservation.id);
+    if (!loaded.ok) return jsonError(loaded.error, 500);
+    const fit = confirmFitsStay(loaded.money.total, amountConfirmed(loaded.money.payments, payment.id), Number(payment.amount || 0));
+    if (!fit.ok) return jsonError(fit.error, 409);
+  }
+
   const { data, error } = await supabaseAdmin.rpc('confirm_submitted_payment', {
     p_payment_id: id,
     p_actor: staff.userId,
@@ -45,6 +55,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     p_received_on: receivedOn
   });
   if (error) {
+    if (isRoomOverlapError(error)) {
+      console.error(error);
+      return jsonError(ROOM_JUST_TAKEN);
+    }
     const unavailable = unavailableDatabaseFunction(error);
     if (unavailable) return jsonError(unavailable, 503);
     const message = error.message || 'Could not confirm this payment.';

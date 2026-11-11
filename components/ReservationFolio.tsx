@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { ReservationCharge, ServiceItem } from '@/types/app';
 import { currency } from '@/lib/money';
+import { balanceDueLabel } from '@/lib/stay-cleanup';
+import { isAutoPostedCharge } from '@/lib/breakfast-toggle';
 import { queueOfflineItem } from '@/lib/offline/db';
 import { serviceCategoryOptions } from '@/lib/service-categories';
 
@@ -11,22 +13,32 @@ export function ReservationFolio({
   reservationId,
   currencyCode,
   roomTotal,
+  roomLabel = 'Room only',
+  expectedExtraBed = 0,
+  expectedExtraBedLine = '',
   confirmedPaymentsTotal,
   charges,
+  payments = [],
   serviceItems,
   canAdd,
   canManage,
-  canDelete
+  canDelete,
+  toBeBilled = false
 }: {
   reservationId: string;
   currencyCode: string;
   roomTotal: number;
+  roomLabel?: string;
+  expectedExtraBed?: number;
+  expectedExtraBedLine?: string;
   confirmedPaymentsTotal: number;
   charges: ReservationCharge[];
+  payments?: Array<{ id: string; amount: number; method: string; payment_reference?: string | null; payment_details?: string | null; status?: string }>;
   serviceItems: ServiceItem[];
   canAdd: boolean;
   canManage: boolean;
   canDelete: boolean;
+  toBeBilled?: boolean;
 }) {
   const router = useRouter();
   const activeServices = useMemo(() => serviceItems.filter((item) => item.active), [serviceItems]);
@@ -48,8 +60,9 @@ export function ReservationFolio({
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const chargesSubtotal = charges.reduce((sum, charge) => sum + Number(charge.total_amount || 0), 0);
-  const displayTotal = Number(roomTotal || 0) + chargesSubtotal;
+  const displayTotal = Number(roomTotal || 0) + chargesSubtotal + Number(expectedExtraBed || 0);
   const balance = displayTotal - Number(confirmedPaymentsTotal || 0);
+  const due = balanceDueLabel(balance, { toBeBilled });
   const draftTotal = Math.round(Number(quantity || 0) * Number(unitPrice || 0) * 100) / 100;
 
   useEffect(() => {
@@ -128,8 +141,11 @@ export function ReservationFolio({
     }
   }
 
-  async function deleteCharge(chargeId: string) {
-    if (!window.confirm('Delete this charge from the reservation folio?')) return;
+  async function deleteCharge(chargeId: string, automatic = false) {
+    const prompt = automatic
+      ? 'Delete this automatic extra bed? It will not be added again.'
+      : 'Delete this charge from the reservation folio?';
+    if (!window.confirm(prompt)) return;
     setMessage('');
     setDeletingId(chargeId);
 
@@ -206,7 +222,10 @@ export function ReservationFolio({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {charges.map((charge) => (
+                {charges.map((charge) => {
+                  const automatic = isAutoPostedCharge(charge);
+                  const showDelete = canDelete || (canManage && automatic);
+                  return (
                   <tr key={charge.id}>
                     <td className="px-4 py-3 font-semibold">
                       {charge.description}
@@ -224,16 +243,28 @@ export function ReservationFolio({
                             Edit
                           </button>
                         ) : null}
-                        {canDelete ? (
-                          <button className="btn-secondary" type="button" disabled={deletingId === charge.id} onClick={() => void deleteCharge(charge.id)}>
+                        {showDelete ? (
+                          <button className="btn-secondary" type="button" disabled={deletingId === charge.id} onClick={() => void deleteCharge(charge.id, automatic)}>
                             {deletingId === charge.id ? 'Deleting...' : 'Delete'}
                           </button>
                         ) : null}
                       </td>
                     ) : null}
                   </tr>
-                ))}
-                {!charges.length ? (
+                  );
+                })}
+                {expectedExtraBed > 0 ? (
+                  <tr>
+                    <td className="px-4 py-3">{expectedExtraBedLine || 'Expected extra bed'}</td>
+                    <td className="px-4 py-3">extra bed</td>
+                    <td className="px-4 py-3">expected</td>
+                    <td className="px-4 py-3">—</td>
+                    <td className="px-4 py-3 font-semibold">{currency(expectedExtraBed, currencyCode)}</td>
+                    <td className="px-4 py-3 text-slate-500">Not posted until check-in</td>
+                    {canManage || canDelete ? <td /> : null}
+                  </tr>
+                ) : null}
+                {!charges.length && expectedExtraBed <= 0 ? (
                   <tr>
                     <td className="px-4 py-6 text-slate-500" colSpan={canManage || canDelete ? 7 : 6}>No additional charges yet.</td>
                   </tr>
@@ -243,12 +274,19 @@ export function ReservationFolio({
           </div>
 
           <div className="grid gap-3 md:grid-cols-4">
-            <SummaryItem label="Room total" value={currency(roomTotal, currencyCode)} />
-            <SummaryItem label="Additional charges" value={currency(chargesSubtotal, currencyCode)} />
+            <SummaryItem label={roomLabel} value={currency(roomTotal, currencyCode)} />
+            <SummaryItem label="Additional charges" value={currency(chargesSubtotal + Number(expectedExtraBed || 0), currencyCode)} />
             <SummaryItem label="Confirmed payments" value={currency(confirmedPaymentsTotal, currencyCode)} />
-            <SummaryItem label="Total balance" value={currency(balance, currencyCode)} />
+            <SummaryItem label={due.label === 'Balance due' ? 'Total balance' : due.label} value={currency(due.amount, currencyCode)} />
           </div>
           <p className="text-sm text-slate-500">Display total: {currency(displayTotal, currencyCode)}</p>
+          {payments.length ? (
+            <ul className="space-y-1 text-sm text-slate-700">
+              {payments.map((payment) => (
+                <li key={payment.id}>{payment.method.replaceAll('_', ' ')} · {payment.payment_reference || payment.payment_details || 'No reference'} · {currency(payment.amount, currencyCode)}</li>
+              ))}
+            </ul>
+          ) : null}
         </div>
 
         <div>

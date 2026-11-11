@@ -9,12 +9,17 @@
 body {
   background: #f8fafc;
   color: #0f172a;
+  overflow-x: clip;
 }
 
 input,
 select,
 textarea {
   @apply rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200;
+}
+
+.public-field {
+  font-size: 16px;
 }
 
 label {

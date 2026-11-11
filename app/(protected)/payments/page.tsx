@@ -1,7 +1,9 @@
 import Link from 'next/link';
-import { requireStaff, canAccessHotel } from '@/lib/auth';
+import { requireStaff, canAccessHotel, canManagePayments } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { currency } from '@/lib/money';
+import { paymentMethodLabel } from '@/lib/payment-method-label';
+import { ConfirmSubmittedPayment } from '@/components/ConfirmSubmittedPayment';
 import { PaymentStatusBadge } from '@/components/StatusBadge';
 import type { Guest, Hotel, Payment, Reservation } from '@/types/app';
 
@@ -33,6 +35,7 @@ export default async function PaymentsPage() {
                 <th className="px-5 py-3">Amount</th>
                 <th className="px-5 py-3">Method</th>
                 <th className="px-5 py-3">Status</th>
+                <th className="px-5 py-3">Stay</th>
                 <th className="px-5 py-3">Reservation</th>
               </tr>
             </thead>
@@ -42,12 +45,18 @@ export default async function PaymentsPage() {
                   <td className="px-5 py-3 font-semibold">{payment.reservations.guests.full_name}</td>
                   <td className="px-5 py-3 text-slate-600">{payment.reservations.hotels.name}</td>
                   <td className="px-5 py-3 text-slate-600">{currency(payment.amount, payment.reservations.hotels.default_currency)}</td>
-                  <td className="px-5 py-3 capitalize text-slate-600">{payment.method.replaceAll('_', ' ')}</td>
+                  <td className="px-5 py-3 text-slate-600">{paymentMethodLabel(payment.method)}</td>
                   <td className="px-5 py-3"><PaymentStatusBadge status={payment.status} /></td>
-                  <td className="px-5 py-3"><Link href={`/reservations/${payment.reservation_id}`} className="font-semibold underline">Open</Link></td>
+                  <td className="px-5 py-3 text-slate-600">{payment.reservations.guest_count || 1} guest(s) · {payment.reservations.with_breakfast ? 'Breakfast' : 'Room only'}</td>
+                  <td className="px-5 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link href={`/reservations/${payment.reservation_id}`} className="font-semibold underline">Open</Link>
+                      {payment.status === 'submitted' && canManagePayments(staff.profile) ? <ConfirmSubmittedPayment paymentId={payment.id} /> : null}
+                    </div>
+                  </td>
                 </tr>
               ))}
-              {!payments.length ? <tr><td colSpan={6} className="px-5 py-6 text-slate-500">No payment records yet.</td></tr> : null}
+              {!payments.length ? <tr><td colSpan={7} className="px-5 py-6 text-slate-500">No payment records yet.</td></tr> : null}
             </tbody>
           </table>
         </div>

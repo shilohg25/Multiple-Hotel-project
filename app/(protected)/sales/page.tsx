@@ -68,7 +68,7 @@ export default async function SalesPage({ searchParams }: { searchParams?: Promi
   const breakdown = {
     roomPayments: (paymentsRaw || []).reduce((sum, item) => sum + Number(item.amount || 0), 0),
     serviceCharges: charges.reduce((sum, item) => sum + Number(item.total_amount || 0), 0),
-    breakfastCharges: charges.filter((item) => item.category === 'breakfast').reduce((sum, item) => sum + Number(item.total_amount || 0), 0),
+    breakfastCharges: charges.filter((item) => item.category === 'breakfast' || item.category === 'extra_bed').reduce((sum, item) => sum + Number(item.total_amount || 0), 0),
     dayTourSales: (dayToursRaw || []).reduce((sum, item) => sum + Number(item.total_amount || 0), 0),
     remittanceDue: (remittancesRaw || []).reduce((sum, item) => sum + Number(item.amount_due || 0), 0),
     remittancePaid: (remittancesRaw || []).reduce((sum, item) => sum + Number(item.amount_paid || 0), 0)

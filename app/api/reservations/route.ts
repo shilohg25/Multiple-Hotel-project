@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
+import { businessToday } from '@/lib/date';
+import { calculateDownpayment } from '@/lib/downpayment';
+import { confirmedPaymentLedgerRow } from '@/lib/confirmed-payment-ledger';
+import { canCreateToBeBilledStay, guestCountAllowed, quotePublicStay, staffBookingPayment } from '@/lib/public-quote';
+import { undoStayPieces } from '@/lib/undo-stay';
+import { ROOM_JUST_TAKEN } from '@/lib/room-overlap';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { hasReservationConflict } from '@/lib/availability';
 import { getProcessedOfflineRequest, recordProcessedOfflineRequest } from '@/lib/idempotency';
@@ -31,7 +37,55 @@ export async function POST(request: Request) {
   if (!checkIn || !checkOut || checkOut <= checkIn) return jsonError('Valid check-in and check-out dates are required.');
 
   const conflict = await hasReservationConflict({ roomId, checkIn, checkOut });
-  if (conflict) return jsonError('This room already has a secured booking for the selected dates. Tentative reservations can overlap, but secured bookings cannot.');
+  if (conflict) return jsonError(ROOM_JUST_TAKEN);
+
+  const [{ data: hotelRaw }, { data: roomRaw }] = await Promise.all([
+    supabaseAdmin.from('hotels').select('slug, timezone, downpayment_type, default_downpayment_percent, default_downpayment_amount').eq('id', hotelId).maybeSingle(),
+    supabaseAdmin.from('rooms').select('base_rate, room_type_name, hotel_id, capacity').eq('id', roomId).maybeSingle()
+  ]);
+  if (!hotelRaw || !roomRaw || roomRaw.hotel_id !== hotelId) return jsonError('Room not found for this hotel.', 404);
+  const guestCount = Math.max(1, Math.floor(Number(payload.guest_count || 1)));
+  const roomCapacity = Math.floor(Number(roomRaw.capacity || 0));
+  if (roomCapacity >= 1 && !guestCountAllowed(guestCount, roomCapacity)) {
+    return jsonError(`This room allows up to ${roomCapacity} guests.`);
+  }
+  const surcharge = Math.max(0, Number(payload.surcharge_amount || 0));
+  const quote = quotePublicStay({
+    hotelSlug: hotelRaw.slug,
+    roomTypeName: roomRaw.room_type_name,
+    nightlyRate: Number(roomRaw.base_rate || 0),
+    checkIn,
+    checkOut,
+    guestCount,
+    withBreakfast: String(payload.with_breakfast) === 'true',
+    downpaymentType: hotelRaw.downpayment_type,
+    defaultPercent: Number(hotelRaw.default_downpayment_percent || 0),
+    defaultAmount: Number(hotelRaw.default_downpayment_amount || 0)
+  });
+  const stayTotal = quote.total + surcharge;
+  const downpayment = quote.fixedDownpaymentPercent != null
+    ? Math.round(stayTotal * quote.fixedDownpaymentPercent) / 100
+    : calculateDownpayment({
+      hotel: hotelRaw,
+      total: stayTotal,
+      nightlyRate: quote.nightlyRate,
+      manualAmount: Number(payload.manual_downpayment_amount || payload.downpayment_required || 0)
+    });
+  const bookingSource = String(payload.booking_source || 'walk_in');
+  const paid = staffBookingPayment({
+    bookingSource,
+    amount: Number(payload.desk_payment || payload.payment_amount || 0),
+    downpaymentRequired: downpayment,
+    stayTotal,
+    paymentKind: String(payload.payment_kind || (bookingSource === 'walk_in' ? 'desk_cash' : '')),
+    reference: String(payload.payment_reference || ''),
+    otaName: String(payload.ota_name || ''),
+    canConfirm: staff.profile.role === 'owner' || staff.profile.role === 'manager'
+  });
+  if (!paid.ok) return jsonError(paid.error);
+  if (paid.modeOfPayment && !canCreateToBeBilledStay(staff.profile.role)) {
+    return jsonError('Front desk can save an LGU or company stay to be billed.', 403);
+  }
 
   const { data: guestRaw, error: guestError } = await supabaseAdmin
     .from('guests')
@@ -50,24 +104,76 @@ export async function POST(request: Request) {
       hotel_id: hotelId,
       room_id: roomId,
       guest_id: guestRaw.id,
-      status: 'tentative',
-      booking_source: payload.booking_source || 'walk_in',
+      status: paid.reservationStatus,
+      booking_source: bookingSource,
       check_in: checkIn,
       check_out: checkOut,
-      guest_count: Number(payload.guest_count || 1),
-      with_breakfast: String(payload.with_breakfast) === 'true',
-      posted_room_rate: Number(payload.posted_room_rate || 0),
+      guest_count: guestCount,
+      with_breakfast: quote.withBreakfast,
+      posted_room_rate: quote.nightlyRate,
       surcharge_label: payload.surcharge_label || null,
-      surcharge_amount: Number(payload.surcharge_amount || 0),
-      total_amount: Number(payload.total_amount || 0),
-      downpayment_required: Number(payload.downpayment_required || 0),
+      surcharge_amount: surcharge,
+      total_amount: Math.round((quote.roomTotal + surcharge) * 100) / 100,
+      downpayment_required: paid.modeOfPayment ? 0 : downpayment,
+      mode_of_payment: paid.modeOfPayment,
       notes: payload.notes || null,
       created_by: staff.userId
     })
     .select('*')
     .single();
 
-  if (reservationError || !reservationRaw) return jsonError(reservationError?.message || 'Failed to create reservation.');
+  if (reservationError || !reservationRaw) {
+    const undone = await undoStayPieces({ guestId: guestRaw.id });
+    const reason = reservationError?.message || 'Failed to create reservation.';
+    return jsonError(undone.roomHeld ? undone.message : `${reason} ${undone.message}`, 500);
+  }
+
+  const paymentAmount = Number(payload.desk_payment || payload.payment_amount || 0);
+  let paymentId: string | null = null;
+  if (paid.recordPayment) {
+    const { data: paymentRaw, error: paymentError } = await supabaseAdmin.from('payments').insert({
+      reservation_id: reservationRaw.id,
+      amount: paymentAmount,
+      method: paid.method,
+      payer_name: guestName,
+      payment_reference: paid.reference || null,
+      payment_details: paid.details,
+      proof_path: paid.proofPath,
+      status: paid.paymentStatus,
+      confirmed_at: paid.paymentStatus === 'confirmed' ? new Date().toISOString() : null,
+      confirmed_by: paid.paymentStatus === 'confirmed' ? staff.userId : null,
+      received_on: paid.paymentStatus === 'confirmed' ? businessToday(hotelRaw.timezone) : null
+    }).select('id').single();
+    if (paymentError || !paymentRaw) {
+      console.error(paymentError);
+      const undone = await undoStayPieces({ reservationId: reservationRaw.id, guestId: guestRaw.id });
+      return jsonError(undone.roomHeld ? undone.message : `The payment could not be saved. ${undone.message}`, 500);
+    }
+    paymentId = paymentRaw.id;
+  }
+
+  if (paid.writeLedger && paymentId) {
+    const ledger = confirmedPaymentLedgerRow({
+      hotelId,
+      reservationId: reservationRaw.id,
+      paymentId,
+      amount: paymentAmount,
+      method: paid.method,
+      guestName,
+      entryDate: businessToday(hotelRaw.timezone),
+      actorId: staff.userId
+    });
+    const inserted = await supabaseAdmin.from('ledger_entries').insert(ledger).select('id').single();
+    if (inserted.error || !inserted.data) {
+      console.error(inserted.error);
+      const undone = await undoStayPieces({
+        paymentId,
+        reservationId: reservationRaw.id,
+        guestId: guestRaw.id
+      });
+      return jsonError(undone.roomHeld ? undone.message : `The payment could not be recorded in the day book. ${undone.message}`, 500);
+    }
+  }
 
   await recordProcessedOfflineRequest({
     clientRequestId,
@@ -82,7 +188,7 @@ export async function POST(request: Request) {
     reservation_id: reservationRaw.id,
     actor_id: staff.userId,
     action: 'reservation.created',
-    details: { status: 'tentative' }
+    details: { status: paid.reservationStatus, method: paid.method, reference: paid.reference, amount: paid.recordPayment ? paymentAmount : 0, mode_of_payment: paid.modeOfPayment }
   });
 
   return NextResponse.json({ reservation: reservationRaw });

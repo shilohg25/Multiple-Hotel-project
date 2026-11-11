@@ -32,6 +32,10 @@ These three `0002_*.sql` files overlap. The live database has no `supabase_migra
 | 12 | `supabase/migrations/20261110026000_day_close.sql` | `supabase/rollbacks/20261110026000_day_close.rollback.sql` |
 | 13 | `supabase/migrations/20261110026100_ledger_outlet_and_shortage_status.sql` | `supabase/rollbacks/20261110026100_ledger_outlet_and_shortage_status.rollback.sql` |
 | 14 | `supabase/migrations/20261110026200_confirm_payment.sql` | `supabase/rollbacks/20261110026200_confirm_payment.rollback.sql` |
+| 15 | `supabase/migrations/20261110026300_holding_room_overlap.sql` | `supabase/rollbacks/20261110026300_holding_room_overlap.rollback.sql` |
+| 16 | `supabase/migrations/20261110026400_reject_releases_hold.sql` | `supabase/rollbacks/20261110026400_reject_releases_hold.rollback.sql` |
+
+Rows 15 and 16 are not applied. They need approval first. Row 15 adds an exclusion constraint so two holding stays cannot share a room and dates. Row 16 replaces `reject_submitted_payment` so a rejection cancels a `payment_submitted` stay only when no other payment on it is submitted or confirmed. The app route uses the same rule, so bookings work before row 16 is applied.
 
 Before applying `20261110026100_ledger_outlet_and_shortage_status.sql` on a database that already has shortage charges, run the read-only query in `supabase/checks/pre_026100_duplicate_shortages.sql`. If it returns any rows, keep one shortage charge per `day_close_id` before applying that migration. The migration file itself is unchanged.
 

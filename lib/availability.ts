@@ -1,3 +1,4 @@
+import { HOLDING_STATUSES } from './public-quote';
 import { supabaseAdmin } from './supabase-admin';
 
 export async function hasReservationConflict(input: {
@@ -10,7 +11,7 @@ export async function hasReservationConflict(input: {
     .from('reservations')
     .select('id')
     .eq('room_id', input.roomId)
-    .in('status', ['secured', 'checked_in'])
+    .in('status', [...HOLDING_STATUSES])
     .lt('check_in', input.checkOut)
     .gt('check_out', input.checkIn)
     .limit(1);

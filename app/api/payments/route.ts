@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { storedCardAmount } from '@/lib/card-payment';
+import { amountReservedByPayments, submitFitsStay } from '@/lib/payment-cap';
+import { loadStayMoney } from '@/lib/stay-money';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { getProcessedOfflineRequest, recordProcessedOfflineRequest } from '@/lib/idempotency';
 
@@ -40,7 +42,7 @@ export async function POST(request: Request) {
 
   const { data: reservation, error: reservationError } = await supabaseAdmin
     .from('reservations')
-    .select('*')
+    .select('*, hotels(slug), rooms(room_type_name)')
     .eq('id', reservationId)
     .single();
   if (reservationError || !reservation) return jsonError('Reservation not found.', 404);
@@ -67,6 +69,11 @@ export async function POST(request: Request) {
     storedAmount = resolved.amount;
     cardNotice = resolved.notice;
   }
+
+  const loaded = await loadStayMoney(reservationId);
+  if (!loaded.ok) return jsonError(loaded.error, 500);
+  const fit = submitFitsStay(loaded.money.total, amountReservedByPayments(loaded.money.payments), storedAmount);
+  if (!fit.ok) return jsonError(fit.error);
 
   const path = `${reservation.hotel_id}/${reservationId}/${Date.now()}-${cleanFileName(proof.name)}`;
   const buffer = Buffer.from(await proof.arrayBuffer());

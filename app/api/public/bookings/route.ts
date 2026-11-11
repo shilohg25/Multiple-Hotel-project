@@ -1,7 +1,14 @@
 import { NextResponse } from 'next/server';
 import { jsonError } from '@/lib/api';
-import { supabaseAdmin } from '@/lib/supabase-admin';
 import { hasReservationConflict } from '@/lib/availability';
+import { businessToday } from '@/lib/date';
+import { isValidGuestEmail, normalizePhMobile, proofFileProblem } from '@/lib/guest-contact';
+import { allowPublicBooking, publicBookingClientIp } from '@/lib/public-booking-limit';
+import { isRoomOverlapError, ROOM_JUST_TAKEN } from '@/lib/room-overlap';
+import { paymentAccountForHotel } from '@/lib/payment-instructions';
+import { MAX_PUBLIC_STAY_NIGHTS, guestCountAllowed, isPastCheckIn, paymentCoversDownpayment, paymentWithinStay, quotePublicStay } from '@/lib/public-quote';
+import { supabaseAdmin } from '@/lib/supabase-admin';
+import { undoStayPieces } from '@/lib/undo-stay';
 
 export const runtime = 'nodejs';
 
@@ -9,50 +16,103 @@ function cleanFileName(name: string) {
   return name.toLowerCase().replace(/[^a-z0-9.\-_]+/g, '-').replace(/-+/g, '-').slice(0, 100) || 'proof';
 }
 
-function requiredText(value: FormDataEntryValue | null, label: string) {
-  const text = String(value || '').trim();
-  if (!text) throw new Error(`${label} is required.`);
-  return text;
+function guestFailure(message: string, detail?: unknown) {
+  if (detail !== undefined) console.error(detail);
+  return jsonError(message);
+}
+
+async function removeBooking(ids: { proofPath?: string; guestId?: string; reservationId?: string }) {
+  return undoStayPieces(ids);
 }
 
 export async function POST(request: Request) {
+  if (!allowPublicBooking(publicBookingClientIp(request))) {
+    return jsonError('Too many booking attempts. Please wait a few minutes and try again.', 429);
+  }
   const form = await request.formData();
   const hotelId = String(form.get('hotel_id') || '');
   const roomId = String(form.get('room_id') || '');
-  let guestName = '';
-  let guestEmail = '';
-  let guestPhone = '';
-  let paymentDetails = '';
-
-  try {
-    guestName = requiredText(form.get('guest_name'), 'Full name');
-    guestEmail = requiredText(form.get('guest_email'), 'Email');
-    guestPhone = requiredText(form.get('guest_phone'), 'Phone');
-    paymentDetails = requiredText(form.get('payment_details'), 'Payment information');
-  } catch (error) {
-    return jsonError(error instanceof Error ? error.message : 'Required fields are missing.');
-  }
-
+  const guestName = String(form.get('guest_name') || '').trim();
+  const guestEmail = String(form.get('guest_email') || '').trim();
+  const guestPhone = String(form.get('guest_phone') || '').trim();
+  const paymentDetails = String(form.get('payment_details') || '').trim();
   const payerName = String(form.get('payer_name') || '').trim() || guestName;
   const paymentReference = String(form.get('payment_reference') || '').trim() || null;
   const checkIn = String(form.get('check_in') || '');
   const checkOut = String(form.get('check_out') || '');
   const proof = form.get('proof');
   const paymentAmount = Number(form.get('payment_amount') || 0);
+  const guestCount = Math.floor(Number(form.get('guest_count') || 1));
+  const withBreakfast = String(form.get('with_breakfast')) === 'true';
+  const method = String(form.get('payment_method') || 'gcash') === 'bank_transfer' ? 'bank_transfer' : 'gcash';
 
-  if (!hotelId || !roomId) return jsonError('Hotel and room are required.');
-  if (!checkIn || !checkOut || checkOut <= checkIn) return jsonError('Valid check-in and check-out dates are required.');
-  if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) return jsonError('Down payment amount is required.');
-  if (!(proof instanceof File) || proof.size === 0) return jsonError('Payment proof upload is mandatory.');
+  if (!guestName || !guestEmail || !guestPhone || !paymentDetails) {
+    return guestFailure('Please fill in your name, email, phone, and payment details.');
+  }
+  if (!isValidGuestEmail(guestEmail)) return guestFailure('Enter a valid email address.');
+  const phone = normalizePhMobile(guestPhone);
+  if (!phone) return guestFailure('Enter a Philippine mobile number, such as 09XXXXXXXXX.');
+  if (!hotelId || !roomId) return guestFailure('Choose a hotel and a room.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(checkIn) || !/^\d{4}-\d{2}-\d{2}$/.test(checkOut) || checkOut <= checkIn) {
+    return guestFailure('Choose a check-in date and a later check-out date.');
+  }
+  if (!(proof instanceof File)) return guestFailure('Payment proof upload is required.');
+  const fileProblem = proofFileProblem(proof);
+  if (fileProblem) return guestFailure(fileProblem);
 
   const { data: hotelRaw, error: hotelError } = await supabaseAdmin.from('hotels').select('*').eq('id', hotelId).eq('active', true).single();
-  if (hotelError || !hotelRaw) return jsonError('Hotel not found.', 404);
+  if (hotelError || !hotelRaw) return guestFailure('That property is not available.', hotelError);
+  const today = businessToday(hotelRaw.timezone);
+  if (isPastCheckIn(checkIn, today)) return guestFailure('Check-in cannot be a past date.');
 
   const { data: roomRaw, error: roomError } = await supabaseAdmin.from('rooms').select('*').eq('id', roomId).eq('hotel_id', hotelId).eq('active', true).single();
-  if (roomError || !roomRaw) return jsonError('Room not found.', 404);
+  if (roomError || !roomRaw) return guestFailure('That room is not available.', roomError);
+  if (!guestCountAllowed(guestCount, Number(roomRaw.capacity || 0))) {
+    return guestFailure(`This room allows up to ${roomRaw.capacity} guests.`);
+  }
 
-  const conflict = await hasReservationConflict({ roomId, checkIn, checkOut });
-  if (conflict) return jsonError('This room is already secured for the selected dates. Please choose another date or room. Tentative bookings do not block dates.');
+  let nightlyRate = Number(roomRaw.base_rate || 0);
+  if (roomRaw.room_type_id) {
+    const rateRow = await supabaseAdmin
+      .from('room_type_channel_rates')
+      .select('rate')
+      .eq('room_type_id', roomRaw.room_type_id)
+      .eq('channel', 'walk_in')
+      .maybeSingle();
+    if (rateRow.error) console.error(rateRow.error);
+    else if (rateRow.data) nightlyRate = Number(rateRow.data.rate);
+  }
+
+  const payTo = paymentAccountForHotel(hotelRaw);
+  if (method === 'gcash' && !payTo.gcash) return guestFailure('This property does not take GCash. Use a bank transfer.');
+  const quote = quotePublicStay({
+    hotelSlug: hotelRaw.slug,
+    roomTypeName: roomRaw.room_type_name,
+    nightlyRate,
+    checkIn,
+    checkOut,
+    guestCount,
+    withBreakfast,
+    downpaymentType: hotelRaw.downpayment_type,
+    defaultPercent: Number(hotelRaw.default_downpayment_percent || 0),
+    defaultAmount: Number(hotelRaw.default_downpayment_amount || 0)
+  });
+  if (quote.nights < 1) return guestFailure('Choose a check-in date and a later check-out date.');
+  if (quote.nights > MAX_PUBLIC_STAY_NIGHTS) return guestFailure('A stay can be at most 30 nights.');
+  if (!paymentCoversDownpayment(paymentAmount, quote.downpaymentRequired)) {
+    return guestFailure(`The payment must be at least the required down payment of ${quote.downpaymentRequired.toFixed(2)}.`);
+  }
+  if (!paymentWithinStay(paymentAmount, quote.total)) {
+    return guestFailure('The payment cannot be more than the stay total.');
+  }
+
+  let conflict = false;
+  try {
+    conflict = await hasReservationConflict({ roomId, checkIn, checkOut });
+  } catch (error) {
+    return guestFailure('We could not check room availability. Please try again.', error);
+  }
+  if (conflict) return guestFailure('This room is already held for those dates. Please choose another room or date.');
 
   const reservationId = crypto.randomUUID();
   const proofPath = `${hotelId}/${reservationId}/${Date.now()}-${cleanFileName(proof.name)}`;
@@ -60,20 +120,21 @@ export async function POST(request: Request) {
   const { error: uploadError } = await supabaseAdmin.storage
     .from('payment-proofs')
     .upload(proofPath, buffer, { contentType: proof.type || 'application/octet-stream', upsert: false });
-  if (uploadError) return jsonError(uploadError.message, 400);
+  if (uploadError) return guestFailure('The payment proof could not be saved. Please try a JPG, PNG, or PDF under 4 MB.', uploadError);
 
   const { data: guestRaw, error: guestError } = await supabaseAdmin
     .from('guests')
-    .insert({ full_name: guestName, email: guestEmail, phone: guestPhone })
+    .insert({ full_name: guestName, email: guestEmail, phone })
     .select('*')
     .single();
   if (guestError || !guestRaw) {
-    await supabaseAdmin.storage.from('payment-proofs').remove([proofPath]);
-    return jsonError(guestError?.message || 'Failed to save guest.');
+    await removeBooking({ proofPath });
+    return guestFailure('The booking could not be saved. The room is not held.', guestError);
   }
 
-  const totalAmount = Number(form.get('total_amount') || 0);
-  const downpaymentRequired = Number(form.get('downpayment_required') || 0);
+  const noteParts = [form.get('notes') ? String(form.get('notes')) : ''];
+  if (quote.downpaymentDefaulted) noteParts.push('Down payment used the 50% default because this hotel is set to manual and has no amount configured.');
+  const notes = noteParts.filter(Boolean).join('\n') || null;
 
   const { data: reservationRaw, error: reservationError } = await supabaseAdmin
     .from('reservations')
@@ -86,28 +147,27 @@ export async function POST(request: Request) {
       booking_source: 'online',
       check_in: checkIn,
       check_out: checkOut,
-      guest_count: Number(form.get('guest_count') || 1),
-      with_breakfast: String(form.get('with_breakfast')) === 'true',
-      posted_room_rate: Number(form.get('posted_room_rate') || roomRaw.base_rate || 0),
+      guest_count: guestCount,
+      with_breakfast: quote.withBreakfast,
+      posted_room_rate: quote.nightlyRate,
       surcharge_label: null,
-      surcharge_amount: Number(form.get('surcharge_amount') || 0),
-      total_amount: totalAmount,
-      downpayment_required: downpaymentRequired,
-      notes: form.get('notes') ? String(form.get('notes')) : null
+      surcharge_amount: 0,
+      total_amount: quote.roomTotal,
+      downpayment_required: quote.downpaymentRequired,
+      notes
     })
     .select('*')
     .single();
   if (reservationError || !reservationRaw) {
-    await supabaseAdmin.storage.from('payment-proofs').remove([proofPath]);
-    await supabaseAdmin.from('guests').delete().eq('id', guestRaw.id);
-    return jsonError(reservationError?.message || 'Failed to create reservation.');
+    const undone = await removeBooking({ proofPath, guestId: guestRaw.id });
+    if (isRoomOverlapError(reservationError)) return guestFailure(undone.roomHeld ? undone.message : ROOM_JUST_TAKEN, reservationError);
+    return guestFailure(undone.roomHeld ? undone.message : `The booking could not be saved. ${undone.message}`, reservationError);
   }
 
-  // status submitted is not a closed day's cash. The day lock does not reject this insert.
   const { error: paymentError } = await supabaseAdmin.from('payments').insert({
     reservation_id: reservationRaw.id,
     amount: paymentAmount,
-    method: 'other',
+    method,
     payer_name: payerName,
     payment_reference: paymentReference,
     payment_details: paymentDetails,
@@ -116,17 +176,41 @@ export async function POST(request: Request) {
     status: 'submitted'
   });
   if (paymentError) {
-    await supabaseAdmin.from('reservations').delete().eq('id', reservationRaw.id);
-    await supabaseAdmin.storage.from('payment-proofs').remove([proofPath]);
-    return jsonError(paymentError.message, 400);
+    const undone = await removeBooking({ proofPath, guestId: guestRaw.id, reservationId });
+    return guestFailure(undone.roomHeld ? undone.message : `The payment could not be saved. ${undone.message}`, paymentError);
   }
 
   await supabaseAdmin.from('audit_logs').insert({
     hotel_id: hotelId,
     reservation_id: reservationRaw.id,
     action: 'public_booking.created',
-    details: { payment_amount: paymentAmount, payment_method: 'manual_details_box' }
+    details: {
+      payment_amount: paymentAmount,
+      payment_method: method,
+      downpayment_required: quote.downpaymentRequired,
+      downpayment_defaulted: quote.downpaymentDefaulted,
+      total: quote.total
+    }
   });
 
-  return NextResponse.json({ reservation: reservationRaw });
+  const reference = reservationRaw.id.slice(0, 8).toUpperCase();
+  return NextResponse.json({
+    reference,
+    reservation: reservationRaw,
+    summary: {
+      reference,
+      room: roomRaw.name,
+      checkIn,
+      checkOut,
+      nights: quote.nights,
+      guestCount,
+      breakfastLine: quote.breakfastLine,
+      extraBedLine: quote.extraBedLine,
+      extraBedTotal: quote.extraBedTotal,
+      total: quote.total,
+      downpaymentRequired: quote.downpaymentRequired,
+      amountPaid: paymentAmount,
+      downpaymentDefaulted: quote.downpaymentDefaulted
+    }
+  });
 }

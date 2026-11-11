@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { requireStaff } from '@/lib/auth';
 import { currency } from '@/lib/money';
+import { readToBeBilled } from '@/lib/public-quote';
 import { getDailyReportData } from '@/lib/report-data';
 import { SavePrintSnapshotButton } from '@/components/offline/SavePrintSnapshotButton';
 
@@ -48,11 +49,12 @@ export default async function DailyReportPage({ searchParams }: { searchParams?:
         <Card label="Check-outs" value={report.checkOuts.length} />
         <Card label="Pending proofs" value={report.pendingPayments.length} />
         <Card label="Tentative follow-ups" value={report.tentativeFollowups.length} />
+        <Card label="To be billed" value={report.toBeBilled.length} />
       </section>
       <section className="grid gap-4 md:grid-cols-4">
         <Card label="Confirmed payments" value={currency(report.totals.roomPayments, report.hotel.default_currency)} />
         <Card label="Service charges" value={currency(report.totals.serviceCharges, report.hotel.default_currency)} />
-        <Card label="Breakfast charges" value={currency(report.totals.breakfastCharges, report.hotel.default_currency)} />
+        <Card label="Breakfast and extra beds" value={currency(report.totals.breakfastCharges, report.hotel.default_currency)} />
         <Card label="Day tour sales" value={currency(report.totals.dayTourSales, report.hotel.default_currency)} />
       </section>
       <section className="grid gap-4 md:grid-cols-4">
@@ -60,25 +62,55 @@ export default async function DailyReportPage({ searchParams }: { searchParams?:
         <Card label="Bank/online received" value={currency(report.totals.bankOnlineReceived, report.hotel.default_currency)} />
         <Card label="Expected cash" value={currency(report.totals.expectedCash, report.hotel.default_currency)} />
         <Card label="Cash variance" value={currency(report.totals.variance, report.hotel.default_currency)} />
+        <Card label="To be billed still owed" value={currency(report.totals.toBeBilled, report.hotel.default_currency)} />
       </section>
       <section className="card overflow-hidden">
         <TableTitle title="Reservations" helper="Reservations touching this date or created today." />
         <div className="overflow-x-auto">
           <table className="min-w-[760px] w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-              <tr><th className="px-5 py-3">Guest</th><th>Room</th><th>Dates</th><th>Status</th><th>Total</th></tr>
+              <tr><th className="px-5 py-3">Guest</th><th>Room</th><th>Dates</th><th>Status</th><th>Invoice</th><th>Reference</th><th>Total</th></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {report.reservations.map((reservation) => (
-                <tr key={reservation.id}>
-                  <td className="px-5 py-3 font-semibold">{reservation.guests?.full_name || 'Guest'}</td>
-                  <td>{reservation.rooms?.name || '-'}</td>
-                  <td>{reservation.check_in} to {reservation.check_out}</td>
-                  <td className="capitalize">{reservation.status.replaceAll('_', ' ')}</td>
-                  <td>{currency(reservation.total_amount, report.hotel.default_currency)}</td>
+              {report.reservations.map((reservation) => {
+                const billed = readToBeBilled(reservation.mode_of_payment);
+                return (
+                  <tr key={reservation.id}>
+                    <td className="px-5 py-3 font-semibold">{reservation.guests?.full_name || 'Guest'}</td>
+                    <td>{reservation.rooms?.name || '-'}</td>
+                    <td>{reservation.check_in} to {reservation.check_out}</td>
+                    <td className="capitalize">{reservation.status.replaceAll('_', ' ')}</td>
+                    <td>{billed ? 'To be billed' : '—'}</td>
+                    <td>{billed?.reference || '—'}</td>
+                    <td>{currency(reservation.total_amount, report.hotel.default_currency)}</td>
+                  </tr>
+                );
+              })}
+              {!report.reservations.length ? <tr><td className="px-5 py-6 text-slate-500" colSpan={7}>No reservations for this report date.</td></tr> : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section className="card overflow-hidden">
+        <TableTitle title="To be billed" helper="LGU and company stays that still owe money. A stay leaves this list once payments cover the total." />
+        <div className="overflow-x-auto">
+          <table className="min-w-[860px] w-full text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+              <tr><th className="px-5 py-3">Guest</th><th>Hotel</th><th>Dates</th><th>Source</th><th>Invoice / PO</th><th>Amount owed</th><th>Age</th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {report.toBeBilled.map((row) => (
+                <tr key={row.id}>
+                  <td className="px-5 py-3 font-semibold">{row.guestName}</td>
+                  <td>{row.hotelName}</td>
+                  <td>{row.checkIn} to {row.checkOut}</td>
+                  <td className="capitalize">{row.source.replaceAll('_', ' ')}</td>
+                  <td>{row.reference || '—'}</td>
+                  <td className="font-semibold">{currency(row.amountOwed, report.hotel.default_currency)}</td>
+                  <td>{row.ageDays} day(s)</td>
                 </tr>
               ))}
-              {!report.reservations.length ? <tr><td className="px-5 py-6 text-slate-500" colSpan={5}>No reservations for this report date.</td></tr> : null}
+              {!report.toBeBilled.length ? <tr><td className="px-5 py-6 text-slate-500" colSpan={7}>Nothing is waiting to be billed.</td></tr> : null}
             </tbody>
           </table>
         </div>
@@ -89,7 +121,7 @@ export default async function DailyReportPage({ searchParams }: { searchParams?:
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <tbody className="divide-y divide-slate-100">
-                {report.confirmedPayments.map((payment) => <tr key={payment.id}><td className="px-5 py-3">{payment.reservation_id.slice(0, 8).toUpperCase()}</td><td>{payment.method.replaceAll('_', ' ')}</td><td className="font-semibold">{currency(payment.amount, report.hotel.default_currency)}</td></tr>)}
+                {report.confirmedPayments.map((payment) => <tr key={payment.id}><td className="px-5 py-3">{payment.reservation_id.slice(0, 8).toUpperCase()}</td><td>{payment.method.replaceAll('_', ' ')}</td><td>{payment.payment_reference || payment.payment_details || '-'}</td><td className="font-semibold">{currency(payment.amount, report.hotel.default_currency)}</td></tr>)}
                 {!report.confirmedPayments.length ? <tr><td className="px-5 py-6 text-slate-500">No confirmed payments today.</td></tr> : null}
               </tbody>
             </table>

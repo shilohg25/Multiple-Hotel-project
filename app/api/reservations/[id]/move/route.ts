@@ -3,6 +3,7 @@ import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { hasReservationConflict } from '@/lib/availability';
+import { isRoomOverlapError, ROOM_JUST_TAKEN } from '@/lib/room-overlap';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiStaff();
@@ -30,7 +31,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (roomError || !room || room.hotel_id !== reservation.hotel_id) return jsonError('Room not found for this hotel.', 404);
 
   const conflict = await hasReservationConflict({ roomId, checkIn, checkOut, ignoreReservationId: id });
-  if (conflict) return jsonError('Move blocked: the new room/date range overlaps a secured booking.');
+  if (conflict) return jsonError(ROOM_JUST_TAKEN);
 
   const { data, error: updateError } = await supabaseAdmin
     .from('reservations')
@@ -39,7 +40,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     .select('*')
     .single();
 
-  if (updateError) return jsonError(updateError.message, 400);
+  if (updateError) {
+    if (isRoomOverlapError(updateError)) {
+      console.error(updateError);
+      return jsonError(ROOM_JUST_TAKEN);
+    }
+    return jsonError(updateError.message, 400);
+  }
 
   await supabaseAdmin.from('audit_logs').insert({
     hotel_id: reservation.hotel_id,

@@ -1,8 +1,7 @@
-import Link from 'next/link';
 import type { Profile } from '@/types/app';
 import { isFrontline } from '@/lib/access';
 import { getLocale, label } from '@/lib/i18n';
-import { LanguageToggle } from '@/components/LanguageToggle';
+import { StaffHeader } from '@/components/StaffHeader';
 import { OfflineStatusBanner } from '@/components/offline/OfflineStatusBanner';
 
 const navItems = [
@@ -37,32 +36,15 @@ export async function Shell({ children, profile }: { children: React.ReactNode; 
     : [...navItems, { href: '/settings', label: 'Settings' }];
 
   return (
-    <div className="min-h-screen">
-      <header className="print-hidden sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-          <Link href={isFrontline(profile.role) ? '/today' : '/dashboard'} className="text-lg font-black tracking-tight">
-            Hotel Ops
-          </Link>
-          <nav className="flex flex-wrap items-center gap-1">
-            {visibleNavItems.map((item) => (
-              <Link key={item.href} href={item.href} className="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
-                {nameFor(item.href, item.label)}
-              </Link>
-            ))}
-          </nav>
-          <div className="flex items-center gap-3">
-            <LanguageToggle locale={locale} />
-            <span className="hidden text-xs text-slate-500 sm:inline">
-              {profile.full_name || 'Staff'} - {profile.role.replace('_', ' ')}
-            </span>
-            <form action="/api/auth/signout" method="post">
-              <button className="btn-secondary" type="submit">Sign out</button>
-            </form>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen min-w-0">
+      <StaffHeader
+        homeHref={isFrontline(profile.role) ? '/today' : '/dashboard'}
+        locale={locale}
+        profile={profile}
+        items={visibleNavItems.map((item) => ({ href: item.href, label: nameFor(item.href, item.label) }))}
+      />
       <OfflineStatusBanner />
-      <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
+      <main className="mx-auto min-w-0 max-w-7xl px-4 py-6">{children}</main>
     </div>
   );
 }

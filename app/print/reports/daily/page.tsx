@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { requireStaff } from '@/lib/auth';
 import { currency } from '@/lib/money';
+import { readToBeBilled } from '@/lib/public-quote';
 import { getDailyReportData } from '@/lib/report-data';
 import { PrintButton } from '@/components/PrintButton';
 import { PrintHeader } from '@/components/print/PrintHeader';
@@ -25,12 +26,13 @@ export default async function DailyReportPrintPage({ searchParams }: { searchPar
         <Box label="Check-outs" value={report.checkOuts.length} />
         <Box label="Pending proofs" value={report.pendingPayments.length} />
         <Box label="Tentative follow-ups" value={report.tentativeFollowups.length} />
+        <Box label="To be billed" value={report.toBeBilled.length} />
       </section>
       <table className="print-table">
         <tbody>
           <Row label="Confirmed payments" value={currency(report.totals.roomPayments, report.hotel.default_currency)} />
           <Row label="Service charges" value={currency(report.totals.serviceCharges, report.hotel.default_currency)} />
-          <Row label="Breakfast charges" value={currency(report.totals.breakfastCharges, report.hotel.default_currency)} />
+          <Row label="Breakfast and extra beds" value={currency(report.totals.breakfastCharges, report.hotel.default_currency)} />
           <Row label="Day tour sales" value={currency(report.totals.dayTourSales, report.hotel.default_currency)} />
           <Row label="Cash received" value={currency(report.totals.cashReceived, report.hotel.default_currency)} />
           <Row label="Bank/online received" value={currency(report.totals.bankOnlineReceived, report.hotel.default_currency)} />
@@ -39,6 +41,7 @@ export default async function DailyReportPrintPage({ searchParams }: { searchPar
           <Row label="Variance" value={currency(report.totals.variance, report.hotel.default_currency)} />
           <Row label="Remittance due" value={currency(report.totals.remittanceDue, report.hotel.default_currency)} />
           <Row label="Remittance paid" value={currency(report.totals.remittancePaid, report.hotel.default_currency)} />
+          <Row label="To be billed" value={currency(report.totals.toBeBilled, report.hotel.default_currency)} />
         </tbody>
       </table>
       <section>
@@ -48,30 +51,57 @@ export default async function DailyReportPrintPage({ searchParams }: { searchPar
       <section>
         <h2 className="mb-2 text-lg font-bold">Reservations</h2>
         <table className="print-table">
-          <thead><tr><th>Guest</th><th>Room</th><th>Dates</th><th>Status</th><th>Total</th></tr></thead>
+          <thead><tr><th>Guest</th><th>Room</th><th>Dates</th><th>Status</th><th>Invoice</th><th>Reference</th><th>Total</th></tr></thead>
           <tbody>
-            {report.reservations.map((reservation) => (
-              <tr key={reservation.id}>
-                <td>{reservation.guests?.full_name || 'Guest'}</td>
-                <td>{reservation.rooms?.name || '-'}</td>
-                <td>{reservation.check_in} to {reservation.check_out}</td>
-                <td>{reservation.status.replaceAll('_', ' ')}</td>
-                <td>{currency(reservation.total_amount, report.hotel.default_currency)}</td>
+            {report.reservations.map((reservation) => {
+              const billed = readToBeBilled(reservation.mode_of_payment);
+              return (
+                <tr key={reservation.id}>
+                  <td>{reservation.guests?.full_name || 'Guest'}</td>
+                  <td>{reservation.rooms?.name || '-'}</td>
+                  <td>{reservation.check_in} to {reservation.check_out}</td>
+                  <td>{reservation.status.replaceAll('_', ' ')}</td>
+                  <td>{billed ? 'To be billed' : '—'}</td>
+                  <td>{billed?.reference || '—'}</td>
+                  <td>{currency(reservation.total_amount, report.hotel.default_currency)}</td>
+                </tr>
+              );
+            })}
+            {!report.reservations.length ? <tr><td colSpan={7}>No reservations for this report date.</td></tr> : null}
+          </tbody>
+        </table>
+      </section>
+      <section>
+        <h2 className="mb-2 text-lg font-bold">To be billed</h2>
+        <p className="mb-2 text-sm">LGU and company stays that still owe money. A stay leaves this list once payments cover the total.</p>
+        <table className="print-table">
+          <thead><tr><th>Guest</th><th>Hotel</th><th>Dates</th><th>Source</th><th>Invoice / PO</th><th>Amount owed</th><th>Age</th></tr></thead>
+          <tbody>
+            {report.toBeBilled.map((row) => (
+              <tr key={row.id}>
+                <td>{row.guestName}</td>
+                <td>{row.hotelName}</td>
+                <td>{row.checkIn} to {row.checkOut}</td>
+                <td>{row.source.replaceAll('_', ' ')}</td>
+                <td>{row.reference || '—'}</td>
+                <td>{currency(row.amountOwed, report.hotel.default_currency)}</td>
+                <td>{row.ageDays} day(s)</td>
               </tr>
             ))}
-            {!report.reservations.length ? <tr><td colSpan={5}>No reservations for this report date.</td></tr> : null}
+            {!report.toBeBilled.length ? <tr><td colSpan={7}>Nothing is waiting to be billed.</td></tr> : null}
           </tbody>
         </table>
       </section>
       <section>
         <h2 className="mb-2 text-lg font-bold">Confirmed Payments</h2>
         <table className="print-table">
-          <thead><tr><th>Reservation</th><th>Method</th><th>Amount</th><th>Confirmed at</th></tr></thead>
+          <thead><tr><th>Reservation</th><th>Method</th><th>Reference</th><th>Amount</th><th>Confirmed at</th></tr></thead>
           <tbody>
             {report.confirmedPayments.map((payment) => (
               <tr key={payment.id}>
                 <td>{payment.reservation_id.slice(0, 8).toUpperCase()}</td>
                 <td>{payment.method.replaceAll('_', ' ')}</td>
+                <td>{payment.payment_reference || payment.payment_details || '-'}</td>
                 <td>{currency(payment.amount, report.hotel.default_currency)}</td>
                 <td>{payment.confirmed_at ? new Date(payment.confirmed_at).toLocaleString() : '-'}</td>
               </tr>

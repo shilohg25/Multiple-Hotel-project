@@ -43,6 +43,26 @@ describe('decideReservationUpdate', () => {
     if (!rate.ok) assert.equal(rate.status, 403);
   });
 
+  it('requires a reason when an owner checks a guest in', () => {
+    const missing = decideReservationUpdate({
+      role: 'owner',
+      currentStatus: 'secured',
+      currentMoney: money,
+      nextStatus: 'checked_in'
+    });
+    assert.equal(missing.ok, false);
+    if (!missing.ok) assert.equal(missing.status, 400);
+
+    const saved = decideReservationUpdate({
+      role: 'owner',
+      currentStatus: 'secured',
+      currentMoney: money,
+      nextStatus: 'checked_in',
+      reason: 'Guest arrived before the booked date'
+    });
+    assert.equal(saved.ok, true);
+  });
+
   it('requires a reason and records before and after for a manager', () => {
     const missing = decideReservationUpdate({
       role: 'manager',

@@ -161,7 +161,7 @@ export function SalesCashManager({
         <section className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
           <SummaryCard label="Confirmed room payments" value={currency(breakdown.roomPayments, selectedHotel.default_currency)} />
           <SummaryCard label="Service charges" value={currency(breakdown.serviceCharges, selectedHotel.default_currency)} />
-          <SummaryCard label="Breakfast charges" value={currency(breakdown.breakfastCharges, selectedHotel.default_currency)} />
+          <SummaryCard label="Breakfast and extra beds" value={currency(breakdown.breakfastCharges, selectedHotel.default_currency)} />
           <SummaryCard label="Day tour sales" value={currency(breakdown.dayTourSales, selectedHotel.default_currency)} />
           <SummaryCard label="Remittance due" value={currency(breakdown.remittanceDue, selectedHotel.default_currency)} />
           <SummaryCard label="Remittance paid" value={currency(breakdown.remittancePaid, selectedHotel.default_currency)} />

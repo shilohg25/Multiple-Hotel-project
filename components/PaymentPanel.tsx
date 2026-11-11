@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import type { Payment } from '@/types/app';
 import { cardSettlementNet, guestCardCharge } from '@/lib/card-fees';
 import { currency } from '@/lib/money';
+import { PAYMENT_OVER_OWED, amountReservedByPayments } from '@/lib/payment-cap';
+import { paymentMethodLabel } from '@/lib/payment-method-label';
 import { queueOfflineItem } from '@/lib/offline/db';
 import { PaymentStatusBadge } from './StatusBadge';
 
@@ -17,7 +19,9 @@ export function PaymentPanel({
   currencyCode = 'PHP',
   canConfirm,
   cardSurchargePercent = 3,
-  cardMdrPercent = 3.5
+  cardMdrPercent = 3.5,
+  stayTotal,
+  toBeBilled = false
 }: {
   reservationId: string;
   payments: PaymentWithUrl[];
@@ -25,6 +29,8 @@ export function PaymentPanel({
   canConfirm: boolean;
   cardSurchargePercent?: number;
   cardMdrPercent?: number;
+  stayTotal?: number;
+  toBeBilled?: boolean;
 }) {
   const router = useRouter();
   const [message, setMessage] = useState('');
@@ -33,11 +39,17 @@ export function PaymentPanel({
   const [offlineDraft, setOfflineDraft] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
   const confirmedTotal = payments.filter((payment) => payment.status === 'confirmed').reduce((sum, payment) => sum + Number(payment.amount), 0);
+  const remaining = stayTotal == null ? null : Math.max(0, Math.round((Number(stayTotal) - amountReservedByPayments(payments)) * 100) / 100);
 
   async function uploadPayment(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const formElement = event.currentTarget;
+    const paying = method === 'card' ? guestCardCharge(Number(amount || 0), cardSurchargePercent) : Number(amount || 0);
+    if (remaining != null && paying > remaining + 0.001) {
+      setMessage(PAYMENT_OVER_OWED);
+      return;
+    }
 
     setMessage('');
     setLoading(true);
@@ -167,7 +179,7 @@ export function PaymentPanel({
               {payments.map((payment) => (
                 <tr key={payment.id}>
                   <td className="px-5 py-3 font-semibold">{currency(payment.amount, currencyCode)}</td>
-                  <td className="px-5 py-3 capitalize text-slate-600">{payment.method.replaceAll('_', ' ')}</td>
+                  <td className="px-5 py-3 text-slate-600">{paymentMethodLabel(payment.method)}</td>
                   <td className="px-5 py-3 text-slate-600">
                     <div className="max-w-xs truncate" title={payment.payment_details}>{payment.payment_details}</div>
                     {payment.payment_reference ? <div className="text-xs text-slate-400">Ref: {payment.payment_reference}</div> : null}
@@ -205,6 +217,8 @@ export function PaymentPanel({
           <div className="space-y-2">
             <label>{method === 'card' ? 'Amount before card surcharge' : 'Amount'}</label>
             <input name="amount" type="number" min="1" step="0.01" required className="w-full" value={amount} onChange={(event) => setAmount(event.target.value)} />
+            {remaining != null ? <p className="text-sm text-slate-600">Up to {currency(remaining, currencyCode)} is still owed, including payments waiting to be confirmed.{toBeBilled ? ' A to-be-billed invoice can be recorded up to that amount.' : ''}</p> : null}
+            {remaining != null && (method === 'card' ? guestCardCharge(Number(amount || 0), cardSurchargePercent) : Number(amount || 0)) > remaining + 0.001 ? <p className="text-sm text-red-700">{PAYMENT_OVER_OWED}</p> : null}
             {method === 'card' ? (
               <p className="text-sm text-slate-600">
                 This box is the amount before the surcharge. At {cardSurchargePercent}%, 2,250.00 is recorded as {currency(guestCardCharge(2250, cardSurchargePercent), currencyCode)}.

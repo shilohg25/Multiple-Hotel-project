@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { requireStaff } from '@/lib/auth';
+import { paymentInstructionLines } from '@/lib/payment-instructions';
 import { currency } from '@/lib/money';
 import { formatDate } from '@/lib/date';
 import { getReservationPrintData, shortId } from '@/lib/print-data';
@@ -34,6 +35,10 @@ export default async function BookingConfirmationPrintPage({ params }: { params:
         <div className="print-card"><p className="text-sm text-slate-500">Total due</p><p className="text-xl font-bold">{currency(grandTotal, reservation.hotels.default_currency)}</p></div>
         <div className="print-card"><p className="text-sm text-slate-500">Confirmed payments</p><p className="text-xl font-bold">{currency(confirmedPaymentsTotal, reservation.hotels.default_currency)}</p></div>
         <div className="print-card"><p className="text-sm text-slate-500">Balance</p><p className="text-xl font-bold">{currency(balanceDue, reservation.hotels.default_currency)}</p></div>
+      </section>
+      <section className="print-card">
+        <h2 className="mb-2 text-lg font-bold">Payment</h2>
+        {paymentInstructionLines(reservation.hotels).map((line) => <p key={line}>{line}</p>)}
       </section>
       <section className="print-card">
         <h2 className="mb-2 text-lg font-bold">House Rules</h2>
