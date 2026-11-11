@@ -101,8 +101,10 @@ export type PaymentStatus = 'submitted' | 'confirmed' | 'rejected';
 export type PaymentMethod =
   | 'cash'
   | 'gcash'
+  | 'maya'
   | 'bank_transfer'
   | 'card'
+  | 'cheque'
   | 'online_gateway'
   | 'booking_dot_com'
   | 'trip_dot_com'

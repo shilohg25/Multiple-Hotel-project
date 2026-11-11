@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Payment } from '@/types/app';
+import { cardSettlementNet, guestCardCharge } from '@/lib/card-fees';
 import { currency } from '@/lib/money';
 import { queueOfflineItem } from '@/lib/offline/db';
 import { PaymentStatusBadge } from './StatusBadge';
@@ -14,15 +15,21 @@ export function PaymentPanel({
   reservationId,
   payments,
   currencyCode = 'PHP',
-  canConfirm
+  canConfirm,
+  cardSurchargePercent = 3,
+  cardMdrPercent = 3.5
 }: {
   reservationId: string;
   payments: PaymentWithUrl[];
   currencyCode?: string;
   canConfirm: boolean;
+  cardSurchargePercent?: number;
+  cardMdrPercent?: number;
 }) {
   const router = useRouter();
   const [message, setMessage] = useState('');
+  const [amount, setAmount] = useState('');
+  const [method, setMethod] = useState('cash');
   const [offlineDraft, setOfflineDraft] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
   const confirmedTotal = payments.filter((payment) => payment.status === 'confirmed').reduce((sum, payment) => sum + Number(payment.amount), 0);
@@ -38,6 +45,14 @@ export function PaymentPanel({
     try {
       const form = new FormData(formElement);
       form.set('reservation_id', reservationId);
+      if (method === 'card') {
+        const base = Number(amount || 0);
+        const guestPays = guestCardCharge(base, cardSurchargePercent);
+        form.set('base_amount', String(base));
+        form.set('amount', String(guestPays));
+        const details = String(form.get('payment_details') || '');
+        form.set('payment_details', `${details}\nCard surcharge ${cardSurchargePercent}% on ${base.toFixed(2)} recorded as ${guestPays.toFixed(2)}.`.trim());
+      }
 
       const response = await fetch('/api/payments', {
         method: 'POST',
@@ -52,11 +67,18 @@ export function PaymentPanel({
       }
 
       formElement.reset();
-      setMessage('Payment proof submitted for confirmation. Dates are still not blocked until payment is confirmed.');
+      setAmount('');
+      setMethod('cash');
+      setMessage(json.notice || 'Payment proof submitted for confirmation. Dates are still not blocked until payment is confirmed.');
       router.refresh();
     } catch {
       const form = new FormData(formElement);
       form.set('reservation_id', reservationId);
+      if (method === 'card') {
+        const base = Number(amount || 0);
+        form.set('base_amount', String(base));
+        form.set('amount', String(guestCardCharge(base, cardSurchargePercent)));
+      }
       setOfflineDraft(Object.fromEntries(form.entries()));
       setMessage('Network unavailable. You can save this proof locally and sync it later; it will still require staff confirmation online.');
     } finally {
@@ -162,16 +184,25 @@ export function PaymentPanel({
         {message ? <div className="mt-4 rounded-lg bg-slate-100 px-3 py-2 text-sm">{message}</div> : null}
         <form onSubmit={uploadPayment} className="mt-4 space-y-4">
           <div className="space-y-2">
-            <label>Amount received</label>
-            <input name="amount" type="number" min="1" step="0.01" required className="w-full" />
+            <label>{method === 'card' ? 'Amount before card surcharge' : 'Amount'}</label>
+            <input name="amount" type="number" min="1" step="0.01" required className="w-full" value={amount} onChange={(event) => setAmount(event.target.value)} />
+            {method === 'card' ? (
+              <p className="text-sm text-slate-600">
+                This box is the amount before the surcharge. At {cardSurchargePercent}%, 2,250.00 is recorded as {currency(guestCardCharge(2250, cardSurchargePercent), currencyCode)}.
+                {amount ? <> This payment records {currency(guestCardCharge(Number(amount || 0), cardSurchargePercent), currencyCode)}.</> : null}
+                {' '}Bank net is about {currency(cardSettlementNet(guestCardCharge(Number(amount || 0), cardSurchargePercent), cardMdrPercent), currencyCode)} after {cardMdrPercent}% MDR.
+              </p>
+            ) : null}
           </div>
           <div className="space-y-2">
             <label>Payment method</label>
-            <select name="method" className="w-full">
+            <select name="method" className="w-full" value={method} onChange={(event) => setMethod(event.target.value)}>
               <option value="cash">Cash</option>
               <option value="gcash">GCash</option>
+              <option value="maya">Maya</option>
               <option value="bank_transfer">Bank transfer</option>
-              <option value="card">Card / swipe</option>
+              <option value="card">Card / Metrobank swiper</option>
+              <option value="cheque">Cheque</option>
               <option value="online_gateway">Online payment gateway</option>
               <option value="booking_dot_com">Booking.com</option>
               <option value="trip_dot_com">Trip.com</option>
