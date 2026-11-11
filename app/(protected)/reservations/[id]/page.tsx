@@ -9,7 +9,7 @@ import {
   canDeleteReservationCharges
 } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
-import { AUTO_BREAKFAST_REMOVED_ACTION, autoChargeWasRemoved, isAutoBreakfastCharge } from '@/lib/breakfast-toggle';
+import { AUTO_BREAKFAST_REMOVED_ACTION, autoChargeRemovedFromRead, isAutoBreakfastCharge } from '@/lib/breakfast-toggle';
 import { currency } from '@/lib/money';
 import { stayFolioView } from '@/lib/stay-total';
 import { formatDate } from '@/lib/date';
@@ -89,7 +89,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
     nights: reservation.nights,
     guestCount: Number(reservation.guest_count || 1),
     withBreakfast: Boolean(reservation.with_breakfast),
-    removed: Boolean(removedBreakfast.error) || autoChargeWasRemoved(removedBreakfast.data),
+    removed: autoChargeRemovedFromRead(removedBreakfast.error, removedBreakfast.data),
     charges
   });
   const confirmedTotal = payments.filter((payment) => payment.status === 'confirmed').reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
@@ -166,7 +166,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
             <p className="mt-1 font-bold">{folio.roomLabel} {currency(reservation.total_amount, reservation.hotels.default_currency)}</p>
             {folio.expectedExtraBed > 0 ? <p className="text-sm text-slate-500">Expected extra bed {currency(folio.expectedExtraBed, reservation.hotels.default_currency)}</p> : null}
             <p className="text-sm text-slate-500">Stay total {currency(folio.total, reservation.hotels.default_currency)}</p>
-            <p className="text-sm text-slate-500">Required DP {currency(reservation.downpayment_required, reservation.hotels.default_currency)}</p>
+            <p className="text-sm text-slate-500">Required DP {currency(folio.downpaymentRequired ?? reservation.downpayment_required, reservation.hotels.default_currency)}</p>
           </div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Balance</p>
@@ -212,7 +212,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
         postedRoomRate={Number(reservation.posted_room_rate || 0)}
         totalAmount={Number(reservation.total_amount || 0)}
         roomLabel={folio.roomLabel}
-        downpaymentRequired={Number(reservation.downpayment_required || 0)}
+        downpaymentRequired={Number(folio.downpaymentRequired ?? reservation.downpayment_required ?? 0)}
         withBreakfast={Boolean(reservation.with_breakfast)}
         breakfastCharged={charges.some((charge) => isAutoBreakfastCharge(charge))}
         role={staff.profile.role}

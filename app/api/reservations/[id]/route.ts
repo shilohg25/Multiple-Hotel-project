@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
-import { AUTO_BREAKFAST_REMOVED_ACTION, AUTO_POST_SOURCE, BREAKFAST_TURN_OFF_BLOCKED, autoChargeWasRemoved, breakfastTurnOffBlocked, isAutoPostedCharge, shouldPostAutoStayCharge } from '@/lib/breakfast-toggle';
+import { AUTO_BREAKFAST_REMOVED_ACTION, AUTO_POST_SOURCE, BREAKFAST_TURN_OFF_BLOCKED, autoChargeRemovedFromRead, breakfastTurnOffBlocked, isAutoPostedCharge, shouldPostAutoStayCharge } from '@/lib/breakfast-toggle';
 import { priceStay } from '@/lib/hotel-pricing';
 import { isRoomOverlapError, ROOM_JUST_TAKEN } from '@/lib/room-overlap';
 import { decideReservationUpdate, RESERVATION_MONEY_FIELDS, type MoneyField, type PolicyStatus } from '@/lib/reservation-policy';
@@ -106,8 +106,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       supabaseAdmin.from('hotels').select('slug').eq('id', currentRaw.hotel_id).maybeSingle(),
       supabaseAdmin.from('rooms').select('room_type_name').eq('id', reservationRaw.room_id).maybeSingle()
     ]);
-    if (existingCharges.error || removedBreakfast.error || hotelRow.error || roomRow.error) {
-      console.error(existingCharges.error || removedBreakfast.error || hotelRow.error || roomRow.error);
+    if (removedBreakfast.error) console.error(removedBreakfast.error);
+    if (existingCharges.error || hotelRow.error || roomRow.error) {
+      console.error(existingCharges.error || hotelRow.error || roomRow.error);
     } else {
       const price = priceStay({
         hotelSlug: hotelRow.data?.slug,
@@ -122,7 +123,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         status: reservationRaw.status,
         extraBedTotal: price.extraBedTotal,
         charges: existingCharges.data || [],
-        removed: autoChargeWasRemoved(removedBreakfast.data)
+        removed: autoChargeRemovedFromRead(removedBreakfast.error, removedBreakfast.data)
       })) {
       const charge = {
         reservation_id: id,

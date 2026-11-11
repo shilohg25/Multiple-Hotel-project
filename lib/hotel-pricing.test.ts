@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { extraBedStillDue, shouldPostAutoStayCharge } from './breakfast-toggle.ts';
+import { autoChargeRemovedFromRead, extraBedStillDue, shouldPostAutoStayCharge } from './breakfast-toggle.ts';
 import { priceStay, roomAmountLabel } from './hotel-pricing.ts';
 import { paymentAccountForHotel, paymentInstructionLines } from './payment-instructions.ts';
 import { paymentWithinStay, quotePublicStay } from './public-quote.ts';
@@ -247,6 +247,30 @@ describe('hotel stay pricing', () => {
     assert.equal(deleted.total, 5000);
     assert.equal(paymentWithinStay(6700, deleted.total), false);
     assert.equal(paymentWithinStay(deleted.total, deleted.total), true);
+  });
+
+  it('cuts the required down payment to half the shown total after the extra bed is removed', () => {
+    const stay = {
+      hotelSlug: 'navarro-hotel',
+      postedRoomRate: 1000,
+      roomTotal: 1000,
+      nights: 1,
+      guestCount: 5,
+      withBreakfast: true
+    };
+    const posted = stayFolioView({
+      ...stay,
+      removed: false,
+      charges: [{ category: 'extra_bed', notes: 'source:auto', total_amount: 2550 }]
+    });
+    assert.equal(posted.total, 3550);
+    assert.equal(posted.downpaymentRequired, 1775);
+    const removed = stayFolioView({ ...stay, charges: [], removed: true });
+    assert.equal(removed.total, 1000);
+    assert.equal(removed.expectedExtraBed, 0);
+    assert.equal(removed.downpaymentRequired, 500);
+    assert.equal(autoChargeRemovedFromRead({ message: 'audit read failed' }, [{ id: 'row' }]), false);
+    assert.equal(autoChargeRemovedFromRead(null, [{ id: 'row' }]), true);
   });
 });
 

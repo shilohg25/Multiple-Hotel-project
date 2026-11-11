@@ -82,6 +82,9 @@ export function stayFolioView(input: {
     expectedExtraBed,
     expectedExtraBedLine: showExpected ? price.extraBedLine : '',
     chargesTotal,
-    total: money(roomTotal + chargesTotal + expectedExtraBed)
+    total: money(roomTotal + chargesTotal + expectedExtraBed),
+    downpaymentRequired: price.fixedDownpaymentPercent == null
+      ? null
+      : money((roomTotal + chargesTotal + expectedExtraBed) * price.fixedDownpaymentPercent / 100)
   };
 }

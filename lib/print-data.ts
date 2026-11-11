@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { notFound } from 'next/navigation';
-import { AUTO_BREAKFAST_REMOVED_ACTION, autoChargeWasRemoved } from './breakfast-toggle';
+import { AUTO_BREAKFAST_REMOVED_ACTION, autoChargeRemovedFromRead } from './breakfast-toggle';
 import { canAccessHotel, type StaffContext } from './auth';
 import { supabaseAdmin } from './supabase-admin';
 import { stayFolioView } from './stay-total';
@@ -64,7 +64,7 @@ export async function getReservationPrintData(id: string, staff: StaffContext): 
     nights: reservation.nights,
     guestCount: Number(reservation.guest_count || 1),
     withBreakfast: Boolean(reservation.with_breakfast),
-    removed: Boolean(removedBreakfast.error) || autoChargeWasRemoved(removedBreakfast.data),
+    removed: autoChargeRemovedFromRead(removedBreakfast.error, removedBreakfast.data),
     charges
   });
   const grandTotal = folio.total;

@@ -28,6 +28,12 @@ export function autoChargeWasRemoved(rows: Array<{ id?: string }> | null | undef
   return Boolean(rows?.length);
 }
 
+/** A failed audit read is not proof the charge was removed. The extra bed stays due, and the error is logged by the caller. */
+export function autoChargeRemovedFromRead(error: unknown, rows: Array<{ id?: string }> | null | undefined): boolean {
+  if (error) return false;
+  return autoChargeWasRemoved(rows);
+}
+
 /**
  * An extra bed is still owed only when the price is above zero, nothing is posted,
  * and the auto charge was not deleted. Check-in posts only when this is true.

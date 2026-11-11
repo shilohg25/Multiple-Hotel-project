@@ -4,6 +4,7 @@ import { businessToday } from '@/lib/date';
 import { lockedDayMessage } from '@/lib/day-lock';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { AUTO_BREAKFAST_REMOVED_ACTION, isAutoBreakfastCharge } from '@/lib/breakfast-toggle';
+import { stayFolioView } from '@/lib/stay-total';
 import { normalizeServiceCategory } from '@/lib/service-categories';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
@@ -169,6 +170,35 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     action: 'reservation.charge_deleted',
     details: { charge_id: chargeId, total_amount: Number(current.total_amount || 0) }
   });
+
+  if (isAutoBreakfastCharge(current)) {
+    const [{ data: stay }, { data: rest }] = await Promise.all([
+      supabaseAdmin.from('reservations').select('posted_room_rate, total_amount, nights, guest_count, with_breakfast, hotels(slug), rooms(room_type_name)').eq('id', id).maybeSingle(),
+      supabaseAdmin.from('reservation_charges').select('category, notes, total_amount').eq('reservation_id', id)
+    ]);
+    const hotel = Array.isArray(stay?.hotels) ? stay?.hotels[0] : stay?.hotels;
+    const room = Array.isArray(stay?.rooms) ? stay?.rooms[0] : stay?.rooms;
+    if (stay) {
+      const folio = stayFolioView({
+        hotelSlug: hotel?.slug,
+        roomTypeName: room?.room_type_name,
+        postedRoomRate: Number(stay.posted_room_rate || 0),
+        roomTotal: Number(stay.total_amount || 0),
+        nights: stay.nights,
+        guestCount: Number(stay.guest_count || 1),
+        withBreakfast: Boolean(stay.with_breakfast),
+        removed: true,
+        charges: rest || []
+      });
+      if (folio.downpaymentRequired != null) {
+        const { error: downError } = await supabaseAdmin
+          .from('reservations')
+          .update({ downpayment_required: folio.downpaymentRequired })
+          .eq('id', id);
+        if (downError) console.error(downError);
+      }
+    }
+  }
 
   return NextResponse.json({ ok: true });
 }
