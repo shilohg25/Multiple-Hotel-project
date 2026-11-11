@@ -65,6 +65,10 @@ describe('refund due', () => {
     assert.equal(due.label, 'Refund due');
     assert.equal(due.amount, 775);
     assert.equal(balanceDueLabel(0).label, 'Balance due');
+    const billed = balanceDueLabel(5000, { toBeBilled: true });
+    assert.equal(billed.label, 'To be billed');
+    assert.equal(billed.amount, 5000);
+    assert.equal(balanceDueLabel(0, { toBeBilled: true }).label, 'Balance due');
   });
 });
 

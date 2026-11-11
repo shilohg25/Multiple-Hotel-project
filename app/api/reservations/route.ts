@@ -111,7 +111,8 @@ export async function POST(request: Request) {
       surcharge_label: payload.surcharge_label || null,
       surcharge_amount: surcharge,
       total_amount: Math.round((quote.roomTotal + surcharge) * 100) / 100,
-      downpayment_required: downpayment,
+      downpayment_required: paid.modeOfPayment ? 0 : downpayment,
+      mode_of_payment: paid.modeOfPayment,
       notes: payload.notes || null,
       created_by: staff.userId
     })
@@ -125,30 +126,34 @@ export async function POST(request: Request) {
   }
 
   const paymentAmount = Number(payload.desk_payment || payload.payment_amount || 0);
-  const { data: paymentRaw, error: paymentError } = await supabaseAdmin.from('payments').insert({
-    reservation_id: reservationRaw.id,
-    amount: paymentAmount,
-    method: paid.method,
-    payer_name: guestName,
-    payment_reference: paid.reference || null,
-    payment_details: paid.details,
-    proof_path: paid.proofPath,
-    status: paid.paymentStatus,
-    confirmed_at: paid.paymentStatus === 'confirmed' ? new Date().toISOString() : null,
-    confirmed_by: paid.paymentStatus === 'confirmed' ? staff.userId : null,
-    received_on: paid.paymentStatus === 'confirmed' ? businessToday(hotelRaw.timezone) : null
-  }).select('id').single();
-  if (paymentError || !paymentRaw) {
-    console.error(paymentError);
-    const undone = await undoStayPieces({ reservationId: reservationRaw.id, guestId: guestRaw.id });
-    return jsonError(undone.roomHeld ? undone.message : `The payment could not be saved. ${undone.message}`, 500);
+  let paymentId: string | null = null;
+  if (paid.recordPayment) {
+    const { data: paymentRaw, error: paymentError } = await supabaseAdmin.from('payments').insert({
+      reservation_id: reservationRaw.id,
+      amount: paymentAmount,
+      method: paid.method,
+      payer_name: guestName,
+      payment_reference: paid.reference || null,
+      payment_details: paid.details,
+      proof_path: paid.proofPath,
+      status: paid.paymentStatus,
+      confirmed_at: paid.paymentStatus === 'confirmed' ? new Date().toISOString() : null,
+      confirmed_by: paid.paymentStatus === 'confirmed' ? staff.userId : null,
+      received_on: paid.paymentStatus === 'confirmed' ? businessToday(hotelRaw.timezone) : null
+    }).select('id').single();
+    if (paymentError || !paymentRaw) {
+      console.error(paymentError);
+      const undone = await undoStayPieces({ reservationId: reservationRaw.id, guestId: guestRaw.id });
+      return jsonError(undone.roomHeld ? undone.message : `The payment could not be saved. ${undone.message}`, 500);
+    }
+    paymentId = paymentRaw.id;
   }
 
-  if (paid.paymentStatus === 'confirmed') {
+  if (paid.writeLedger && paymentId) {
     const ledger = confirmedPaymentLedgerRow({
       hotelId,
       reservationId: reservationRaw.id,
-      paymentId: paymentRaw.id,
+      paymentId,
       amount: paymentAmount,
       method: paid.method,
       guestName,
@@ -159,7 +164,7 @@ export async function POST(request: Request) {
     if (inserted.error || !inserted.data) {
       console.error(inserted.error);
       const undone = await undoStayPieces({
-        paymentId: paymentRaw.id,
+        paymentId,
         reservationId: reservationRaw.id,
         guestId: guestRaw.id
       });
@@ -180,7 +185,7 @@ export async function POST(request: Request) {
     reservation_id: reservationRaw.id,
     actor_id: staff.userId,
     action: 'reservation.created',
-    details: { status: paid.reservationStatus, method: paid.method, reference: paid.reference, amount: Number(payload.desk_payment || payload.payment_amount || 0) }
+    details: { status: paid.reservationStatus, method: paid.method, reference: paid.reference, amount: paid.recordPayment ? paymentAmount : 0, mode_of_payment: paid.modeOfPayment }
   });
 
   return NextResponse.json({ reservation: reservationRaw });

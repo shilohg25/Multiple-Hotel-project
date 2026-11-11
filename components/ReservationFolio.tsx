@@ -22,7 +22,8 @@ export function ReservationFolio({
   serviceItems,
   canAdd,
   canManage,
-  canDelete
+  canDelete,
+  toBeBilled = false
 }: {
   reservationId: string;
   currencyCode: string;
@@ -37,6 +38,7 @@ export function ReservationFolio({
   canAdd: boolean;
   canManage: boolean;
   canDelete: boolean;
+  toBeBilled?: boolean;
 }) {
   const router = useRouter();
   const activeServices = useMemo(() => serviceItems.filter((item) => item.active), [serviceItems]);
@@ -60,7 +62,7 @@ export function ReservationFolio({
   const chargesSubtotal = charges.reduce((sum, charge) => sum + Number(charge.total_amount || 0), 0);
   const displayTotal = Number(roomTotal || 0) + chargesSubtotal + Number(expectedExtraBed || 0);
   const balance = displayTotal - Number(confirmedPaymentsTotal || 0);
-  const due = balanceDueLabel(balance);
+  const due = balanceDueLabel(balance, { toBeBilled });
   const draftTotal = Math.round(Number(quantity || 0) * Number(unitPrice || 0) * 100) / 100;
 
   useEffect(() => {
@@ -275,7 +277,7 @@ export function ReservationFolio({
             <SummaryItem label={roomLabel} value={currency(roomTotal, currencyCode)} />
             <SummaryItem label="Additional charges" value={currency(chargesSubtotal + Number(expectedExtraBed || 0), currencyCode)} />
             <SummaryItem label="Confirmed payments" value={currency(confirmedPaymentsTotal, currencyCode)} />
-            <SummaryItem label={due.label === 'Refund due' ? 'Refund due' : 'Total balance'} value={currency(due.amount, currencyCode)} />
+            <SummaryItem label={due.label === 'Balance due' ? 'Total balance' : due.label} value={currency(due.amount, currencyCode)} />
           </div>
           <p className="text-sm text-slate-500">Display total: {currency(displayTotal, currencyCode)}</p>
           {payments.length ? (

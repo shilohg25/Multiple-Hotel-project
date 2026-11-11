@@ -12,6 +12,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { AUTO_BREAKFAST_REMOVED_ACTION, autoChargeRemovedFromRead, isAutoBreakfastCharge } from '@/lib/breakfast-toggle';
 import { currency } from '@/lib/money';
 import { balanceDueLabel } from '@/lib/stay-cleanup';
+import { readToBeBilled } from '@/lib/public-quote';
 import { stayFolioView } from '@/lib/stay-total';
 import { formatDate } from '@/lib/date';
 import { ReservationStatusBadge } from '@/components/StatusBadge';
@@ -95,7 +96,8 @@ export default async function ReservationDetailPage({ params }: { params: Promis
   });
   const confirmedTotal = payments.filter((payment) => payment.status === 'confirmed').reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const balance = folio.total - confirmedTotal;
-  const due = balanceDueLabel(balance);
+  const billed = readToBeBilled(reservation.mode_of_payment);
+  const due = balanceDueLabel(balance, { toBeBilled: Boolean(billed) });
 
   return (
     <div className="space-y-6">
@@ -173,6 +175,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{due.label}</p>
             <p className="mt-1 font-bold">{currency(due.amount, reservation.hotels.default_currency)}</p>
+            {billed?.reference ? <p className="text-sm text-slate-500">Billing reference {billed.reference}</p> : null}
             <p className="text-sm text-slate-500">Confirmed {currency(confirmedTotal, reservation.hotels.default_currency)}</p>
           </div>
         </div>
@@ -234,6 +237,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
         canAdd={canAddReservationCharges(staff.profile)}
         canManage={canManageReservationCharges(staff.profile)}
         canDelete={canDeleteReservationCharges(staff.profile)}
+        toBeBilled={Boolean(billed)}
       />
 
       <EmailDraftPanel hotel={reservation.hotels} reservation={reservation} guest={reservation.guests} />

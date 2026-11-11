@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { requireStaff } from '@/lib/auth';
 import { currency } from '@/lib/money';
 import { balanceDueLabel } from '@/lib/stay-cleanup';
+import { readToBeBilled } from '@/lib/public-quote';
 import { formatDate } from '@/lib/date';
 import { getReservationPrintData, shortId } from '@/lib/print-data';
 import { PrintButton } from '@/components/PrintButton';
@@ -13,6 +14,8 @@ export default async function ReservationFolioPrintPage({ params }: { params: Pr
   const { id } = await params;
   const { reservation, charges, payments, additionalChargesTotal, confirmedPaymentsTotal, grandTotal, balanceDue, roomLabel, expectedExtraBed, expectedExtraBedLine } = await getReservationPrintData(id, staff);
   const printedAt = new Date();
+  const billed = readToBeBilled(reservation.mode_of_payment);
+  const due = balanceDueLabel(balanceDue, { toBeBilled: Boolean(billed) });
 
   return (
     <div className="print-page space-y-6">
@@ -107,7 +110,8 @@ export default async function ReservationFolioPrintPage({ params }: { params: Pr
         <Summary label="Additional charges" value={currency(additionalChargesTotal + expectedExtraBed, reservation.hotels.default_currency)} />
         <Summary label="Grand total" value={currency(grandTotal, reservation.hotels.default_currency)} />
         <Summary label="Confirmed payments" value={currency(confirmedPaymentsTotal, reservation.hotels.default_currency)} />
-        <Summary label={balanceDueLabel(balanceDue).label} value={currency(balanceDueLabel(balanceDue).amount, reservation.hotels.default_currency)} strong />
+        <Summary label={due.label} value={currency(due.amount, reservation.hotels.default_currency)} strong />
+        {billed?.reference ? <p className="mt-2 text-sm">Billing reference {billed.reference}</p> : null}
         <p className="mt-3 text-xs text-slate-500">Official tax receipt handling can be added later if required by local rules.</p>
       </section>
 

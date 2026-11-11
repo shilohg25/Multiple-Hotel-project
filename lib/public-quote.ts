@@ -130,6 +130,30 @@ export function walkInDeskStay(input: { bookingSource: string; deskPayment: numb
 export const OTA_BOOKING_SOURCES = ['booking_dot_com', 'trip_dot_com', 'agoda', 'expedia'] as const;
 export const ACCOUNT_BOOKING_SOURCES = ['lgu', 'company'] as const;
 
+/**
+ * These OTAs collect the full stay before the hotel sees the booking.
+ * Expedia stays on the 50% rule until Shiloh says otherwise. Move it into this list to switch.
+ */
+export const FULL_PREPAID_OTA_SOURCES = ['booking_dot_com', 'trip_dot_com', 'agoda'] as const;
+
+/**
+ * Billed after the stay, with no deposit. Company stays on the 50% rule until Shiloh says otherwise.
+ */
+export const BILL_LATER_SOURCES = ['lgu'] as const;
+
+/** Stored on reservations.mode_of_payment. Payments cannot be 0, so this marker holds the room without a payment row. */
+export const TO_BE_BILLED_PREFIX = 'to_be_billed:';
+
+export function toBeBilledMode(reference: string): string {
+  return `${TO_BE_BILLED_PREFIX}${reference.trim()}`;
+}
+
+export function readToBeBilled(modeOfPayment: string | null | undefined): { reference: string } | null {
+  const value = String(modeOfPayment || '');
+  if (!value.startsWith(TO_BE_BILLED_PREFIX)) return null;
+  return { reference: value.slice(TO_BE_BILLED_PREFIX.length) };
+}
+
 export type StaffPaymentKind = 'desk_cash' | 'ota_prepaid' | 'bank_transfer' | 'invoice';
 
 export type StaffPaymentDecision = {
@@ -140,13 +164,26 @@ export type StaffPaymentDecision = {
   details: string;
   reference: string;
   proofPath: string;
+  /** False for an LGU stay that is billed later. No payment row is inserted. */
+  recordPayment: boolean;
+  /** False until money is actually received. OTA prepaid is received, so it is true. */
+  writeLedger: boolean;
+  /** Set on the reservation. Null leaves the column empty. */
+  modeOfPayment: string | null;
+  /** Cash in the drawer. OTA prepaid and a bill-later stay are never desk cash. */
+  countsAsDeskCash: boolean;
 };
 
+function sameMoney(left: number, right: number): boolean {
+  return Math.abs(Number(left) - Number(right)) <= 0.009;
+}
+
 /**
- * Staff stays hold a room only with a payment row in the same save.
- * Walk-in desk cash is confirmed immediately. OTA, LGU, and company payments
- * are confirmed only when the staff member can confirm payments. Everyone else
- * leaves them submitted, which still holds the room until a manager confirms or rejects.
+ * Staff stays hold a room only with a payment row in the same save, except an LGU
+ * stay billed later, which is secured with no deposit and no ledger row.
+ * Booking.com, Trip.com, and Agoda are recorded as OTA prepaid for the full stay,
+ * with no proof file. Walk-ins, bank transfers, company stays, Expedia, and every
+ * other source still need at least half the stay.
  * OTA prepaid and invoice/PO are stored on existing method values, with the name in the details.
  */
 export function staffBookingPayment(input: {
@@ -178,19 +215,41 @@ export function staffBookingPayment(input: {
   if (account && kind !== 'invoice' && kind !== 'bank_transfer') {
     return { ok: false, error: 'An LGU or company stay needs an invoice or PO, or a bank transfer.' };
   }
-  if (!(amount > 0)) return { ok: false, error: 'A room cannot be held without a payment record.' };
-  if (!paymentCoversDownpayment(amount, input.downpaymentRequired)) {
-    return { ok: false, error: 'The payment must cover at least half the stay.' };
+  const fullPrepaid = kind === 'ota_prepaid' && (FULL_PREPAID_OTA_SOURCES as readonly string[]).includes(source);
+  const billLater = kind === 'invoice' && (BILL_LATER_SOURCES as readonly string[]).includes(source);
+  if ((kind === 'ota_prepaid' || kind === 'bank_transfer' || kind === 'invoice') && !reference) {
+    return { ok: false, error: kind === 'invoice' ? 'An invoice or billing reference is required.' : 'A reference number is required.' };
   }
+  if (kind === 'ota_prepaid' && !otaName) return { ok: false, error: 'The OTA name is required.' };
+  if (billLater) {
+    if (amount > 0.009) return { ok: false, error: 'An LGU stay is billed later. Do not record a deposit.' };
+    return {
+      ok: true,
+      reservationStatus: 'secured',
+      paymentStatus: 'submitted',
+      method: 'other',
+      details: `To be billed ${reference}`,
+      reference,
+      proofPath: 'staff/no-proof',
+      recordPayment: false,
+      writeLedger: false,
+      modeOfPayment: toBeBilledMode(reference),
+      countsAsDeskCash: false
+    };
+  }
+  if (!(amount > 0)) return { ok: false, error: 'A room cannot be held without a payment record.' };
   if (!paymentWithinStay(amount, input.stayTotal)) {
     return { ok: false, error: 'The payment cannot be more than the stay total.' };
   }
-  if ((kind === 'ota_prepaid' || kind === 'bank_transfer' || kind === 'invoice') && !reference) {
-    return { ok: false, error: kind === 'invoice' ? 'An invoice or PO number is required.' : 'A reference number is required.' };
+  if (fullPrepaid) {
+    if (!sameMoney(amount, input.stayTotal)) {
+      return { ok: false, error: 'OTA prepaid must equal the stay total. The OTA collects the full stay.' };
+    }
+  } else if (!paymentCoversDownpayment(amount, input.downpaymentRequired)) {
+    return { ok: false, error: 'The payment must cover at least half the stay.' };
   }
-  if (kind === 'ota_prepaid' && !otaName) return { ok: false, error: 'The OTA name is required.' };
 
-  const managerConfirms = source === 'walk_in' || input.canConfirm;
+  const managerConfirms = fullPrepaid || source === 'walk_in' || input.canConfirm;
   let method: StaffPaymentDecision['method'] = 'other';
   let details = '';
   if (kind === 'desk_cash') {
@@ -212,14 +271,19 @@ export function staffBookingPayment(input: {
     method = 'other';
     details = `OTA prepaid: ${otaName}`;
   }
+  const paymentStatus = managerConfirms ? 'confirmed' : 'submitted';
   return {
     ok: true,
     reservationStatus: managerConfirms ? 'secured' : 'payment_submitted',
-    paymentStatus: managerConfirms ? 'confirmed' : 'submitted',
+    paymentStatus,
     method,
     details,
     reference,
-    proofPath: kind === 'desk_cash' ? 'walk-in/desk-cash' : 'staff/no-proof'
+    proofPath: kind === 'desk_cash' ? 'walk-in/desk-cash' : 'staff/no-proof',
+    recordPayment: true,
+    writeLedger: paymentStatus === 'confirmed',
+    modeOfPayment: null,
+    countsAsDeskCash: method === 'cash'
   };
 }
 

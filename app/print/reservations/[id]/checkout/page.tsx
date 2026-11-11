@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { requireStaff } from '@/lib/auth';
 import { currency } from '@/lib/money';
 import { balanceDueLabel } from '@/lib/stay-cleanup';
+import { readToBeBilled } from '@/lib/public-quote';
 import { getReservationPrintData, shortId } from '@/lib/print-data';
 import { PrintButton } from '@/components/PrintButton';
 import { PrintHeader } from '@/components/print/PrintHeader';
@@ -12,6 +13,7 @@ export default async function CheckoutPrintPage({ params }: { params: Promise<{ 
   const { id } = await params;
   const { reservation, charges, payments, additionalChargesTotal, confirmedPaymentsTotal, grandTotal, balanceDue, roomLabel, expectedExtraBed, expectedExtraBedLine } = await getReservationPrintData(id, staff);
   const printedAt = new Date();
+  const due = balanceDueLabel(balanceDue, { toBeBilled: Boolean(readToBeBilled(reservation.mode_of_payment)) });
 
   return (
     <div className="print-page space-y-6">
@@ -55,7 +57,7 @@ export default async function CheckoutPrintPage({ params }: { params: Promise<{ 
         <Summary label="Additional charges" value={currency(additionalChargesTotal + expectedExtraBed, reservation.hotels.default_currency)} />
         <Summary label="Grand total" value={currency(grandTotal, reservation.hotels.default_currency)} />
         <Summary label="Confirmed payments" value={currency(confirmedPaymentsTotal, reservation.hotels.default_currency)} />
-        <Summary label={balanceDueLabel(balanceDue).label === 'Refund due' ? 'Refund due' : 'Final balance'} value={currency(balanceDueLabel(balanceDue).amount, reservation.hotels.default_currency)} strong />
+        <Summary label={due.label === 'Balance due' ? 'Final balance' : due.label} value={currency(due.amount, reservation.hotels.default_currency)} strong />
       </section>
       {balanceDue <= 0 ? (
         <section className="grid gap-8 pt-10 md:grid-cols-3">

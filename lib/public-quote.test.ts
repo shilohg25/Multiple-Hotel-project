@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { confirmedPaymentLedgerRow } from './confirmed-payment-ledger.ts';
+import { figuresFromLedger, summarizeClose } from './day-close.ts';
+import { expectedCashFromLedger } from './expected-cash.ts';
 import { shouldReleaseHoldOnReject } from './payment-reject.ts';
 import {
   clampGuestCount,
   guestCountAllowed,
+  HOLDING_STATUSES,
+  readToBeBilled,
   isPastCheckIn,
   paymentCoversDownpayment,
   paymentWithinStay,
@@ -156,10 +161,10 @@ describe('public stay quote', () => {
     assert.equal(walkInDeskStay({ bookingSource: 'facebook', deskPayment: 2500, downpaymentRequired: 2500 }).ok, false);
   });
 
-  it('requires a covering payment for OTA, LGU, and company stays, and a reject frees the room', () => {
+  it('requires a covering payment for Expedia and company stays, and a reject frees the room', () => {
     const stay = { downpaymentRequired: 2500, stayTotal: 5000 };
-    for (const source of ['agoda', 'booking_dot_com', 'expedia', 'trip_dot_com', 'lgu', 'company']) {
-      const kind = source === 'lgu' || source === 'company' ? 'invoice' : 'ota_prepaid';
+    for (const source of ['expedia', 'company']) {
+      const kind = source === 'company' ? 'invoice' : 'ota_prepaid';
       const named = { bookingSource: source, ...stay, paymentKind: kind, reference: 'REF-1', otaName: source, canConfirm: false };
       assert.equal(staffBookingPayment({ ...named, amount: 0 }).ok, false);
       assert.equal(staffBookingPayment({ ...named, amount: 1000 }).ok, false);
@@ -177,6 +182,150 @@ describe('public stay quote', () => {
       const manager = staffBookingPayment({ ...named, amount: 2500, canConfirm: true });
       assert.equal(manager.ok && manager.reservationStatus, 'secured');
     }
+  });
+
+  it('records Booking.com, Trip.com, and Agoda as full OTA prepaid with no proof', () => {
+    for (const source of ['booking_dot_com', 'trip_dot_com', 'agoda']) {
+      const half = staffBookingPayment({
+        bookingSource: source,
+        amount: 2500,
+        downpaymentRequired: 2500,
+        stayTotal: 5000,
+        paymentKind: 'ota_prepaid',
+        reference: 'OTA-1',
+        otaName: source,
+        canConfirm: false
+      });
+      assert.equal(half.ok, false);
+      const missingReference = staffBookingPayment({
+        bookingSource: source,
+        amount: 5000,
+        downpaymentRequired: 2500,
+        stayTotal: 5000,
+        paymentKind: 'ota_prepaid',
+        reference: '',
+        otaName: source,
+        canConfirm: true
+      });
+      assert.equal(missingReference.ok, false);
+      const prepaid = staffBookingPayment({
+        bookingSource: source,
+        amount: 5000,
+        downpaymentRequired: 2500,
+        stayTotal: 5000,
+        paymentKind: 'ota_prepaid',
+        reference: 'OTA-1',
+        otaName: source,
+        canConfirm: false
+      });
+      assert.equal(prepaid.ok, true);
+      if (prepaid.ok) {
+        assert.equal(prepaid.reservationStatus, 'secured');
+        assert.equal(prepaid.paymentStatus, 'confirmed');
+        assert.equal(prepaid.proofPath, 'staff/no-proof');
+        assert.equal(prepaid.writeLedger, true);
+        assert.equal(prepaid.countsAsDeskCash, false);
+        assert.notEqual(prepaid.method, 'cash');
+        assert.equal(HOLDING_STATUSES.includes(prepaid.reservationStatus), true);
+        if (source === 'booking_dot_com') {
+          const row = confirmedPaymentLedgerRow({
+            hotelId: 'hotel',
+            reservationId: 'stay',
+            paymentId: 'pay',
+            amount: 5000,
+            method: prepaid.method,
+            guestName: 'Guest',
+            entryDate: '2026-11-11'
+          });
+          const mixed = figuresFromLedger([
+            { category: row.category, payment_method: row.payment_method, is_collectible: row.is_collectible, amount: row.amount },
+            { category: 'room_payment', payment_method: 'cash', is_collectible: false, amount: 100 }
+          ], 0);
+          assert.equal(mixed.cashSales, 100);
+          assert.equal(summarizeClose(mixed).expectedCash, 100);
+          assert.equal(expectedCashFromLedger([
+            { payment_method: String(row.payment_method), is_collectible: false, amount: 5000, category: row.category },
+            { payment_method: 'cash', is_collectible: false, amount: 100, category: 'room_payment' }
+          ]), 100);
+        }
+      }
+    }
+  });
+
+  it('holds an LGU stay with nothing paid and no ledger row', () => {
+    const missing = staffBookingPayment({
+      bookingSource: 'lgu',
+      amount: 0,
+      downpaymentRequired: 2500,
+      stayTotal: 5000,
+      paymentKind: 'invoice',
+      reference: '',
+      canConfirm: false
+    });
+    assert.equal(missing.ok, false);
+    const billed = staffBookingPayment({
+      bookingSource: 'lgu',
+      amount: 0,
+      downpaymentRequired: 2500,
+      stayTotal: 5000,
+      paymentKind: 'invoice',
+      reference: 'LGU-44',
+      canConfirm: false
+    });
+    assert.equal(billed.ok, true);
+    if (billed.ok) {
+      assert.equal(billed.reservationStatus, 'secured');
+      assert.equal(billed.recordPayment, false);
+      assert.equal(billed.writeLedger, false);
+      assert.equal(billed.countsAsDeskCash, false);
+      assert.equal(billed.modeOfPayment, 'to_be_billed:LGU-44');
+      assert.equal(HOLDING_STATUSES.includes(billed.reservationStatus), true);
+      assert.equal(readToBeBilled(billed.modeOfPayment)?.reference, 'LGU-44');
+    }
+    const deposit = staffBookingPayment({
+      bookingSource: 'lgu',
+      amount: 100,
+      downpaymentRequired: 2500,
+      stayTotal: 5000,
+      paymentKind: 'invoice',
+      reference: 'LGU-44',
+      canConfirm: true
+    });
+    assert.equal(deposit.ok, false);
+  });
+
+  it('still blocks a direct booking under half the stay', () => {
+    const bank = staffBookingPayment({
+      bookingSource: 'company',
+      amount: 1000,
+      downpaymentRequired: 2500,
+      stayTotal: 5000,
+      paymentKind: 'bank_transfer',
+      reference: 'BANK-1',
+      canConfirm: true
+    });
+    assert.equal(bank.ok, false);
+    if (!bank.ok) assert.match(bank.error, /half/);
+    const direct = staffBookingPayment({
+      bookingSource: 'phone',
+      amount: 1000,
+      downpaymentRequired: 2500,
+      stayTotal: 5000,
+      paymentKind: 'bank_transfer',
+      reference: 'DIR-1',
+      canConfirm: true
+    });
+    assert.equal(direct.ok, false);
+    const walkIn = staffBookingPayment({
+      bookingSource: 'walk_in',
+      amount: 1000,
+      downpaymentRequired: 2500,
+      stayTotal: 5000,
+      paymentKind: 'desk_cash',
+      canConfirm: true
+    });
+    assert.equal(walkIn.ok, false);
+    if (!walkIn.ok) assert.match(walkIn.error, /half/);
   });
 
   it('bills a Tagosilangan extra bed once and does not add breakfast again', () => {

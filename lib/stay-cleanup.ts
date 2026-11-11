@@ -21,8 +21,9 @@ export function interpretStayCleanup(input: {
   return { roomHeld: false, message: notes.join(' ') };
 }
 
-export function balanceDueLabel(balance: number): { label: string; amount: number } {
+export function balanceDueLabel(balance: number, options?: { toBeBilled?: boolean }): { label: string; amount: number } {
   const rounded = Math.round(Number(balance || 0) * 100) / 100;
   if (rounded < 0) return { label: 'Refund due', amount: Math.abs(rounded) };
+  if (options?.toBeBilled && rounded > 0) return { label: 'To be billed', amount: rounded };
   return { label: 'Balance due', amount: rounded };
 }
