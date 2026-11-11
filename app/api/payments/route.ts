@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { storedCardAmount } from '@/lib/card-payment';
+import { paymentWithinRemaining } from '@/lib/public-quote';
+import { stayFolioView } from '@/lib/stay-total';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { getProcessedOfflineRequest, recordProcessedOfflineRequest } from '@/lib/idempotency';
 
@@ -40,7 +42,7 @@ export async function POST(request: Request) {
 
   const { data: reservation, error: reservationError } = await supabaseAdmin
     .from('reservations')
-    .select('*')
+    .select('*, hotels(slug), rooms(room_type_name)')
     .eq('id', reservationId)
     .single();
   if (reservationError || !reservation) return jsonError('Reservation not found.', 404);
@@ -66,6 +68,32 @@ export async function POST(request: Request) {
     if (!resolved.ok) return jsonError(resolved.error);
     storedAmount = resolved.amount;
     cardNotice = resolved.notice;
+  }
+
+  const [{ data: chargeRows, error: chargeError }, { data: paidRows, error: paidError }] = await Promise.all([
+    supabaseAdmin.from('reservation_charges').select('category, notes, total_amount').eq('reservation_id', reservationId),
+    supabaseAdmin.from('payments').select('amount').eq('reservation_id', reservationId).eq('status', 'confirmed')
+  ]);
+  if (chargeError || paidError) {
+    console.error(chargeError || paidError);
+    return jsonError('The amount still owed could not be checked. Try again.', 500);
+  }
+  const hotel = Array.isArray(reservation.hotels) ? reservation.hotels[0] : reservation.hotels;
+  const room = Array.isArray(reservation.rooms) ? reservation.rooms[0] : reservation.rooms;
+  const folio = stayFolioView({
+    hotelSlug: hotel?.slug,
+    roomTypeName: room?.room_type_name,
+    postedRoomRate: Number(reservation.posted_room_rate || 0),
+    roomTotal: Number(reservation.total_amount || 0),
+    nights: reservation.nights,
+    guestCount: Number(reservation.guest_count || 1),
+    withBreakfast: Boolean(reservation.with_breakfast),
+    charges: chargeRows || []
+  });
+  const received = (paidRows || []).reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const remaining = Math.round((folio.total - received) * 100) / 100;
+  if (!paymentWithinRemaining(storedAmount, remaining)) {
+    return jsonError('The payment cannot be more than the amount still owed.');
   }
 
   const path = `${reservation.hotel_id}/${reservationId}/${Date.now()}-${cleanFileName(proof.name)}`;

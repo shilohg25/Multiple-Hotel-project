@@ -287,9 +287,10 @@ describe('payment instructions', () => {
     const practice = paymentAccountForHotel({ slug: 'test-practice-hotel' });
     assert.equal(practice.placeholder, true);
     assert.equal(practice.gcash, null);
-    assert.equal(practice.bankName, 'Metrobank');
+    assert.equal(practice.bankName, 'TEST Bank (placeholder)');
     const practiceLines = paymentInstructionLines({ slug: 'test-practice-hotel' });
     assert.equal(practiceLines.some((line) => line.startsWith('GCash:')), false);
+    assert.equal(practiceLines.some((line) => line.includes('TEST Bank (placeholder)')), true);
     assert.equal(practiceLines.some((line) => line.includes('PLACEHOLDER account number')), true);
     assert.equal(practiceLines.some((line) => line.includes('571-7-57102073-0')), false);
   });

@@ -249,6 +249,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
         canConfirm={canManagePayments(staff.profile)}
         cardSurchargePercent={Number(cardChannel?.surcharge_percent ?? 3)}
         cardMdrPercent={Number(cardChannel?.mdr_percent ?? 3.5)}
+        amountOwed={Math.max(0, balance)}
       />
     </div>
   );

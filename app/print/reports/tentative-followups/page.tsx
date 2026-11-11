@@ -4,6 +4,9 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { PrintButton } from '@/components/PrintButton';
 import { PrintHeader } from '@/components/print/PrintHeader';
 import { PrintFooter } from '@/components/print/PrintFooter';
+import { currency } from '@/lib/money';
+import { listOutstandingToBeBilled } from '@/lib/report-data';
+import { businessToday } from '@/lib/date';
 import type { Hotel, Reservation } from '@/types/app';
 
 export default async function TentativeFollowupsPrintPage() {
@@ -20,6 +23,7 @@ export default async function TentativeFollowupsPrintPage() {
         .order('created_at', { ascending: true })
     : { data: [] };
   const reservations = (data || []) as (Reservation & { hotels?: { name: string } })[];
+  const toBeBilled = (await Promise.all(hotels.map((hotel) => listOutstandingToBeBilled(hotel, businessToday(hotel.timezone))))).flat();
   const printedAt = new Date();
   const now = printedAt.getTime();
 
@@ -45,6 +49,24 @@ export default async function TentativeFollowupsPrintPage() {
             );
           })}
           {!reservations.length ? <tr><td colSpan={7}>No tentative follow-ups.</td></tr> : null}
+        </tbody>
+      </table>
+      <h2 className="text-lg font-bold">To be billed</h2>
+      <table className="print-table">
+        <thead><tr><th>Guest</th><th>Hotel</th><th>Dates</th><th>Source</th><th>Invoice / PO</th><th>Amount owed</th><th>Age</th></tr></thead>
+        <tbody>
+          {toBeBilled.map((row) => (
+            <tr key={row.id}>
+              <td>{row.guestName}</td>
+              <td>{row.hotelName}</td>
+              <td>{row.checkIn} to {row.checkOut}</td>
+              <td>{row.source.replaceAll('_', ' ')}</td>
+              <td>{row.reference}</td>
+              <td>{currency(row.amountOwed)}</td>
+              <td>{row.ageDays} day/s</td>
+            </tr>
+          ))}
+          {!toBeBilled.length ? <tr><td colSpan={7}>Nothing is waiting to be billed.</td></tr> : null}
         </tbody>
       </table>
       <PrintFooter printedAt={printedAt} staffName={staff.profile.full_name} />

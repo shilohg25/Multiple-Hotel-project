@@ -11,6 +11,7 @@ import {
   readToBeBilled,
   isPastCheckIn,
   paymentCoversDownpayment,
+  paymentWithinRemaining,
   paymentWithinStay,
   publicFormHold,
   quotePublicStay,
@@ -158,7 +159,48 @@ describe('public stay quote', () => {
   it('lets a paid walk-in hold a room and refuses a pencil booking', () => {
     assert.deepEqual(walkInDeskStay({ bookingSource: 'walk_in', deskPayment: 2500, downpaymentRequired: 2500 }), { ok: true, status: 'secured' });
     assert.equal(walkInDeskStay({ bookingSource: 'walk_in', deskPayment: 100, downpaymentRequired: 2500 }).ok, false);
-    assert.equal(walkInDeskStay({ bookingSource: 'facebook', deskPayment: 2500, downpaymentRequired: 2500 }).ok, false);
+    assert.equal(walkInDeskStay({ bookingSource: 'mystery', deskPayment: 2500, downpaymentRequired: 2500 }).ok, false);
+  });
+
+  it('lets staff save Facebook, phone, online, other, and direct bookings once half is paid', () => {
+    for (const source of ['facebook', 'phone', 'online', 'other', 'direct']) {
+      const short = staffBookingPayment({
+        bookingSource: source,
+        amount: 1000,
+        downpaymentRequired: 2500,
+        stayTotal: 5000,
+        paymentKind: 'desk_cash',
+        canConfirm: false
+      });
+      assert.equal(short.ok, false);
+      const paid = staffBookingPayment({
+        bookingSource: source,
+        amount: 2500,
+        downpaymentRequired: 2500,
+        stayTotal: 5000,
+        paymentKind: 'desk_cash',
+        canConfirm: false
+      });
+      assert.equal(paid.ok, true);
+      if (paid.ok) {
+        assert.equal(paid.reservationStatus, 'secured');
+        assert.equal(paid.paymentStatus, 'confirmed');
+        assert.equal(paid.method, 'cash');
+        assert.equal(paid.recordPayment, true);
+      }
+    }
+    const bank = staffBookingPayment({
+      bookingSource: 'direct',
+      amount: 2500,
+      downpaymentRequired: 2500,
+      stayTotal: 5000,
+      paymentKind: 'bank_transfer',
+      reference: 'BANK-1',
+      canConfirm: true
+    });
+    assert.equal(bank.ok, true);
+    assert.equal(paymentWithinRemaining(5000, 5000), true);
+    assert.equal(paymentWithinRemaining(5000.02, 5000), false);
   });
 
   it('records Booking.com, Trip.com, Agoda, and Expedia as full OTA prepaid with no proof', () => {

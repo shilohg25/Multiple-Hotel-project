@@ -8,7 +8,7 @@ import { diffDays } from '@/lib/date';
 import { currency } from '@/lib/money';
 import { calculateDownpayment, downpaymentLabel } from '@/lib/downpayment';
 import { roomAmountLabel } from '@/lib/hotel-pricing';
-import { BILL_LATER_SOURCES, FULL_PREPAID_OTA_SOURCES, clampGuestCount, quotePublicStay } from '@/lib/public-quote';
+import { BILL_LATER_SOURCES, DIRECT_BOOKING_SOURCES, FULL_PREPAID_OTA_SOURCES, clampGuestCount, quotePublicStay } from '@/lib/public-quote';
 import { queueOfflineItem } from '@/lib/offline/db';
 
 export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Room[] }) {
@@ -98,6 +98,7 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
     : null;
   const fullPrepaid = (FULL_PREPAID_OTA_SOURCES as readonly string[]).includes(bookingSource) && paymentKind === 'ota_prepaid';
   const billLater = (BILL_LATER_SOURCES as readonly string[]).includes(bookingSource) && paymentKind === 'invoice';
+  const directBooking = (DIRECT_BOOKING_SOURCES as readonly string[]).includes(bookingSource);
   const surchargeAmount = Number(surcharge || 0);
   const stayTotal = (quote?.total || 0) + surchargeAmount;
   const downpayment = !hotel || !quote
@@ -119,7 +120,7 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
       return;
     }
     const paid = billLater ? 0 : fullPrepaid ? stayTotal : Number(deskPayment || 0);
-    if (!['walk_in', 'booking_dot_com', 'trip_dot_com', 'agoda', 'expedia', 'lgu', 'company'].includes(bookingSource)) {
+    if (!['walk_in', 'booking_dot_com', 'trip_dot_com', 'agoda', 'expedia', 'lgu', 'company', ...DIRECT_BOOKING_SOURCES].includes(bookingSource)) {
       setMessage('Pencil bookings are not allowed. This source needs a payment record before the room is held.');
       return;
     }
@@ -135,7 +136,8 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
       setMessage('The payment cannot be more than the stay total.');
       return;
     }
-    if (bookingSource !== 'walk_in' && !paymentReference.trim()) {
+    const needsReference = paymentKind === 'bank_transfer' || paymentKind === 'ota_prepaid' || paymentKind === 'invoice';
+    if (needsReference && !paymentReference.trim()) {
       setMessage(paymentKind === 'invoice' ? 'An invoice or billing reference is required.' : 'A reference number is required.');
       return;
     }
@@ -258,7 +260,7 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
         <select name="booking_source" className="w-full" value={bookingSource} onChange={(event) => {
           const next = event.target.value;
           setBookingSource(next);
-          if (next === 'walk_in') setPaymentKind('desk_cash');
+          if (next === 'walk_in' || (DIRECT_BOOKING_SOURCES as readonly string[]).includes(next)) setPaymentKind('desk_cash');
           else if (next === 'lgu' || next === 'company') setPaymentKind('invoice');
           else setPaymentKind('ota_prepaid');
           if (next === 'booking_dot_com') setOtaName('Booking.com');
@@ -276,9 +278,10 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
           <option value="facebook">Facebook</option>
           <option value="phone">Phone</option>
           <option value="online">Online booking form</option>
+          <option value="direct">Direct</option>
           <option value="other">Other</option>
         </select>
-        {!['walk_in', 'booking_dot_com', 'trip_dot_com', 'agoda', 'expedia', 'lgu', 'company'].includes(bookingSource) ? <p className="text-sm text-red-700">Pencil bookings are not allowed. This source needs a payment record before the room is held.</p> : null}
+        {!['walk_in', 'booking_dot_com', 'trip_dot_com', 'agoda', 'expedia', 'lgu', 'company', ...DIRECT_BOOKING_SOURCES].includes(bookingSource) ? <p className="text-sm text-red-700">Pencil bookings are not allowed. This source needs a payment record before the room is held.</p> : null}
       </div>
 
       <div className="space-y-2">
@@ -320,13 +323,22 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
           </select>
         </div>
       ) : null}
+      {(DIRECT_BOOKING_SOURCES as readonly string[]).includes(bookingSource) ? (
+        <div className="space-y-2">
+          <label>How it was paid</label>
+          <select className="w-full" value={paymentKind === 'bank_transfer' ? 'bank_transfer' : 'desk_cash'} onChange={(event) => setPaymentKind(event.target.value)}>
+            <option value="desk_cash">Cash at the desk</option>
+            <option value="bank_transfer">Bank transfer</option>
+          </select>
+        </div>
+      ) : null}
       {paymentKind === 'ota_prepaid' && bookingSource !== 'walk_in' ? (
         <div className="space-y-2">
           <label>OTA name</label>
           <input className="w-full" value={otaName} onChange={(event) => setOtaName(event.target.value)} />
         </div>
       ) : null}
-      {bookingSource !== 'walk_in' && ['booking_dot_com', 'trip_dot_com', 'agoda', 'expedia', 'lgu', 'company'].includes(bookingSource) ? (
+      {(bookingSource !== 'walk_in' && ['booking_dot_com', 'trip_dot_com', 'agoda', 'expedia', 'lgu', 'company'].includes(bookingSource)) || (directBooking && paymentKind === 'bank_transfer') ? (
         <div className="space-y-2">
           <label>{paymentKind === 'invoice' ? 'Invoice or PO number' : 'Reference number'}</label>
           <input className="w-full" value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} />
@@ -379,7 +391,7 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
       </div>
 
       <div className="lg:col-span-2">
-        <button className="btn-primary" disabled={loading || !['walk_in', 'booking_dot_com', 'trip_dot_com', 'agoda', 'expedia', 'lgu', 'company'].includes(bookingSource)} type="submit">{loading ? 'Saving...' : billLater ? 'Save to be billed' : 'Save with payment'}</button>
+        <button className="btn-primary" disabled={loading || !['walk_in', 'booking_dot_com', 'trip_dot_com', 'agoda', 'expedia', 'lgu', 'company', ...DIRECT_BOOKING_SOURCES].includes(bookingSource)} type="submit">{loading ? 'Saving...' : billLater ? 'Save to be billed' : 'Save with payment'}</button>
         {offlineDraft ? (
           <button className="btn-secondary ml-2" disabled={loading} type="button" onClick={() => void saveOfflineDraft()}>
             Save offline draft

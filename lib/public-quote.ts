@@ -81,6 +81,11 @@ export function paymentWithinStay(paid: number, stayTotal: number): boolean {
   return Number.isFinite(paid) && paid <= Number(stayTotal || 0) + 0.001;
 }
 
+/** A later payment cannot exceed what is still owed, including a to-be-billed invoice paid in full. */
+export function paymentWithinRemaining(paid: number, remaining: number): boolean {
+  return Number.isFinite(paid) && paid > 0 && paid <= Number(remaining || 0) + 0.001;
+}
+
 /** Reasons the public form keeps Submit off. A typed date can pass the input min. */
 export function publicFormHold(input: {
   datesReady: boolean;
@@ -129,6 +134,8 @@ export function walkInDeskStay(input: { bookingSource: string; deskPayment: numb
 
 export const OTA_BOOKING_SOURCES = ['booking_dot_com', 'trip_dot_com', 'agoda', 'expedia'] as const;
 export const ACCOUNT_BOOKING_SOURCES = ['lgu', 'company'] as const;
+/** Staff can hold these when a payment covers at least half the stay. */
+export const DIRECT_BOOKING_SOURCES = ['facebook', 'phone', 'online', 'other', 'direct'] as const;
 
 /** These OTAs collect the full stay before the hotel sees the booking. */
 export const FULL_PREPAID_OTA_SOURCES = ['booking_dot_com', 'trip_dot_com', 'agoda', 'expedia'] as const;
@@ -185,8 +192,9 @@ function sameMoney(left: number, right: number): boolean {
  * Staff stays hold a room only with a payment row in the same save, except an LGU
  * or company stay billed later, which is secured with no deposit and no ledger row.
  * Booking.com, Trip.com, Agoda, and Expedia are recorded as OTA prepaid for the full stay,
- * with a reference and no proof file. Walk-ins, direct bookings, bank transfers, and
- * every other source still need at least half the stay. Front desk can save an LGU or company stay.
+ * with a reference and no proof file. Walk-ins, direct bookings (Facebook, phone,
+ * online, other, and direct), and bank transfers still need at least half the stay.
+ * Front desk can save an LGU or company stay.
  * OTA prepaid and invoice/PO are stored on existing method values, with the name in the details.
  */
 export function staffBookingPayment(input: {
@@ -206,8 +214,12 @@ export function staffBookingPayment(input: {
   const otaName = String(input.otaName || '').trim();
   const ota = (OTA_BOOKING_SOURCES as readonly string[]).includes(source);
   const account = (ACCOUNT_BOOKING_SOURCES as readonly string[]).includes(source);
-  if (source !== 'walk_in' && !ota && !account) {
+  const direct = (DIRECT_BOOKING_SOURCES as readonly string[]).includes(source);
+  if (source !== 'walk_in' && !ota && !account && !direct) {
     return { ok: false, error: 'Pencil bookings are not allowed. This source needs a payment record before the room is held.' };
+  }
+  if (direct && kind !== 'desk_cash' && kind !== 'bank_transfer') {
+    return { ok: false, error: 'This booking needs cash paid at the desk or a bank transfer covering at least half the stay.' };
   }
   if (source === 'walk_in' && kind !== 'desk_cash') {
     return { ok: false, error: 'A walk-in is recorded as cash paid at the desk.' };
@@ -252,7 +264,7 @@ export function staffBookingPayment(input: {
     return { ok: false, error: 'The payment must cover at least half the stay.' };
   }
 
-  const managerConfirms = fullPrepaid || source === 'walk_in' || input.canConfirm;
+  const managerConfirms = fullPrepaid || source === 'walk_in' || (direct && kind === 'desk_cash') || input.canConfirm;
   let method: StaffPaymentDecision['method'] = 'other';
   let details = '';
   if (kind === 'desk_cash') {

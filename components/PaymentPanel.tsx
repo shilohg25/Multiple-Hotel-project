@@ -18,7 +18,8 @@ export function PaymentPanel({
   currencyCode = 'PHP',
   canConfirm,
   cardSurchargePercent = 3,
-  cardMdrPercent = 3.5
+  cardMdrPercent = 3.5,
+  amountOwed
 }: {
   reservationId: string;
   payments: PaymentWithUrl[];
@@ -26,6 +27,7 @@ export function PaymentPanel({
   canConfirm: boolean;
   cardSurchargePercent?: number;
   cardMdrPercent?: number;
+  amountOwed?: number;
 }) {
   const router = useRouter();
   const [message, setMessage] = useState('');
@@ -39,6 +41,11 @@ export function PaymentPanel({
     event.preventDefault();
 
     const formElement = event.currentTarget;
+    const paying = method === 'card' ? guestCardCharge(Number(amount || 0), cardSurchargePercent) : Number(amount || 0);
+    if (amountOwed != null && paying > Number(amountOwed) + 0.001) {
+      setMessage('The payment cannot be more than the amount still owed.');
+      return;
+    }
 
     setMessage('');
     setLoading(true);
@@ -205,7 +212,8 @@ export function PaymentPanel({
         <form onSubmit={uploadPayment} className="mt-4 space-y-4">
           <div className="space-y-2">
             <label>{method === 'card' ? 'Amount before card surcharge' : 'Amount'}</label>
-            <input name="amount" type="number" min="1" step="0.01" required className="w-full" value={amount} onChange={(event) => setAmount(event.target.value)} />
+            <input name="amount" type="number" min="1" step="0.01" max={amountOwed != null && amountOwed > 0 ? amountOwed : undefined} required className="w-full" value={amount} onChange={(event) => setAmount(event.target.value)} />
+            {amountOwed != null ? <p className="text-sm text-slate-600">Up to {currency(amountOwed, currencyCode)} is still owed. A to-be-billed invoice can be recorded up to that amount.</p> : null}
             {method === 'card' ? (
               <p className="text-sm text-slate-600">
                 This box is the amount before the surcharge. At {cardSurchargePercent}%, 2,250.00 is recorded as {currency(guestCardCharge(2250, cardSurchargePercent), currencyCode)}.

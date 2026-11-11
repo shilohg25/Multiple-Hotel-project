@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { requireStaff } from '@/lib/auth';
 import { currency } from '@/lib/money';
+import { readToBeBilled } from '@/lib/public-quote';
 import { getDailyReportData } from '@/lib/report-data';
 import { PrintButton } from '@/components/PrintButton';
 import { PrintHeader } from '@/components/print/PrintHeader';
@@ -39,6 +40,7 @@ export default async function DailyReportPrintPage({ searchParams }: { searchPar
           <Row label="Variance" value={currency(report.totals.variance, report.hotel.default_currency)} />
           <Row label="Remittance due" value={currency(report.totals.remittanceDue, report.hotel.default_currency)} />
           <Row label="Remittance paid" value={currency(report.totals.remittancePaid, report.hotel.default_currency)} />
+          <Row label="To be billed" value={currency(report.totals.toBeBilled, report.hotel.default_currency)} />
         </tbody>
       </table>
       <section>
@@ -48,18 +50,23 @@ export default async function DailyReportPrintPage({ searchParams }: { searchPar
       <section>
         <h2 className="mb-2 text-lg font-bold">Reservations</h2>
         <table className="print-table">
-          <thead><tr><th>Guest</th><th>Room</th><th>Dates</th><th>Status</th><th>Total</th></tr></thead>
+          <thead><tr><th>Guest</th><th>Room</th><th>Dates</th><th>Status</th><th>Invoice</th><th>Reference</th><th>Total</th></tr></thead>
           <tbody>
-            {report.reservations.map((reservation) => (
-              <tr key={reservation.id}>
-                <td>{reservation.guests?.full_name || 'Guest'}</td>
-                <td>{reservation.rooms?.name || '-'}</td>
-                <td>{reservation.check_in} to {reservation.check_out}</td>
-                <td>{reservation.status.replaceAll('_', ' ')}</td>
-                <td>{currency(reservation.total_amount, report.hotel.default_currency)}</td>
-              </tr>
-            ))}
-            {!report.reservations.length ? <tr><td colSpan={5}>No reservations for this report date.</td></tr> : null}
+            {report.reservations.map((reservation) => {
+              const billed = readToBeBilled(reservation.mode_of_payment);
+              return (
+                <tr key={reservation.id}>
+                  <td>{reservation.guests?.full_name || 'Guest'}</td>
+                  <td>{reservation.rooms?.name || '-'}</td>
+                  <td>{reservation.check_in} to {reservation.check_out}</td>
+                  <td>{reservation.status.replaceAll('_', ' ')}</td>
+                  <td>{billed ? 'To be billed' : '—'}</td>
+                  <td>{billed?.reference || '—'}</td>
+                  <td>{currency(reservation.total_amount, report.hotel.default_currency)}</td>
+                </tr>
+              );
+            })}
+            {!report.reservations.length ? <tr><td colSpan={7}>No reservations for this report date.</td></tr> : null}
           </tbody>
         </table>
       </section>

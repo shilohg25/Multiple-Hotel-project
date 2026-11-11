@@ -40,7 +40,7 @@ const ACCOUNTS: Record<string, HotelPaymentAccount> = {
 export function paymentAccountForHotel(hotel: { slug?: string | null }): HotelPaymentAccount {
   const slug = String(hotel.slug || '').trim().toLowerCase();
   if (slug === TEST_PRACTICE_HOTEL_SLUG) {
-    return { ...PLACEHOLDER, gcash: null, bankName: 'Metrobank' };
+    return { ...PLACEHOLDER, gcash: null, bankName: 'TEST Bank (placeholder)' };
   }
   return ACCOUNTS[slug] || PLACEHOLDER;
 }
