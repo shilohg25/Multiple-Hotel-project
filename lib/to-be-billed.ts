@@ -31,15 +31,55 @@ function money(value: number) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
 
-/** A manager cannot clear or rewrite the billing marker while the stay still owes money. */
+export const BILLING_REFERENCE_CORRECTED = 'reservation.billing_reference_corrected';
+
+/**
+ * While money is owed, the to-be-billed marker stays. A manager may correct the
+ * invoice or PO reference. Clearing the marker, or leaving the reference blank, is blocked.
+ */
+export function billingReferenceEdit(currentMode: string | null | undefined, nextMode: unknown):
+  | { kind: 'unchanged' }
+  | { kind: 'blocked' }
+  | { kind: 'reference'; before: string; after: string; mode: string } {
+  const current = readToBeBilled(currentMode);
+  if (!current) return { kind: 'unchanged' };
+  const next = readToBeBilled(String(nextMode ?? ''));
+  if (!next || !next.reference.trim()) return { kind: 'blocked' };
+  if (next.reference === current.reference) return { kind: 'unchanged' };
+  return { kind: 'reference', before: current.reference, after: next.reference, mode: `to_be_billed:${next.reference}` };
+}
+
+/** A manager cannot clear the billing marker while the stay still owes money. */
 export function billLaterMarkerChangeBlocked(input: {
   currentMode: string | null | undefined;
   nextMode: unknown;
   amountOwed: number;
 }): boolean {
   if (!readToBeBilled(input.currentMode)) return false;
-  if (String(input.nextMode ?? '') === String(input.currentMode ?? '')) return false;
-  return Number(input.amountOwed || 0) > 0.009;
+  if (Number(input.amountOwed || 0) <= 0.009) return false;
+  return billingReferenceEdit(input.currentMode, input.nextMode).kind === 'blocked';
+}
+
+export function billingReferenceAudit(input: {
+  hotelId: string;
+  reservationId: string;
+  actorId: string;
+  before: string;
+  after: string;
+  when: string;
+}) {
+  return {
+    hotel_id: input.hotelId,
+    reservation_id: input.reservationId,
+    actor_id: input.actorId,
+    action: BILLING_REFERENCE_CORRECTED,
+    details: {
+      before: input.before,
+      after: input.after,
+      approved_by: input.actorId,
+      approved_at: input.when
+    }
+  };
 }
 
 /** Open LGU and company bills. A stay drops off once confirmed payments cover the total. */

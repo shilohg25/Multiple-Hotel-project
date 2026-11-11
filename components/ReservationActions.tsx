@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { BREAKFAST_TURN_OFF_BLOCKED } from '@/lib/breakfast-toggle';
+import { statusChangeReason } from '@/lib/status-reason';
 import type { ReservationStatus, Role } from '@/types/app';
 
 export function ReservationActions({
@@ -35,18 +36,37 @@ export function ReservationActions({
   const [breakfast, setBreakfast] = useState(withBreakfast);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [promptFor, setPromptFor] = useState<null | 'checked_in' | 'checked_out'>(null);
+  const [promptReason, setPromptReason] = useState('');
   const manager = role === 'owner' || role === 'manager';
 
-  function reasonFor(prompt: string): string | null {
-    const typed = reason.trim();
-    if (typed) return typed;
-    if (!manager) return '';
-    const entered = window.prompt(prompt);
-    if (entered === null) return null;
-    const next = entered.trim();
-    if (!next) return null;
-    setReason(next);
-    return next;
+  function beginStatus(next: 'checked_in' | 'checked_out') {
+    if (!manager) {
+      void save({ status: next, reason: '' });
+      return;
+    }
+    const chosen = statusChangeReason(reason, undefined);
+    if (chosen.ok) {
+      void save({ status: next, reason: chosen.reason });
+      return;
+    }
+    setPromptReason('');
+    setPromptFor(next);
+    setMessage('');
+  }
+
+  function submitPrompt(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!promptFor) return;
+    const chosen = statusChangeReason('', promptReason);
+    if (!chosen.ok) {
+      setMessage(promptFor === 'checked_in' ? 'A reason is required to check this guest in.' : 'A reason is required to check this guest out.');
+      return;
+    }
+    const next = promptFor;
+    setPromptFor(null);
+    setReason(chosen.reason);
+    void save({ status: next, reason: chosen.reason });
   }
 
   async function save(body: Record<string, unknown>) {
@@ -84,30 +104,28 @@ export function ReservationActions({
       ) : null}
       <div className="flex flex-wrap gap-2">
         {status !== 'checked_in' && status !== 'checked_out' && status !== 'cancelled' && status !== 'no_show' ? (
-          <button className="btn-primary" type="button" disabled={loading} onClick={() => {
-            const nextReason = reasonFor('Why are you checking this guest in?');
-            if (nextReason === null) {
-              setMessage('A reason is required to check this guest in.');
-              return;
-            }
-            void save({ status: 'checked_in', reason: nextReason });
-          }}>
+          <button className="btn-primary" type="button" disabled={loading} onClick={() => beginStatus('checked_in')}>
             Check in
           </button>
         ) : null}
         {status === 'checked_in' ? (
-          <button className="btn-primary" type="button" disabled={loading} onClick={() => {
-            const nextReason = reasonFor('Why are you checking this guest out?');
-            if (nextReason === null) {
-              setMessage('A reason is required to check this guest out.');
-              return;
-            }
-            void save({ status: 'checked_out', reason: nextReason });
-          }}>
+          <button className="btn-primary" type="button" disabled={loading} onClick={() => beginStatus('checked_out')}>
             Check out
           </button>
         ) : null}
       </div>
+      {promptFor ? (
+        <form onSubmit={submitPrompt} className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <label className="block space-y-1">
+            {promptFor === 'checked_in' ? 'Why are you checking this guest in?' : 'Why are you checking this guest out?'}
+            <textarea className="w-full" rows={2} value={promptReason} onChange={(event) => setPromptReason(event.target.value)} autoFocus />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button className="btn-primary" type="submit" disabled={loading}>Save reason and continue</button>
+            <button className="btn-secondary" type="button" onClick={() => setPromptFor(null)}>Cancel</button>
+          </div>
+        </form>
+      ) : null}
       {manager ? (
         <form
           className="grid gap-3 md:grid-cols-2"
@@ -121,11 +139,13 @@ export function ReservationActions({
               || Number(rate) !== postedRoomRate
               || Number(total) !== totalAmount
               || Number(downpayment) !== downpaymentRequired;
-            const nextReason = needsReason ? reasonFor('Why are you changing this stay?') : reason.trim();
-            if (nextReason === null) {
-              setMessage('A reason is required when you change the rate, total, down payment, or status.');
+            const chosen = needsReason ? statusChangeReason(reason, undefined) : { ok: true as const, reason: reason.trim() };
+            if (!chosen.ok) {
+              setPromptReason('');
+              setMessage('A reason is required when you change the rate, total, down payment, or status. Type it in Reason above.');
               return;
             }
+            const nextReason = chosen.reason;
             save({
               status: nextStatus,
               posted_room_rate: Number(rate),

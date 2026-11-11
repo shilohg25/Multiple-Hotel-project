@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { billLaterMarkerChangeBlocked, outstandingToBeBilled, toBeBilledForCheckIns } from './to-be-billed.ts';
+import { BILLING_REFERENCE_CORRECTED, billLaterMarkerChangeBlocked, billingReferenceAudit, billingReferenceEdit, outstandingToBeBilled, toBeBilledForCheckIns } from './to-be-billed.ts';
 
 const stay = {
   id: 'stay-1',
@@ -67,7 +67,7 @@ describe('outstanding to be billed', () => {
     assert.equal(month.total, 5000);
   });
 
-  it('blocks a manager from clearing the billing marker while money is owed', () => {
+  it('blocks clearing the marker while money is owed, and allows a reference correction', () => {
     assert.equal(billLaterMarkerChangeBlocked({
       currentMode: 'to_be_billed:PO-9',
       nextMode: '',
@@ -75,9 +75,29 @@ describe('outstanding to be billed', () => {
     }), true);
     assert.equal(billLaterMarkerChangeBlocked({
       currentMode: 'to_be_billed:PO-9',
-      nextMode: 'to_be_billed:PO-9',
+      nextMode: 'to_be_billed:PO-10',
       amountOwed: 500
     }), false);
+    assert.deepEqual(billingReferenceEdit('to_be_billed:PO-9', 'to_be_billed:PO-10'), {
+      kind: 'reference',
+      before: 'PO-9',
+      after: 'PO-10',
+      mode: 'to_be_billed:PO-10'
+    });
+    const audit = billingReferenceAudit({
+      hotelId: 'hotel',
+      reservationId: 'stay',
+      actorId: 'manager-1',
+      before: 'PO-9',
+      after: 'PO-10',
+      when: '2026-11-11T02:00:00.000Z'
+    });
+    assert.equal(audit.action, BILLING_REFERENCE_CORRECTED);
+    assert.equal(audit.actor_id, 'manager-1');
+    assert.equal(audit.details.approved_by, 'manager-1');
+    assert.equal(audit.details.approved_at, '2026-11-11T02:00:00.000Z');
+    assert.equal(audit.details.before, 'PO-9');
+    assert.equal(audit.details.after, 'PO-10');
     assert.equal(billLaterMarkerChangeBlocked({
       currentMode: 'to_be_billed:PO-9',
       nextMode: '',

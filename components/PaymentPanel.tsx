@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import type { Payment } from '@/types/app';
 import { cardSettlementNet, guestCardCharge } from '@/lib/card-fees';
 import { currency } from '@/lib/money';
+import { PAYMENT_OVER_OWED, amountReservedByPayments } from '@/lib/payment-cap';
 import { paymentMethodLabel } from '@/lib/payment-method-label';
 import { queueOfflineItem } from '@/lib/offline/db';
 import { PaymentStatusBadge } from './StatusBadge';
@@ -19,7 +20,8 @@ export function PaymentPanel({
   canConfirm,
   cardSurchargePercent = 3,
   cardMdrPercent = 3.5,
-  amountOwed
+  stayTotal,
+  toBeBilled = false
 }: {
   reservationId: string;
   payments: PaymentWithUrl[];
@@ -27,7 +29,8 @@ export function PaymentPanel({
   canConfirm: boolean;
   cardSurchargePercent?: number;
   cardMdrPercent?: number;
-  amountOwed?: number;
+  stayTotal?: number;
+  toBeBilled?: boolean;
 }) {
   const router = useRouter();
   const [message, setMessage] = useState('');
@@ -36,14 +39,15 @@ export function PaymentPanel({
   const [offlineDraft, setOfflineDraft] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
   const confirmedTotal = payments.filter((payment) => payment.status === 'confirmed').reduce((sum, payment) => sum + Number(payment.amount), 0);
+  const remaining = stayTotal == null ? null : Math.max(0, Math.round((Number(stayTotal) - amountReservedByPayments(payments)) * 100) / 100);
 
   async function uploadPayment(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const formElement = event.currentTarget;
     const paying = method === 'card' ? guestCardCharge(Number(amount || 0), cardSurchargePercent) : Number(amount || 0);
-    if (amountOwed != null && paying > Number(amountOwed) + 0.001) {
-      setMessage('The payment cannot be more than the amount still owed.');
+    if (remaining != null && paying > remaining + 0.001) {
+      setMessage(PAYMENT_OVER_OWED);
       return;
     }
 
@@ -212,8 +216,9 @@ export function PaymentPanel({
         <form onSubmit={uploadPayment} className="mt-4 space-y-4">
           <div className="space-y-2">
             <label>{method === 'card' ? 'Amount before card surcharge' : 'Amount'}</label>
-            <input name="amount" type="number" min="1" step="0.01" max={amountOwed != null && amountOwed > 0 ? amountOwed : undefined} required className="w-full" value={amount} onChange={(event) => setAmount(event.target.value)} />
-            {amountOwed != null ? <p className="text-sm text-slate-600">Up to {currency(amountOwed, currencyCode)} is still owed. A to-be-billed invoice can be recorded up to that amount.</p> : null}
+            <input name="amount" type="number" min="1" step="0.01" required className="w-full" value={amount} onChange={(event) => setAmount(event.target.value)} />
+            {remaining != null ? <p className="text-sm text-slate-600">Up to {currency(remaining, currencyCode)} is still owed, including payments waiting to be confirmed.{toBeBilled ? ' A to-be-billed invoice can be recorded up to that amount.' : ''}</p> : null}
+            {remaining != null && (method === 'card' ? guestCardCharge(Number(amount || 0), cardSurchargePercent) : Number(amount || 0)) > remaining + 0.001 ? <p className="text-sm text-red-700">{PAYMENT_OVER_OWED}</p> : null}
             {method === 'card' ? (
               <p className="text-sm text-slate-600">
                 This box is the amount before the surcharge. At {cardSurchargePercent}%, 2,250.00 is recorded as {currency(guestCardCharge(2250, cardSurchargePercent), currencyCode)}.

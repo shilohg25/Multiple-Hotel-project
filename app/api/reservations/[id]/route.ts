@@ -4,7 +4,7 @@ import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { AUTO_BREAKFAST_REMOVED_ACTION, AUTO_POST_SOURCE, BREAKFAST_TURN_OFF_BLOCKED, autoChargeRemovedFromRead, breakfastTurnOffBlocked, isAutoPostedCharge, shouldPostAutoStayCharge } from '@/lib/breakfast-toggle';
 import { priceStay } from '@/lib/hotel-pricing';
 import { isRoomOverlapError, ROOM_JUST_TAKEN } from '@/lib/room-overlap';
-import { billLaterMarkerChangeBlocked } from '@/lib/to-be-billed';
+import { billLaterMarkerChangeBlocked, billingReferenceAudit, billingReferenceEdit } from '@/lib/to-be-billed';
 import { loadStayMoney } from '@/lib/stay-money';
 import { decideReservationUpdate, RESERVATION_MONEY_FIELDS, type MoneyField, type PolicyStatus } from '@/lib/reservation-policy';
 import { supabaseAdmin } from '@/lib/supabase-admin';
@@ -32,16 +32,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (blocked.some((key) => key in payload)) return jsonError('Front desk can only check a guest in or out.', 403);
   }
 
+  let referenceCorrection: { before: string; after: string } | null = null;
   if ('mode_of_payment' in payload && String(currentRaw.mode_of_payment || '').startsWith('to_be_billed:')) {
     const loaded = await loadStayMoney(id);
     if (!loaded.ok) return jsonError(loaded.error, 500);
     const owed = Math.round((loaded.money.total - loaded.money.confirmed) * 100) / 100;
+    const edit = billingReferenceEdit(currentRaw.mode_of_payment, payload.mode_of_payment);
     if (billLaterMarkerChangeBlocked({
       currentMode: currentRaw.mode_of_payment,
       nextMode: payload.mode_of_payment,
       amountOwed: owed
     })) {
-      return jsonError('This stay is still to be billed. The billing marker cannot be changed while money is owed.', 409);
+      return jsonError('This stay is still to be billed. The billing marker cannot be removed while money is owed. You can correct the invoice or PO reference.', 409);
+    }
+    if (edit.kind === 'reference') {
+      payload.mode_of_payment = edit.mode;
+      referenceCorrection = { before: edit.before, after: edit.after };
     }
   }
 
@@ -169,6 +175,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         await supabaseAdmin.from('reservation_charges').insert(withoutTotal);
       }
       }
+    }
+  }
+
+  if (referenceCorrection) {
+    const { error: referenceError } = await supabaseAdmin.from('audit_logs').insert(billingReferenceAudit({
+      hotelId: currentRaw.hotel_id,
+      reservationId: id,
+      actorId: staff.userId,
+      before: referenceCorrection.before,
+      after: referenceCorrection.after,
+      when: new Date().toISOString()
+    }));
+    if (referenceError) {
+      console.error(referenceError);
+      await supabaseAdmin.from('reservations').update({ mode_of_payment: currentRaw.mode_of_payment }).eq('id', id);
+      return jsonError('The invoice or PO correction could not be recorded. The reference was not changed.', 500);
     }
   }
 
