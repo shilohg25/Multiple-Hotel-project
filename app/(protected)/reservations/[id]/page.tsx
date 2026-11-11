@@ -15,6 +15,7 @@ import { balanceDueLabel } from '@/lib/stay-cleanup';
 import { readToBeBilled } from '@/lib/public-quote';
 import { stayFolioView } from '@/lib/stay-total';
 import { formatDate } from '@/lib/date';
+import { BillingReferenceField } from '@/components/BillingReferenceField';
 import { ReservationStatusBadge } from '@/components/StatusBadge';
 import { PaymentPanel } from '@/components/PaymentPanel';
 import { EmailDraftPanel } from '@/components/EmailDraftPanel';
@@ -176,6 +177,9 @@ export default async function ReservationDetailPage({ params }: { params: Promis
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{due.label}</p>
             <p className="mt-1 font-bold">{currency(due.amount, reservation.hotels.default_currency)}</p>
             {billed?.reference ? <p className="text-sm text-slate-500">Billing reference {billed.reference}</p> : null}
+            {(staff.profile.role === 'owner' || staff.profile.role === 'manager') && billed ? (
+              <BillingReferenceField reservationId={reservation.id} reference={billed.reference} />
+            ) : null}
             <p className="text-sm text-slate-500">Confirmed {currency(confirmedTotal, reservation.hotels.default_currency)}</p>
           </div>
         </div>
