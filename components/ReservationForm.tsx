@@ -7,6 +7,7 @@ import type { Hotel, Room } from '@/types/app';
 import { diffDays } from '@/lib/date';
 import { currency } from '@/lib/money';
 import { calculateDownpayment, downpaymentLabel } from '@/lib/downpayment';
+import { roomAmountLabel } from '@/lib/hotel-pricing';
 import { quotePublicStay } from '@/lib/public-quote';
 import { queueOfflineItem } from '@/lib/offline/db';
 
@@ -245,8 +246,10 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
             <option value="true">Yes, breakfast included</option>
             <option value="false">No - room only</option>
           </select>
-        ) : (
+        ) : quote?.breakfastIncluded ? (
           <p className="rounded-md bg-slate-50 px-3 py-2 text-sm">Breakfast for 2 is included in the room rate.</p>
+        ) : (
+          <p className="rounded-md bg-slate-50 px-3 py-2 text-sm">Room only</p>
         )}
       </div>
       <div className="space-y-2">
@@ -271,7 +274,7 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
       <div className="rounded-xl bg-slate-50 p-4 lg:col-span-2">
         <div className="grid gap-3 md:grid-cols-4">
           <div><p className="text-xs text-slate-500">Nights</p><p className="font-bold">{nights}</p></div>
-          <div><p className="text-xs text-slate-500">Room (excl. breakfast)</p><p className="font-bold">{currency(quote?.roomTotal || 0, hotel.default_currency)}</p></div>
+          <div><p className="text-xs text-slate-500">{roomAmountLabel(Boolean(quote?.breakfastIncluded))}</p><p className="font-bold">{currency(quote?.roomTotal || 0, hotel.default_currency)}</p></div>
           <div><p className="text-xs text-slate-500">Extra bed</p><p className="font-bold">{quote?.extraBedLine || 'No extra bed'}</p></div>
           <div><p className="text-xs text-slate-500">Stay total</p><p className="font-bold">{currency(stayTotal, hotel.default_currency)}</p></div>
           <div><p className="text-xs text-slate-500">Required down payment</p><p className="font-bold">{currency(downpayment, hotel.default_currency)}</p></div>

@@ -108,6 +108,7 @@ export type StayQuote = {
   extraBedLine: string;
   breakfastTotal: number;
   breakfastLine: string;
+  breakfastIncluded: boolean;
   breakfastChoiceEnabled: boolean;
   withBreakfast: boolean;
   total: number;
@@ -163,6 +164,7 @@ export function quotePublicStay(input: {
     extraBedLine: price.extraBedLine,
     breakfastTotal: price.breakfastTotal,
     breakfastLine: price.breakfastLine,
+    breakfastIncluded: price.breakfastIncluded,
     breakfastChoiceEnabled: price.breakfastChoiceEnabled,
     withBreakfast: price.withBreakfast,
     total: price.total,

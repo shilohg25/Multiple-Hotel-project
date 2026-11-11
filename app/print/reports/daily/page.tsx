@@ -30,7 +30,7 @@ export default async function DailyReportPrintPage({ searchParams }: { searchPar
         <tbody>
           <Row label="Confirmed payments" value={currency(report.totals.roomPayments, report.hotel.default_currency)} />
           <Row label="Service charges" value={currency(report.totals.serviceCharges, report.hotel.default_currency)} />
-          <Row label="Breakfast charges" value={currency(report.totals.breakfastCharges, report.hotel.default_currency)} />
+          <Row label="Breakfast and extra beds" value={currency(report.totals.breakfastCharges, report.hotel.default_currency)} />
           <Row label="Day tour sales" value={currency(report.totals.dayTourSales, report.hotel.default_currency)} />
           <Row label="Cash received" value={currency(report.totals.cashReceived, report.hotel.default_currency)} />
           <Row label="Bank/online received" value={currency(report.totals.bankOnlineReceived, report.hotel.default_currency)} />

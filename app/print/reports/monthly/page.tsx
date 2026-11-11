@@ -22,7 +22,7 @@ export default async function MonthlyReportPrintPage({ searchParams }: { searchP
       <section className="grid gap-4 md:grid-cols-4">
         <Box label="Room revenue" value={currency(totals.roomRevenue, hotel.default_currency)} />
         <Box label="Service charges" value={currency(totals.serviceCharges, hotel.default_currency)} />
-        <Box label="Breakfast charges" value={currency(totals.breakfastCharges, hotel.default_currency)} />
+        <Box label="Breakfast and extra beds" value={currency(totals.breakfastCharges, hotel.default_currency)} />
         <Box label="Confirmed payments" value={currency(totals.confirmedPayments, hotel.default_currency)} />
       </section>
       <section className="grid gap-4 md:grid-cols-4">

@@ -11,6 +11,7 @@ import {
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { isAutoBreakfastCharge } from '@/lib/breakfast-toggle';
 import { currency } from '@/lib/money';
+import { stayFolioView } from '@/lib/stay-total';
 import { formatDate } from '@/lib/date';
 import { ReservationStatusBadge } from '@/components/StatusBadge';
 import { PaymentPanel } from '@/components/PaymentPanel';
@@ -78,9 +79,18 @@ export default async function ReservationDetailPage({ params }: { params: Promis
   ]);
   const charges = (chargesRaw || []) as ReservationCharge[];
   const serviceItems = (serviceItemsRaw || []) as ServiceItem[];
-  const chargesSubtotal = charges.reduce((sum, charge) => sum + Number(charge.total_amount || 0), 0);
+  const folio = stayFolioView({
+    hotelSlug: reservation.hotels.slug,
+    roomTypeName: reservation.rooms.room_type_name,
+    postedRoomRate: Number(reservation.posted_room_rate || 0),
+    roomTotal: Number(reservation.total_amount || 0),
+    nights: reservation.nights,
+    guestCount: Number(reservation.guest_count || 1),
+    withBreakfast: Boolean(reservation.with_breakfast),
+    charges
+  });
   const confirmedTotal = payments.filter((payment) => payment.status === 'confirmed').reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-  const balance = Number(reservation.total_amount || 0) + chargesSubtotal - confirmedTotal;
+  const balance = folio.total - confirmedTotal;
 
   return (
     <div className="space-y-6">
@@ -126,7 +136,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
               payments: payments.map(({ proof_url: _proofUrl, ...payment }) => payment),
               totals: {
                 room_total: Number(reservation.total_amount || 0),
-                additional_charges_total: chargesSubtotal,
+                additional_charges_total: folio.chargesTotal,
                 confirmed_payments_total: confirmedTotal,
                 balance_due: balance
               }
@@ -150,7 +160,9 @@ export default async function ReservationDetailPage({ params }: { params: Promis
           </div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Amounts</p>
-            <p className="mt-1 font-bold">Room (excl. breakfast) {currency(reservation.total_amount, reservation.hotels.default_currency)}</p>
+            <p className="mt-1 font-bold">{folio.roomLabel} {currency(reservation.total_amount, reservation.hotels.default_currency)}</p>
+            {folio.expectedExtraBed > 0 ? <p className="text-sm text-slate-500">Expected extra bed {currency(folio.expectedExtraBed, reservation.hotels.default_currency)}</p> : null}
+            <p className="text-sm text-slate-500">Stay total {currency(folio.total, reservation.hotels.default_currency)}</p>
             <p className="text-sm text-slate-500">Required DP {currency(reservation.downpayment_required, reservation.hotels.default_currency)}</p>
           </div>
           <div>
@@ -196,6 +208,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
         status={reservation.status}
         postedRoomRate={Number(reservation.posted_room_rate || 0)}
         totalAmount={Number(reservation.total_amount || 0)}
+        roomLabel={folio.roomLabel}
         downpaymentRequired={Number(reservation.downpayment_required || 0)}
         withBreakfast={Boolean(reservation.with_breakfast)}
         breakfastCharged={charges.some((charge) => isAutoBreakfastCharge(charge))}
@@ -206,6 +219,9 @@ export default async function ReservationDetailPage({ params }: { params: Promis
         reservationId={reservation.id}
         currencyCode={reservation.hotels.default_currency}
         roomTotal={Number(reservation.total_amount || 0)}
+        roomLabel={folio.roomLabel}
+        expectedExtraBed={folio.expectedExtraBed}
+        expectedExtraBedLine={folio.expectedExtraBedLine}
         confirmedPaymentsTotal={confirmedTotal}
         charges={charges}
         serviceItems={serviceItems}

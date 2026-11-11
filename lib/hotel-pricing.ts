@@ -10,6 +10,9 @@ export const navarroRoomOnlyDiscount: number | null = null;
 
 export const NAVARRO_SLUG = 'navarro-hotel';
 export const TAGOSILANGAN_SLUG = 'tagosilangan';
+/** TEST properties use a real hotel's rates so extra beds can be tried on TEST data. Payment details stay placeholders. */
+export const TEST_PRACTICE_HOTEL_SLUG = 'test-practice-hotel';
+export const TEST_PRACTICE_RESORT_SLUG = 'test-practice-resort';
 
 export type RoomTypePricing = {
   includedHeads: number;
@@ -45,7 +48,7 @@ const navarroDefault: RoomTypePricing = {
   fixedDownpaymentPercent: 50
 };
 
-/** Unknown and TEST properties: no invented breakfast add-on and no extra-bed rate. */
+/** Hotels that are not Navarro, Tagosilangan, or a mapped TEST property. */
 const genericDefault: RoomTypePricing = {
   includedHeads: 2,
   breakfastInRoomRate: false,
@@ -55,23 +58,33 @@ const genericDefault: RoomTypePricing = {
   fixedDownpaymentPercent: null
 };
 
+const navarroTypes = {
+  'deluxe queen': {},
+  'deluxe twin': {},
+  'deluxe king': {},
+  barkada: {}
+};
+
 const HOTELS: Record<string, HotelPricing> = {
   [TAGOSILANGAN_SLUG]: {
     slug: TAGOSILANGAN_SLUG,
     ...tagosilanganDefault,
-    roomTypes: {
-      barkada: {}
-    }
+    roomTypes: { barkada: {} }
+  },
+  [TEST_PRACTICE_RESORT_SLUG]: {
+    slug: TEST_PRACTICE_RESORT_SLUG,
+    ...tagosilanganDefault,
+    roomTypes: { barkada: {} }
   },
   [NAVARRO_SLUG]: {
     slug: NAVARRO_SLUG,
     ...navarroDefault,
-    roomTypes: {
-      'deluxe queen': {},
-      'deluxe twin': {},
-      'deluxe king': {},
-      barkada: {}
-    }
+    roomTypes: navarroTypes
+  },
+  [TEST_PRACTICE_HOTEL_SLUG]: {
+    slug: TEST_PRACTICE_HOTEL_SLUG,
+    ...navarroDefault,
+    roomTypes: navarroTypes
   }
 };
 
@@ -169,4 +182,8 @@ export function priceStay(input: {
     total: money(roomTotal + extraBedTotal),
     fixedDownpaymentPercent: pricing.fixedDownpaymentPercent
   };
+}
+
+export function roomAmountLabel(breakfastIncluded: boolean): string {
+  return breakfastIncluded ? 'Room (breakfast for 2 included)' : 'Room only';
 }

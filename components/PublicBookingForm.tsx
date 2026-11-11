@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import type { Hotel, Room } from '@/types/app';
 import { proofFileProblem } from '@/lib/guest-contact';
 import { currency } from '@/lib/money';
-import { roomOnlyChoiceEnabled, stayPricingFor } from '@/lib/hotel-pricing';
+import { roomAmountLabel, roomOnlyChoiceEnabled, stayPricingFor } from '@/lib/hotel-pricing';
 import { paymentAccountForHotel, paymentInstructionLines } from '@/lib/payment-instructions';
 import { publicFormHold, quotePublicStay } from '@/lib/public-quote';
 
@@ -52,9 +52,9 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
     })
     : null;
   const payTo = paymentAccountForHotel(hotel);
-  const breakfastChoiceEnabled = quote
-    ? quote.breakfastChoiceEnabled
-    : roomOnlyChoiceEnabled(stayPricingFor({ slug: hotel.slug, roomTypeName: room?.room_type_name }));
+  const pricing = stayPricingFor({ slug: hotel.slug, roomTypeName: room?.room_type_name });
+  const breakfastChoiceEnabled = quote ? quote.breakfastChoiceEnabled : roomOnlyChoiceEnabled(pricing);
+  const breakfastIncluded = quote ? quote.breakfastIncluded : pricing.breakfastInRoomRate && !breakfastChoiceEnabled;
   const hold = publicFormHold({
     datesReady,
     checkIn,
@@ -194,8 +194,10 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
               <option value="true">Yes, breakfast included</option>
               <option value="false">No - room only</option>
             </select>
-          ) : (
+          ) : breakfastIncluded ? (
             <p className="public-field w-full bg-slate-50">Breakfast for 2 is included in the room rate.</p>
+          ) : (
+            <p className="public-field w-full bg-slate-50">Room only</p>
           )}
         </div>
         <div className="space-y-2">
@@ -235,7 +237,7 @@ export function PublicBookingForm({ hotel, rooms, today }: { hotel: Hotel; rooms
       <div className="rounded-xl bg-slate-50 p-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <div><p className="text-xs text-slate-500">Nights</p><p className="font-bold">{datesReady ? quote?.nights : 'Choose dates'}</p></div>
-          <div><p className="text-xs text-slate-500">Room</p><p className="font-bold">{datesReady ? currency(quote?.roomTotal || 0, hotel.default_currency) : currency(nightly, hotel.default_currency)} {datesReady ? '' : 'a night'}</p></div>
+          <div><p className="text-xs text-slate-500">{roomAmountLabel(breakfastIncluded)}</p><p className="font-bold">{datesReady ? currency(quote?.roomTotal || 0, hotel.default_currency) : currency(nightly, hotel.default_currency)} {datesReady ? '' : 'a night'}</p></div>
           <div><p className="text-xs text-slate-500">Breakfast</p><p className="font-bold">{datesReady ? (quote?.breakfastLine || 'Room only') : 'Shown after you pick dates'}</p></div>
           <div><p className="text-xs text-slate-500">Extra bed</p><p className="font-bold">{datesReady ? (quote?.extraBedLine || 'No extra bed') : 'Shown after you pick dates'}</p></div>
           <div><p className="text-xs text-slate-500">Stay total</p><p className="font-bold">{datesReady ? currency(quote?.total || 0, hotel.default_currency) : '—'}</p></div>

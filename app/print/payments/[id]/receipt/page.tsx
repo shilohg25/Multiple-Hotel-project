@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { requireStaff } from '@/lib/auth';
+import { paymentInstructionLines } from '@/lib/payment-instructions';
 import { currency } from '@/lib/money';
 import { getPaymentPrintData, shortId } from '@/lib/print-data';
 import { PrintButton } from '@/components/PrintButton';
@@ -31,6 +32,10 @@ export default async function PaymentReceiptPrintPage({ params }: { params: Prom
         <p>Confirmed at: {payment.confirmed_at ? new Date(payment.confirmed_at).toLocaleString() : '-'}</p>
         <p>Confirmed by: {payment.profiles?.full_name || '-'}</p>
         <p>Payment proof reference: {payment.proof_original_name || shortId(payment.proof_path)}</p>
+      </section>
+      <section className="print-card">
+        <h2 className="mb-2 text-lg font-bold">Payment</h2>
+        {paymentInstructionLines(reservation.hotels).map((line) => <p key={line}>{line}</p>)}
       </section>
       <section className="print-card text-sm">
         This is a payment acknowledgement from the hotel system. Official tax receipt handling can be added later if required by local rules.

@@ -11,6 +11,9 @@ export function ReservationFolio({
   reservationId,
   currencyCode,
   roomTotal,
+  roomLabel = 'Room only',
+  expectedExtraBed = 0,
+  expectedExtraBedLine = '',
   confirmedPaymentsTotal,
   charges,
   serviceItems,
@@ -21,6 +24,9 @@ export function ReservationFolio({
   reservationId: string;
   currencyCode: string;
   roomTotal: number;
+  roomLabel?: string;
+  expectedExtraBed?: number;
+  expectedExtraBedLine?: string;
   confirmedPaymentsTotal: number;
   charges: ReservationCharge[];
   serviceItems: ServiceItem[];
@@ -48,7 +54,7 @@ export function ReservationFolio({
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const chargesSubtotal = charges.reduce((sum, charge) => sum + Number(charge.total_amount || 0), 0);
-  const displayTotal = Number(roomTotal || 0) + chargesSubtotal;
+  const displayTotal = Number(roomTotal || 0) + chargesSubtotal + Number(expectedExtraBed || 0);
   const balance = displayTotal - Number(confirmedPaymentsTotal || 0);
   const draftTotal = Math.round(Number(quantity || 0) * Number(unitPrice || 0) * 100) / 100;
 
@@ -233,7 +239,18 @@ export function ReservationFolio({
                     ) : null}
                   </tr>
                 ))}
-                {!charges.length ? (
+                {expectedExtraBed > 0 ? (
+                  <tr>
+                    <td className="px-4 py-3">{expectedExtraBedLine || 'Expected extra bed'}</td>
+                    <td className="px-4 py-3">extra bed</td>
+                    <td className="px-4 py-3">expected</td>
+                    <td className="px-4 py-3">—</td>
+                    <td className="px-4 py-3 font-semibold">{currency(expectedExtraBed, currencyCode)}</td>
+                    <td className="px-4 py-3 text-slate-500">Not posted until check-in</td>
+                    {canManage || canDelete ? <td /> : null}
+                  </tr>
+                ) : null}
+                {!charges.length && expectedExtraBed <= 0 ? (
                   <tr>
                     <td className="px-4 py-6 text-slate-500" colSpan={canManage || canDelete ? 7 : 6}>No additional charges yet.</td>
                   </tr>
@@ -243,8 +260,8 @@ export function ReservationFolio({
           </div>
 
           <div className="grid gap-3 md:grid-cols-4">
-            <SummaryItem label="Room (excl. breakfast)" value={currency(roomTotal, currencyCode)} />
-            <SummaryItem label="Additional charges" value={currency(chargesSubtotal, currencyCode)} />
+            <SummaryItem label={roomLabel} value={currency(roomTotal, currencyCode)} />
+            <SummaryItem label="Additional charges" value={currency(chargesSubtotal + Number(expectedExtraBed || 0), currencyCode)} />
             <SummaryItem label="Confirmed payments" value={currency(confirmedPaymentsTotal, currencyCode)} />
             <SummaryItem label="Total balance" value={currency(balance, currencyCode)} />
           </div>

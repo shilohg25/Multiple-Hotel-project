@@ -10,6 +10,7 @@ export function ReservationActions({
   status,
   postedRoomRate,
   totalAmount,
+  roomLabel = 'Room only',
   downpaymentRequired,
   withBreakfast,
   breakfastCharged,
@@ -19,6 +20,7 @@ export function ReservationActions({
   status: ReservationStatus;
   postedRoomRate: number;
   totalAmount: number;
+  roomLabel?: string;
   downpaymentRequired: number;
   withBreakfast: boolean;
   breakfastCharged: boolean;
@@ -112,7 +114,7 @@ export function ReservationActions({
             <input className="w-full" inputMode="decimal" value={rate} onChange={(event) => setRate(event.target.value)} />
           </label>
           <label className="space-y-1">
-            Room (excl. breakfast)
+            {roomLabel}
             <input className="w-full" inputMode="decimal" value={total} onChange={(event) => setTotal(event.target.value)} />
           </label>
           <label className="space-y-1">

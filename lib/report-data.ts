@@ -114,7 +114,7 @@ export async function getDailyReportData(staff: StaffContext, input: { hotelId?:
   const remittances = (remittancesRaw || []) as Remittance[];
   const roomPayments = confirmedPayments.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const serviceCharges = charges.reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
-  const breakfastCharges = charges.filter((item) => item.category === 'breakfast').reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
+  const breakfastCharges = charges.filter((item) => item.category === 'breakfast' || item.category === 'extra_bed').reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
   const dayTourSales = (dayToursRaw || []).reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
   const cashReceived = expectedCashFromLedger(ledgerEntries);
   const bankOnlineReceived = ledgerEntries.filter((item) => item.payment_method !== 'cash' && !item.is_collectible).reduce((sum, item) => sum + Number(item.amount || 0), 0);
@@ -189,7 +189,7 @@ export async function getMonthlyReportData(staff: StaffContext, input: { hotelId
       day,
       roomRevenue: dayReservations.reduce((sum, item) => sum + Number(item.total_amount || 0), 0),
       serviceCharges: dayCharges.reduce((sum, item) => sum + Number(item.total_amount || 0), 0),
-      breakfastCharges: dayCharges.filter((item) => item.category === 'breakfast').reduce((sum, item) => sum + Number(item.total_amount || 0), 0),
+      breakfastCharges: dayCharges.filter((item) => item.category === 'breakfast' || item.category === 'extra_bed').reduce((sum, item) => sum + Number(item.total_amount || 0), 0),
       confirmedPayments: dayPayments.reduce((sum, item) => sum + Number(item.amount || 0), 0),
       dayTourSales: dayTourRows.reduce((sum, item) => sum + Number(item.total_amount || 0), 0),
       cancelledNoShow: dayReservations.filter((item) => item.status === 'cancelled' || item.status === 'no_show').length

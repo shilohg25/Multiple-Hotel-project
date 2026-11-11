@@ -152,7 +152,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     });
     if (removedError) {
       console.error(removedError);
-      return jsonError('The breakfast charge could not be marked as removed. It was not deleted.', 500);
+      return jsonError('The automatic charge could not be marked as removed. It was not deleted.', 500);
     }
   }
 

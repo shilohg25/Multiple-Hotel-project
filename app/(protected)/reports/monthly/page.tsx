@@ -45,7 +45,7 @@ export default async function MonthlyReportPage({ searchParams }: { searchParams
       <section className="grid gap-4 md:grid-cols-4">
         <Card label="Room revenue" value={currency(totals.roomRevenue, hotel.default_currency)} />
         <Card label="Service charges" value={currency(totals.serviceCharges, hotel.default_currency)} />
-        <Card label="Breakfast charges" value={currency(totals.breakfastCharges, hotel.default_currency)} />
+        <Card label="Breakfast and extra beds" value={currency(totals.breakfastCharges, hotel.default_currency)} />
         <Card label="Day tour sales" value={currency(totals.dayTourSales, hotel.default_currency)} />
       </section>
       <section className="grid gap-4 md:grid-cols-4">

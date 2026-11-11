@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { priceStay } from './hotel-pricing.ts';
+import { priceStay, roomAmountLabel } from './hotel-pricing.ts';
 import { paymentAccountForHotel, paymentInstructionLines } from './payment-instructions.ts';
-import { quotePublicStay } from './public-quote.ts';
+import { paymentWithinStay, quotePublicStay } from './public-quote.ts';
+import { stayFolioView } from './stay-total.ts';
 
 const nights = { checkIn: '2026-11-10', checkOut: '2026-11-12' };
 
@@ -120,17 +121,84 @@ describe('hotel stay pricing', () => {
     assert.equal(withBreakfast.total, 6700);
   });
 
-  it('does not invent a breakfast charge for a TEST hotel', () => {
-    const quote = priceStay({
+  it('maps TEST hotels to Navarro and Tagosilangan rates without real payment details', () => {
+    const hotel = priceStay({
       hotelSlug: 'test-practice-hotel',
       nightlyRate: 2000,
       nights: 2,
       guestCount: 3,
       withBreakfast: true
     });
-    assert.equal(quote.breakfastTotal, 0);
-    assert.equal(quote.extraBedTotal, 0);
-    assert.equal(quote.total, 4000);
+    assert.equal(hotel.breakfastIncluded, true);
+    assert.equal(hotel.breakfastTotal, 0);
+    assert.equal(hotel.extraBedRate, 850);
+    assert.equal(hotel.extraBedTotal, 1700);
+    assert.equal(roomAmountLabel(hotel.breakfastIncluded), 'Room (breakfast for 2 included)');
+
+    const resort = priceStay({
+      hotelSlug: 'test-practice-resort',
+      nightlyRate: 2000,
+      nights: 2,
+      guestCount: 3,
+      withBreakfast: false
+    });
+    assert.equal(resort.extraBedRate, 500);
+    assert.equal(resort.extraBedTotal, 1000);
+    assert.equal(paymentAccountForHotel({ slug: 'test-practice-hotel' }).placeholder, true);
+    assert.equal(paymentAccountForHotel({ slug: 'test-practice-resort' }).placeholder, true);
+
+    const unknown = priceStay({
+      hotelSlug: 'somewhere-else',
+      nightlyRate: 2000,
+      nights: 2,
+      guestCount: 3,
+      withBreakfast: true
+    });
+    assert.equal(unknown.breakfastIncluded, false);
+    assert.equal(unknown.extraBedTotal, 0);
+    assert.equal(roomAmountLabel(unknown.breakfastIncluded), 'Room only');
+  });
+
+  it('shows the extra bed in the folio total before check-in, and the payment cap uses that total', () => {
+    const quote = quotePublicStay({
+      hotelSlug: 'navarro-hotel',
+      nightlyRate: 1000,
+      checkIn: '2026-11-10',
+      checkOut: '2026-11-11',
+      guestCount: 5,
+      withBreakfast: true,
+      downpaymentType: 'percent',
+      defaultPercent: 50,
+      defaultAmount: 0
+    });
+    const folio = stayFolioView({
+      hotelSlug: 'navarro-hotel',
+      postedRoomRate: quote.nightlyRate,
+      roomTotal: quote.roomTotal,
+      nights: quote.nights,
+      guestCount: 5,
+      withBreakfast: true,
+      charges: []
+    });
+    assert.equal(quote.roomTotal, 1000);
+    assert.equal(quote.extraBedTotal, 2550);
+    assert.equal(folio.expectedExtraBed, 2550);
+    assert.equal(folio.total, quote.total);
+    assert.equal(quote.downpaymentRequired <= folio.total, true);
+    assert.equal(quote.downpaymentRequired > quote.roomTotal, true);
+    assert.equal(paymentWithinStay(quote.total, folio.total), true);
+    assert.equal(paymentWithinStay(quote.total + 1, folio.total), false);
+    const afterCheckIn = stayFolioView({
+      hotelSlug: 'navarro-hotel',
+      postedRoomRate: 1000,
+      roomTotal: 1000,
+      nights: 1,
+      guestCount: 5,
+      withBreakfast: true,
+      charges: [{ category: 'extra_bed', total_amount: 2550 }]
+    });
+    assert.equal(afterCheckIn.expectedExtraBed, 0);
+    assert.equal(afterCheckIn.total, 3550);
   });
 });
 

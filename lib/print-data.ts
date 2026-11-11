@@ -3,6 +3,7 @@ import 'server-only';
 import { notFound } from 'next/navigation';
 import { canAccessHotel, type StaffContext } from './auth';
 import { supabaseAdmin } from './supabase-admin';
+import { stayFolioView } from './stay-total';
 import type { Guest, Hotel, Payment, Reservation, ReservationCharge, Room } from '@/types/app';
 
 export type PaymentWithProfile = Payment & {
@@ -17,6 +18,9 @@ export type ReservationPrintData = {
   confirmedPaymentsTotal: number;
   grandTotal: number;
   balanceDue: number;
+  roomLabel: string;
+  expectedExtraBed: number;
+  expectedExtraBedLine: string;
 };
 
 export async function getReservationPrintData(id: string, staff: StaffContext): Promise<ReservationPrintData> {
@@ -49,7 +53,17 @@ export async function getReservationPrintData(id: string, staff: StaffContext): 
   const confirmedPaymentsTotal = payments
     .filter((payment) => payment.status === 'confirmed')
     .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-  const grandTotal = Number(reservation.total_amount || 0) + additionalChargesTotal;
+  const folio = stayFolioView({
+    hotelSlug: reservation.hotels.slug,
+    roomTypeName: reservation.rooms.room_type_name,
+    postedRoomRate: Number(reservation.posted_room_rate || 0),
+    roomTotal: Number(reservation.total_amount || 0),
+    nights: reservation.nights,
+    guestCount: Number(reservation.guest_count || 1),
+    withBreakfast: Boolean(reservation.with_breakfast),
+    charges
+  });
+  const grandTotal = folio.total;
 
   return {
     reservation,
@@ -58,7 +72,10 @@ export async function getReservationPrintData(id: string, staff: StaffContext): 
     additionalChargesTotal,
     confirmedPaymentsTotal,
     grandTotal,
-    balanceDue: grandTotal - confirmedPaymentsTotal
+    balanceDue: grandTotal - confirmedPaymentsTotal,
+    roomLabel: folio.roomLabel,
+    expectedExtraBed: folio.expectedExtraBed,
+    expectedExtraBedLine: folio.expectedExtraBedLine
   };
 }
 

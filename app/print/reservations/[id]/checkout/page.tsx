@@ -9,7 +9,7 @@ import { PrintFooter } from '@/components/print/PrintFooter';
 export default async function CheckoutPrintPage({ params }: { params: Promise<{ id: string }> }) {
   const staff = await requireStaff();
   const { id } = await params;
-  const { reservation, charges, payments, additionalChargesTotal, confirmedPaymentsTotal, grandTotal, balanceDue } = await getReservationPrintData(id, staff);
+  const { reservation, charges, payments, additionalChargesTotal, confirmedPaymentsTotal, grandTotal, balanceDue, roomLabel, expectedExtraBed, expectedExtraBedLine } = await getReservationPrintData(id, staff);
   const printedAt = new Date();
 
   return (
@@ -26,8 +26,9 @@ export default async function CheckoutPrintPage({ params }: { params: Promise<{ 
       <table className="print-table">
         <thead><tr><th>Description</th><th>Category</th><th>Total</th></tr></thead>
         <tbody>
-          <tr><td>Room (excl. breakfast)</td><td>room</td><td>{currency(reservation.total_amount, reservation.hotels.default_currency)}</td></tr>
+          <tr><td>{roomLabel}</td><td>room</td><td>{currency(reservation.total_amount, reservation.hotels.default_currency)}</td></tr>
           {charges.map((charge) => <tr key={charge.id}><td>{charge.description}</td><td>{charge.category.replaceAll('_', ' ')}</td><td>{currency(charge.total_amount, reservation.hotels.default_currency)}</td></tr>)}
+          {expectedExtraBed > 0 ? <tr><td>{expectedExtraBedLine}</td><td>extra bed</td><td>{currency(expectedExtraBed, reservation.hotels.default_currency)}</td></tr> : null}
         </tbody>
       </table>
       <section>
@@ -49,8 +50,8 @@ export default async function CheckoutPrintPage({ params }: { params: Promise<{ 
         </table>
       </section>
       <section className="print-card ml-auto max-w-sm">
-        <Summary label="Room (excl. breakfast)" value={currency(reservation.total_amount, reservation.hotels.default_currency)} />
-        <Summary label="Additional charges" value={currency(additionalChargesTotal, reservation.hotels.default_currency)} />
+        <Summary label={roomLabel} value={currency(reservation.total_amount, reservation.hotels.default_currency)} />
+        <Summary label="Additional charges" value={currency(additionalChargesTotal + expectedExtraBed, reservation.hotels.default_currency)} />
         <Summary label="Grand total" value={currency(grandTotal, reservation.hotels.default_currency)} />
         <Summary label="Confirmed payments" value={currency(confirmedPaymentsTotal, reservation.hotels.default_currency)} />
         <Summary label="Final balance" value={currency(balanceDue, reservation.hotels.default_currency)} strong />

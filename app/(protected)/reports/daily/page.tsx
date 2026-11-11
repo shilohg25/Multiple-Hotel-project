@@ -52,7 +52,7 @@ export default async function DailyReportPage({ searchParams }: { searchParams?:
       <section className="grid gap-4 md:grid-cols-4">
         <Card label="Confirmed payments" value={currency(report.totals.roomPayments, report.hotel.default_currency)} />
         <Card label="Service charges" value={currency(report.totals.serviceCharges, report.hotel.default_currency)} />
-        <Card label="Breakfast charges" value={currency(report.totals.breakfastCharges, report.hotel.default_currency)} />
+        <Card label="Breakfast and extra beds" value={currency(report.totals.breakfastCharges, report.hotel.default_currency)} />
         <Card label="Day tour sales" value={currency(report.totals.dayTourSales, report.hotel.default_currency)} />
       </section>
       <section className="grid gap-4 md:grid-cols-4">
