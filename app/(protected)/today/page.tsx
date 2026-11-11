@@ -1,13 +1,147 @@
 import Link from 'next/link';
-import { requireStaff } from '@/lib/auth';
+import { canAccessHotel, requireStaff } from '@/lib/auth';
+import { businessToday } from '@/lib/date';
+import { supabaseAdmin } from '@/lib/supabase-admin';
+import { roomStatus, type StaySlice } from '@/lib/today-board';
+import { StayActionLinks } from '@/components/StayActionLinks';
+import type { Hotel, Outlet, Room } from '@/types/app';
 
-export default async function TodayPlaceholder() {
-  await requireStaff();
+type SearchParams = { hotel?: string; outlet?: string; date?: string };
+
+const tone: Record<string, string> = {
+  vacant: 'bg-slate-100 text-slate-800',
+  arrival: 'bg-amber-100 text-amber-950',
+  in_house: 'bg-emerald-100 text-emerald-950',
+  departure: 'bg-sky-100 text-sky-950'
+};
+
+export default async function TodayPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
+  const params = (await searchParams) || {};
+  const staff = await requireStaff();
+  const { data: hotelsRaw } = await supabaseAdmin.from('hotels').select('*').eq('active', true).order('name');
+  const hotels = ((hotelsRaw || []) as Hotel[]).filter((hotel) => canAccessHotel(staff.profile, hotel.id));
+  const hotel = hotels.find((item) => item.id === params.hotel) || hotels[0];
+  if (!hotel) return <div className="card p-6">Add a property before using Today.</div>;
+
+  const date = params.date || businessToday(hotel.timezone);
+  const { data: outletsRaw } = await supabaseAdmin
+    .from('outlets')
+    .select('*')
+    .eq('hotel_id', hotel.id)
+    .eq('active', true)
+    .eq('is_reporting_unit', true)
+    .order('name');
+  const outlets = (outletsRaw || []) as Outlet[];
+  const outlet = outlets.find((item) => item.id === params.outlet) || null;
+
+  const [{ data: roomsRaw }, { data: staysRaw }] = await Promise.all([
+    supabaseAdmin.from('rooms').select('*').eq('hotel_id', hotel.id).eq('active', true).order('sort_order').order('name'),
+    supabaseAdmin
+      .from('reservations')
+      .select('id, room_id, status, check_in, check_out, guests(full_name)')
+      .eq('hotel_id', hotel.id)
+      .lte('check_in', date)
+      .gte('check_out', date)
+      .not('status', 'in', '(cancelled,no_show)')
+  ]);
+
+  const rooms = (roomsRaw || []) as Room[];
+  const stays = ((staysRaw || []) as Array<StaySlice & { guests?: { full_name?: string } | { full_name?: string }[] | null }>).map((stay) => {
+    const guest = Array.isArray(stay.guests) ? stay.guests[0] : stay.guests;
+    return { ...stay, guest_name: guest?.full_name || 'Guest' };
+  });
+  const cards = rooms.map((room) => ({ room, ...roomStatus(stays.filter((stay) => stay.room_id === room.id), date) }));
+  const arrivals = cards.filter((card) => card.status === 'arrival');
+  const inHouse = cards.filter((card) => card.status === 'in_house');
+  const departures = cards.filter((card) => card.status === 'departure');
+  const actionable = [...inHouse, ...arrivals, ...departures].filter((card) => card.stay);
+  const query = `hotel=${hotel.id}&date=${date}${outlet ? `&outlet=${outlet.id}` : ''}`;
+
   return (
-    <div className="space-y-4">
-      <h1 className="text-3xl font-black tracking-tight">Today</h1>
-      <p className="text-slate-600">This is the daily entry home. Arrivals, the room grid, and close-the-day are on the next update. Daily sales is ready now.</p>
-      <Link href="/sales" className="btn-primary">Open daily sales</Link>
+    <div className="space-y-6">
+      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
+        <div>
+          <h1 className="text-3xl font-black tracking-tight">Today</h1>
+          <p className="mt-1 text-slate-600">{outlet ? outlet.name : hotel.name} · {date}. Same daily steps for Navarro, Sotera, Tagosilangan, and Tago Resto.</p>
+        </div>
+        <form className="flex flex-wrap gap-2" method="get">
+          <select name="hotel" defaultValue={hotel.id} className="min-w-40">
+            {hotels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+          <select name="outlet" defaultValue={outlet?.id || ''} className="min-w-40">
+            <option value="">Whole property</option>
+            {outlets.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+          <input name="date" type="date" defaultValue={date} />
+          <button className="btn-secondary" type="submit">Show</button>
+        </form>
+      </div>
+
+      <StayActionLinks
+        stays={actionable.map((card) => ({ id: card.stay!.id, label: `Room ${card.room.name} · ${card.stay!.guest_name}` }))}
+        chargeLabel="Add charge"
+        paymentLabel="Record payment"
+      />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Link href={`/reservations/new`} className="btn-primary min-h-16 text-base">Check in</Link>
+        <Link href={`/sales?hotel=${hotel.id}&date=${date}`} className="btn-primary min-h-16 text-base">Add expense</Link>
+        <Link href={`/today/close?${query}`} className="btn-primary min-h-16 bg-emerald-800 text-base hover:bg-emerald-700">Close the day</Link>
+      </div>
+
+      {outlet ? (
+        <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          {outlet.name} is a reporting unit. It uses this same daily page. Room numbers below belong to {hotel.name}. Restaurant sales go through Add expense and Close the day.
+        </p>
+      ) : null}
+
+      <section className="grid gap-4 lg:grid-cols-3">
+        <StayList title="Arrivals" empty="No one is due to arrive." cards={arrivals} actionLabel="Check in" />
+        <StayList title="In house" empty="No guests are in house." cards={inHouse} actionLabel="Open stay" />
+        <StayList title="Departures" empty="No one is due to leave." cards={departures} actionLabel="Check out" />
+      </section>
+
+      <section className="card p-4">
+        <h2 className="text-lg font-bold">Rooms</h2>
+        <p className="mt-1 text-sm text-slate-500">Amber is arriving, green is in house, blue is leaving, grey is empty.</p>
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+          {cards.map((card) => (
+            <Link key={card.room.id} href={card.stay ? `/reservations/${card.stay.id}` : `/reservations/new`} className={`rounded-xl px-3 py-3 ${tone[card.status]}`}>
+              <p className="text-lg font-black">{card.room.name}</p>
+              <p className="text-xs capitalize">{card.status.replace('_', ' ')}</p>
+              <p className="truncate text-sm">{card.stay?.guest_name || 'Empty'}</p>
+            </Link>
+          ))}
+          {!cards.length ? <p className="text-sm text-slate-500">This property has no active rooms yet.</p> : null}
+        </div>
+      </section>
     </div>
+  );
+}
+
+function StayList({
+  title,
+  empty,
+  cards,
+  actionLabel
+}: {
+  title: string;
+  empty: string;
+  cards: { room: Room; stay: StaySlice | null }[];
+  actionLabel: string;
+}) {
+  return (
+    <section className="card p-4">
+      <h2 className="text-lg font-bold">{title}</h2>
+      <div className="mt-3 space-y-2">
+        {cards.map((card) => (
+          <Link key={card.room.id} href={card.stay ? `/reservations/${card.stay.id}` : '/reservations/new'} className="block rounded-lg border border-slate-200 px-3 py-3 hover:bg-slate-50">
+            <p className="font-bold">Room {card.room.name}</p>
+            <p className="text-sm text-slate-600">{card.stay?.guest_name}</p>
+            <p className="text-sm font-semibold text-slate-900">{actionLabel}</p>
+          </Link>
+        ))}
+        {!cards.length ? <p className="text-sm text-slate-500">{empty}</p> : null}
+      </div>
+    </section>
   );
 }
