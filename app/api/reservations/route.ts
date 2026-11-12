@@ -4,7 +4,7 @@ import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { businessToday } from '@/lib/date';
 import { calculateDownpayment } from '@/lib/downpayment';
 import { confirmedPaymentLedgerRow } from '@/lib/confirmed-payment-ledger';
-import { canCreateToBeBilledStay, guestCountAllowed, quotePublicStay, staffBookingPayment } from '@/lib/public-quote';
+import { canCreateToBeBilledStay, guestCountAllowed, pastCheckInRefusal, quotePublicStay, staffBookingPayment } from '@/lib/public-quote';
 import { undoStayPieces } from '@/lib/undo-stay';
 import { ROOM_JUST_TAKEN } from '@/lib/room-overlap';
 import { supabaseAdmin } from '@/lib/supabase-admin';
@@ -44,6 +44,8 @@ export async function POST(request: Request) {
     supabaseAdmin.from('rooms').select('base_rate, room_type_name, hotel_id, capacity').eq('id', roomId).maybeSingle()
   ]);
   if (!hotelRaw || !roomRaw || roomRaw.hotel_id !== hotelId) return jsonError('Room not found for this hotel.', 404);
+  const pastCheckIn = pastCheckInRefusal(checkIn, businessToday(hotelRaw.timezone));
+  if (pastCheckIn) return jsonError(pastCheckIn);
   const guestCount = Math.max(1, Math.floor(Number(payload.guest_count || 1)));
   const roomCapacity = Math.floor(Number(roomRaw.capacity || 0));
   if (roomCapacity >= 1 && !guestCountAllowed(guestCount, roomCapacity)) {

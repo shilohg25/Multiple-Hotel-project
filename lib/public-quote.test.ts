@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { businessToday } from './date.ts';
 import { confirmedPaymentLedgerRow } from './confirmed-payment-ledger.ts';
 import { figuresFromLedger, summarizeClose } from './day-close.ts';
 import { expectedCashFromLedger } from './expected-cash.ts';
@@ -10,6 +11,8 @@ import {
   HOLDING_STATUSES,
   readToBeBilled,
   isPastCheckIn,
+  pastCheckInRefusal,
+  PAST_CHECK_IN_ERROR,
   paymentCoversDownpayment,
   paymentWithinRemaining,
   paymentWithinStay,
@@ -64,6 +67,17 @@ describe('public stay quote', () => {
   it('rejects a check-in before the hotel today', () => {
     assert.equal(isPastCheckIn('2026-11-09', '2026-11-10'), true);
     assert.equal(isPastCheckIn('2026-11-10', '2026-11-10'), false);
+  });
+
+  it('refuses a staff or public check-in before today in Asia/Manila', () => {
+    const manilaMorningUtc = new Date('2026-11-09T16:30:00.000Z');
+    assert.equal(manilaMorningUtc.toISOString().slice(0, 10), '2026-11-09');
+    const today = businessToday('Asia/Manila', manilaMorningUtc);
+    assert.equal(today, '2026-11-10');
+    assert.equal(pastCheckInRefusal('2026-11-09', today), PAST_CHECK_IN_ERROR);
+    assert.equal(pastCheckInRefusal('2026-11-10', today), null);
+    assert.equal(pastCheckInRefusal('2026-11-11', today), null);
+    assert.equal(PAST_CHECK_IN_ERROR, 'Check-in cannot be a past date.');
   });
 
   it('checks guest count against room capacity', () => {

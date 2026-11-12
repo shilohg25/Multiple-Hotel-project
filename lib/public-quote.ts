@@ -20,6 +20,13 @@ export function isPastCheckIn(checkIn: string, today: string): boolean {
   return Boolean(checkIn) && checkIn < today;
 }
 
+/** Same 4xx message used by public /book and staff create-booking. */
+export const PAST_CHECK_IN_ERROR = 'Check-in cannot be a past date.';
+
+export function pastCheckInRefusal(checkIn: string, today: string): string | null {
+  return isPastCheckIn(checkIn, today) ? PAST_CHECK_IN_ERROR : null;
+}
+
 export function guestCountAllowed(guestCount: number, capacity: number): boolean {
   const guests = Math.floor(Number(guestCount));
   const cap = Math.floor(Number(capacity));
