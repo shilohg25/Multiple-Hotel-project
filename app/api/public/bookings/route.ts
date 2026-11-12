@@ -6,7 +6,7 @@ import { isValidGuestEmail, normalizePhMobile, proofFileProblem } from '@/lib/gu
 import { allowPublicBooking, publicBookingClientIp } from '@/lib/public-booking-limit';
 import { isRoomOverlapError, ROOM_JUST_TAKEN } from '@/lib/room-overlap';
 import { paymentAccountForHotel } from '@/lib/payment-instructions';
-import { MAX_PUBLIC_STAY_NIGHTS, guestCountAllowed, isPastCheckIn, paymentCoversDownpayment, paymentWithinStay, quotePublicStay } from '@/lib/public-quote';
+import { MAX_PUBLIC_STAY_NIGHTS, guestCountAllowed, pastCheckInRefusal, paymentCoversDownpayment, paymentWithinStay, quotePublicStay } from '@/lib/public-quote';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { undoStayPieces } from '@/lib/undo-stay';
 
@@ -63,7 +63,8 @@ export async function POST(request: Request) {
   const { data: hotelRaw, error: hotelError } = await supabaseAdmin.from('hotels').select('*').eq('id', hotelId).eq('active', true).single();
   if (hotelError || !hotelRaw) return guestFailure('That property is not available.', hotelError);
   const today = businessToday(hotelRaw.timezone);
-  if (isPastCheckIn(checkIn, today)) return guestFailure('Check-in cannot be a past date.');
+  const pastCheckIn = pastCheckInRefusal(checkIn, today);
+  if (pastCheckIn) return guestFailure(pastCheckIn);
 
   const { data: roomRaw, error: roomError } = await supabaseAdmin.from('rooms').select('*').eq('id', roomId).eq('hotel_id', hotelId).eq('active', true).single();
   if (roomError || !roomRaw) return guestFailure('That room is not available.', roomError);
