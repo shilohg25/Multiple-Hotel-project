@@ -3,9 +3,12 @@ import 'server-only';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { requireEnv } from './env';
+import { isDemoMode } from './demo/guard.mjs';
+import { createDemoServerClient } from './demo/client';
 
 export async function createSupabaseServerClient() {
   const cookieStore = await cookies();
+  if (isDemoMode()) return createDemoServerClient(cookieStore);
 
   return createServerClient(
     requireEnv('NEXT_PUBLIC_SUPABASE_URL'),
