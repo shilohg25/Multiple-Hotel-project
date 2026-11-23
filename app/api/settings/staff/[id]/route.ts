@@ -2,18 +2,11 @@ import { NextResponse } from 'next/server';
 import { canAccessHotel, canManageStaff } from '@/lib/auth';
 import { jsonError, requireApiStaff, isUUID, denyUnless } from '@/lib/api';
 import { supabaseAdmin } from '@/lib/supabase-admin';
-import type { Role } from '@/types/app';
-
-const roles: Role[] = ['owner', 'manager', 'front_desk'];
+import { INVALID_STAFF_ROLE_ERROR, parseStaffRole, staffAssignmentError } from '@/lib/staff-role';
 
 function optionalText(value: unknown) {
   const text = String(value ?? '').trim();
   return text || null;
-}
-
-function normalizeRole(value: unknown): Role {
-  const role = String(value || '').trim() as Role;
-  return roles.includes(role) ? role : 'front_desk';
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -28,9 +21,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (!isUUID(id)) return jsonError('A valid staff profile ID is required.');
 
   const payload = await request.json();
-  const role = normalizeRole(payload.role);
+  const role = parseStaffRole(payload.role);
+  if (!role) return jsonError(INVALID_STAFF_ROLE_ERROR);
   const hotelId = optionalText(payload.hotel_id);
-  if (role !== 'owner' && !hotelId) return jsonError('Manager and front desk profiles should be assigned to a hotel.');
+  const assignmentError = staffAssignmentError(role, hotelId);
+  if (assignmentError) return jsonError(assignmentError);
   if (hotelId && !canAccessHotel(staff.profile, hotelId)) return jsonError('Hotel access denied.', 403);
 
   const { data, error } = await supabaseAdmin
