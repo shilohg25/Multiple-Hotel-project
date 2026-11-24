@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { businessToday } from './date.ts';
+import { businessToday, CALENDAR_DATE_ERROR, calendarDateRefusal } from './date.ts';
 import { confirmedPaymentLedgerRow } from './confirmed-payment-ledger.ts';
 import { figuresFromLedger, summarizeClose } from './day-close.ts';
 import { expectedCashFromLedger } from './expected-cash.ts';
@@ -98,6 +98,34 @@ describe('public stay quote', () => {
     assert.equal(pastCheckInChangeRefusal(undefined, '2026-11-09', today), null);
     assert.equal(pastCheckInChangeRefusal(null, '2026-11-09', today), null);
     assert.equal(pastCheckInChangeRefusal('', '2026-11-09', today), null);
+  });
+
+  it('rejects non YYYY-MM-DD dates on staff create, edit, and move before the past-date compare', () => {
+    const today = '2026-11-24';
+    const bypass = ['2026/11/23', '20261123', 'November 23, 2026', '23 November 2026'];
+    for (const value of bypass) {
+      assert.equal(calendarDateRefusal(value), CALENDAR_DATE_ERROR);
+      assert.equal(calendarDateRefusal(value, '2026-11-25'), CALENDAR_DATE_ERROR);
+    }
+    assert.equal(calendarDateRefusal('2026-02-30'), CALENDAR_DATE_ERROR);
+
+    // An ISO timestamp for a same-day Manila start would look "past" under string compare.
+    const sameDayIso = '2026-11-23T16:00:00.000Z';
+    assert.equal(isPastCheckIn(sameDayIso, today), true);
+    const staffCreate = calendarDateRefusal(sameDayIso) || pastCheckInRefusal(sameDayIso, today);
+    const staffEdit = calendarDateRefusal(sameDayIso) || pastCheckInChangeRefusal(sameDayIso, '2026-11-26', today);
+    assert.equal(staffCreate, CALENDAR_DATE_ERROR);
+    assert.equal(staffEdit, CALENDAR_DATE_ERROR);
+    assert.notEqual(staffCreate, PAST_CHECK_IN_ERROR);
+
+    // Today and future YYYY-MM-DD dates stay allowed; public /book also uses this form.
+    assert.equal(calendarDateRefusal('2026-11-24'), null);
+    assert.equal(calendarDateRefusal('2026-11-25'), null);
+    assert.equal(calendarDateRefusal('2026-11-24', '2026-11-26'), null);
+    assert.equal(pastCheckInRefusal('2026-11-24', today), null);
+    assert.equal(pastCheckInRefusal('2026-11-25', today), null);
+    assert.equal(pastCheckInChangeRefusal('2026-11-24', '2026-11-26', today), null);
+    assert.equal(pastCheckInChangeRefusal('2026-11-25', '2026-11-26', today), null);
   });
 
   it('checks guest count against room capacity', () => {

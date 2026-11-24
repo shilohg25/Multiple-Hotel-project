@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
-import { businessToday } from '@/lib/date';
+import { businessToday, calendarDateRefusal } from '@/lib/date';
 import { pastCheckInChangeRefusal } from '@/lib/public-quote';
 import { AUTO_BREAKFAST_REMOVED_ACTION, AUTO_POST_SOURCE, BREAKFAST_TURN_OFF_BLOCKED, autoChargeRemovedFromRead, breakfastTurnOffBlocked, isAutoPostedCharge, shouldPostAutoStayCharge } from '@/lib/breakfast-toggle';
 import { priceStay } from '@/lib/hotel-pricing';
@@ -32,6 +32,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (frontline) {
     const blocked = ['booking_source', 'check_in', 'check_out', 'guest_count', 'with_breakfast', 'surcharge_label', 'surcharge_amount', 'mode_of_payment', 'confirmed_by_name', 'notes', 'room_id', 'guest_id', 'posted_room_rate', 'total_amount', 'downpayment_required', 'guest_name', 'guest_email', 'guest_phone'];
     if (blocked.some((key) => key in payload)) return jsonError('Front desk can only check a guest in or out.', 403);
+  }
+
+  if ('check_in' in payload || 'check_out' in payload) {
+    const nextCheckIn = 'check_in' in payload ? String(payload.check_in ?? '') : undefined;
+    const nextCheckOut = 'check_out' in payload ? String(payload.check_out ?? '') : undefined;
+    const provided = [nextCheckIn, nextCheckOut].filter((value): value is string => value !== undefined);
+    const invalidDates = calendarDateRefusal(...provided);
+    if (invalidDates) return jsonError(invalidDates);
   }
 
   if ('check_in' in payload) {

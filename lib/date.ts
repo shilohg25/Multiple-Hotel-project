@@ -57,6 +57,25 @@ export function formatIsoDate(year: number, month: number, day: number): string 
   return `${year}-${pad(month)}-${pad(day)}`;
 }
 
+const CALENDAR_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+export const CALENDAR_DATE_ERROR = 'Dates must be YYYY-MM-DD.';
+
+/** True only for a real calendar day written as YYYY-MM-DD. 2026-02-30 is rejected. */
+export function isCalendarDate(value: string): boolean {
+  if (!CALENDAR_DATE_PATTERN.test(value)) return false;
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(5, 7));
+  const day = Number(value.slice(8, 10));
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  return formatIsoDate(utc.getUTCFullYear(), utc.getUTCMonth() + 1, utc.getUTCDate()) === value;
+}
+
+/** Staff create/edit/move use this before the past-check-in compare. */
+export function calendarDateRefusal(...values: string[]): string | null {
+  return values.every(isCalendarDate) ? null : CALENDAR_DATE_ERROR;
+}
+
 /** Calendar date in the hotel's timezone. This is the business "today", not the UTC date. */
 export function businessToday(timeZone?: string | null, now: Date = new Date()): string {
   const parts = zonedParts(now, timeZone);

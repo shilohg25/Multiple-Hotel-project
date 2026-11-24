@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
-import { businessToday } from '@/lib/date';
+import { businessToday, calendarDateRefusal } from '@/lib/date';
 import { calculateDownpayment } from '@/lib/downpayment';
 import { confirmedPaymentLedgerRow } from '@/lib/confirmed-payment-ledger';
 import { canCreateToBeBilledStay, guestCountAllowed, pastCheckInRefusal, quotePublicStay, staffBookingPayment } from '@/lib/public-quote';
@@ -34,7 +34,10 @@ export async function POST(request: Request) {
   if (!hotelId || !canAccessHotel(staff.profile, hotelId)) return jsonError('Hotel access denied.', 403);
   if (!roomId) return jsonError('Room is required.');
   if (!guestName) return jsonError('Guest name is required.');
-  if (!checkIn || !checkOut || checkOut <= checkIn) return jsonError('Valid check-in and check-out dates are required.');
+  if (!checkIn || !checkOut) return jsonError('Valid check-in and check-out dates are required.');
+  const invalidDates = calendarDateRefusal(checkIn, checkOut);
+  if (invalidDates) return jsonError(invalidDates);
+  if (checkOut <= checkIn) return jsonError('Valid check-in and check-out dates are required.');
 
   const conflict = await hasReservationConflict({ roomId, checkIn, checkOut });
   if (conflict) return jsonError(ROOM_JUST_TAKEN);

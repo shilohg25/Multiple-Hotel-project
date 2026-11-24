@@ -5,7 +5,10 @@ import {
   businessMonth,
   businessTimeZone,
   businessToday,
+  CALENDAR_DATE_ERROR,
+  calendarDateRefusal,
   formatDate,
+  isCalendarDate,
   staffBookingMinDate,
   localDayBounds,
   localMonthBounds,
@@ -73,5 +76,33 @@ describe('business calendar', () => {
 
   it('formats a calendar date in the business zone without shifting the day', () => {
     assert.equal(formatDate('2026-11-10', 'Asia/Manila'), 'Nov 10, 2026');
+  });
+});
+
+describe('calendar date form', () => {
+  it('accepts real YYYY-MM-DD dates and rejects other formats, invalid days, and timestamps', () => {
+    assert.equal(isCalendarDate('2026-11-24'), true);
+    assert.equal(isCalendarDate('2026-11-25'), true);
+    assert.equal(isCalendarDate('2024-02-29'), true);
+    assert.equal(calendarDateRefusal('2026-11-24'), null);
+    assert.equal(calendarDateRefusal('2026-11-24', '2026-11-26'), null);
+
+    for (const value of ['2026/11/23', '20261123', 'November 23, 2026', '23 November 2026']) {
+      assert.equal(isCalendarDate(value), false);
+      assert.equal(calendarDateRefusal(value), CALENDAR_DATE_ERROR);
+      assert.equal(calendarDateRefusal(value, '2026-11-25'), CALENDAR_DATE_ERROR);
+    }
+
+    assert.equal(isCalendarDate('2026-02-30'), false);
+    assert.equal(isCalendarDate('2025-02-29'), false);
+    assert.equal(isCalendarDate('2026-13-01'), false);
+    assert.equal(calendarDateRefusal('2026-02-30'), CALENDAR_DATE_ERROR);
+    assert.equal(CALENDAR_DATE_ERROR, 'Dates must be YYYY-MM-DD.');
+
+    // Same-day start as a UTC ISO timestamp is not a calendar date.
+    assert.equal(isCalendarDate('2026-11-23T16:00:00.000Z'), false);
+    assert.equal(isCalendarDate('2026-11-24T00:00:00.000Z'), false);
+    assert.equal(calendarDateRefusal('2026-11-23T16:00:00.000Z'), CALENDAR_DATE_ERROR);
+    assert.equal(calendarDateRefusal('2026-11-24T00:00:00.000Z'), CALENDAR_DATE_ERROR);
   });
 });
