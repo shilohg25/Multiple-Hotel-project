@@ -2,9 +2,19 @@ import { redirect } from 'next/navigation';
 import { requireStaff, canAccessHotel } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { currency } from '@/lib/money';
+import {
+  entriesFromChannelRateAudits,
+  entriesFromPaymentChannelAudits,
+  entriesFromPriceChangeLogs,
+  formatHistoryValue,
+  mergePriceHistory,
+  type AuditLogLike
+} from '@/lib/price-history';
 import type { Hotel, PriceChangeLog } from '@/types/app';
 
 type SearchParams = { hotel?: string };
+
+const PRICE_AUDIT_ACTIONS = ['payment_channel.updated', 'rate.channel_defaults_updated'];
 
 export default async function PriceHistoryPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const params = (await searchParams) || {};
@@ -16,27 +26,49 @@ export default async function PriceHistoryPage({ searchParams }: { searchParams?
   const selectedHotel = hotels.find((hotel) => hotel.id === params.hotel) || hotels[0];
 
   let logs: PriceChangeLog[] = [];
+  let audits: AuditLogLike[] = [];
   let loadError = '';
 
   if (selectedHotel) {
-    const { data, error } = await supabaseAdmin
-      .from('price_change_logs')
-      .select('*, rooms:room_id(id,name), service_items:service_item_id(id,name), profiles:changed_by(id,full_name)')
-      .eq('hotel_id', selectedHotel.id)
-      .order('created_at', { ascending: false })
-      .limit(200);
-    if (error) {
-      loadError = error.message;
+    const [priceResult, auditResult] = await Promise.all([
+      supabaseAdmin
+        .from('price_change_logs')
+        .select('*, rooms:room_id(id,name), service_items:service_item_id(id,name), profiles:changed_by(id,full_name)')
+        .eq('hotel_id', selectedHotel.id)
+        .order('created_at', { ascending: false })
+        .limit(200),
+      supabaseAdmin
+        .from('audit_logs')
+        .select('id, action, details, created_at, profiles:actor_id(id,full_name)')
+        .eq('hotel_id', selectedHotel.id)
+        .in('action', PRICE_AUDIT_ACTIONS)
+        .order('created_at', { ascending: false })
+        .limit(200)
+    ]);
+    if (priceResult.error) {
+      loadError = priceResult.error.message;
     } else {
-      logs = (data || []) as PriceChangeLog[];
+      logs = (priceResult.data || []) as PriceChangeLog[];
+    }
+    if (auditResult.error && !loadError) {
+      loadError = auditResult.error.message;
+    } else if (!auditResult.error) {
+      audits = (auditResult.data || []) as AuditLogLike[];
     }
   }
+
+  const entries = mergePriceHistory([
+    entriesFromPriceChangeLogs(logs),
+    entriesFromPaymentChannelAudits(audits),
+    entriesFromChannelRateAudits(audits)
+  ]);
+  const money = (value: number) => currency(value, selectedHotel?.default_currency || 'PHP');
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-black tracking-tight">Price Change History</h1>
-        <p className="mt-1 text-slate-500">Read-only audit trail for room and service price changes.</p>
+        <p className="mt-1 text-slate-500">Read-only audit trail for room, service, payment-channel, and channel-rate price changes.</p>
       </div>
 
       <section className="card p-5">
@@ -59,7 +91,7 @@ export default async function PriceHistoryPage({ searchParams }: { searchParams?
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-5 py-3">Type</th>
-                <th className="px-5 py-3">Room or service</th>
+                <th className="px-5 py-3">Item</th>
                 <th className="px-5 py-3">Old value</th>
                 <th className="px-5 py-3">New value</th>
                 <th className="px-5 py-3">Changed by</th>
@@ -68,22 +100,18 @@ export default async function PriceHistoryPage({ searchParams }: { searchParams?
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {logs.map((log) => (
-                <tr key={log.id}>
-                  <td className="px-5 py-3 capitalize">{log.changed_type.replaceAll('_', ' ')}</td>
-                  <td className="px-5 py-3 text-slate-600">
-                    {log.changed_type === 'room_price'
-                      ? log.rooms?.name || 'Room deleted'
-                      : log.service_items?.name || 'Service deleted'}
-                  </td>
-                  <td className="px-5 py-3 text-slate-600">{currency(log.old_value, selectedHotel?.default_currency || 'PHP')}</td>
-                  <td className="px-5 py-3 font-semibold">{currency(log.new_value, selectedHotel?.default_currency || 'PHP')}</td>
-                  <td className="px-5 py-3 text-slate-600">{log.profiles?.full_name || 'Unknown'}</td>
-                  <td className="px-5 py-3 text-slate-600">{new Date(log.created_at).toLocaleString()}</td>
-                  <td className="px-5 py-3 text-slate-600">{log.notes || '-'}</td>
+              {entries.map((entry) => (
+                <tr key={entry.id}>
+                  <td className="px-5 py-3 capitalize">{entry.changed_type}</td>
+                  <td className="px-5 py-3 text-slate-600">{entry.item_label}</td>
+                  <td className="px-5 py-3 text-slate-600">{formatHistoryValue(entry.old_value, entry.value_kind, money)}</td>
+                  <td className="px-5 py-3 font-semibold">{formatHistoryValue(entry.new_value, entry.value_kind, money)}</td>
+                  <td className="px-5 py-3 text-slate-600">{entry.changed_by_name}</td>
+                  <td className="px-5 py-3 text-slate-600">{new Date(entry.created_at).toLocaleString()}</td>
+                  <td className="px-5 py-3 text-slate-600">{entry.notes || '-'}</td>
                 </tr>
               ))}
-              {!logs.length ? (
+              {!entries.length ? (
                 <tr>
                   <td className="px-5 py-6 text-slate-500" colSpan={7}>
                     {selectedHotel ? 'No price changes recorded for this hotel yet.' : 'No accessible hotels found.'}

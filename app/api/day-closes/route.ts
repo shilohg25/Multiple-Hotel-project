@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
-import { countTotal, figuresFromLedger, summarizeClose, type LedgerLike } from '@/lib/day-close';
+import { closeFiguresFromCounts, figuresFromLedger, summarizeClose, type LedgerLike } from '@/lib/day-close';
 import { verifiedOutletId } from '@/lib/day-lock';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
@@ -35,13 +35,15 @@ export async function POST(request: Request) {
   let ledgerQuery = supabaseAdmin.from('ledger_entries').select('category, payment_method, is_collectible, amount').eq('hotel_id', hotelId).eq('entry_date', businessDate);
   ledgerQuery = outletId ? ledgerQuery.eq('outlet_id', outletId) : ledgerQuery.is('outlet_id', null);
   const { data: ledgerRaw } = await ledgerQuery;
-  const figures = figuresFromLedger((ledgerRaw || []) as LedgerLike[], Number(hotel?.rvf_float_amount ?? 10000));
+  const baseFigures = figuresFromLedger((ledgerRaw || []) as LedgerLike[], Number(hotel?.rvf_float_amount ?? 10000));
   const floatRows = rowsOf(payload.float_counts);
   const drawerRows = rowsOf(payload.drawer_counts);
-  figures.floatCounted = countTotal(floatRows.map((row) => ({ denomination: Number(row.denomination || 0), quantity: Number(row.quantity || 0) })));
-  figures.drawerCounted = countTotal(drawerRows.map((row) => ({ denomination: Number(row.denomination || 0), quantity: Number(row.quantity || 0) })));
-  figures.bankDeposit = Number(payload.bank_deposit || 0);
-  figures.returnToFund = Number(payload.return_to_fund ?? figures.expenses);
+  const figures = closeFiguresFromCounts(baseFigures, {
+    floatCounts: floatRows.map((row) => ({ denomination: Number(row.denomination || 0), quantity: Number(row.quantity || 0) })),
+    drawerCounts: drawerRows.map((row) => ({ denomination: Number(row.denomination || 0), quantity: Number(row.quantity || 0) })),
+    bankDeposit: payload.bank_deposit,
+    returnToFund: payload.return_to_fund
+  });
   const summary = summarizeClose(figures);
   if (summary.status !== 'balanced' && !String(payload.variance_note || '').trim()) {
     return jsonError('Write a note when the drawer is short or over.', 400);

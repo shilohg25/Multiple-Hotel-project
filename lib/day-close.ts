@@ -120,3 +120,61 @@ export function figuresFromLedger(rows: LedgerLike[], rvfFloat: number): CloseFi
 export function countTotal(rows: { denomination: number; quantity: number }[]): number {
   return money(rows.reduce((sum, row) => sum + Number(row.denomination) * Number(row.quantity || 0), 0));
 }
+
+export function resolveReturnToFund(provided: number | null | undefined, expenses: number) {
+  if (provided === null || provided === undefined || (typeof provided === 'number' && Number.isNaN(provided))) {
+    return money(expenses);
+  }
+  const value = Number(provided);
+  if (!Number.isFinite(value)) return money(expenses);
+  return money(value);
+}
+
+export type CountBucket = 'float' | 'drawer';
+
+export type SavedCountRow = {
+  bucket: string;
+  denomination: number | string;
+  quantity: number | string;
+};
+
+/** Rebuild the denomination map the close form needs from saved day_close_counts rows. */
+export function countMapForBucket(rows: SavedCountRow[], bucket: CountBucket): Record<number, number> {
+  const map: Record<number, number> = {};
+  for (const row of rows) {
+    if (row.bucket !== bucket) continue;
+    const denomination = Number(row.denomination);
+    const quantity = Number(row.quantity || 0);
+    if (Number.isFinite(denomination) && denomination > 0 && Number.isFinite(quantity)) {
+      map[denomination] = quantity;
+    }
+  }
+  return map;
+}
+
+export function countRowsFromMap(counts: Record<number, number>): { denomination: number; quantity: number }[] {
+  return Object.entries(counts).map(([denomination, quantity]) => ({
+    denomination: Number(denomination),
+    quantity: Number(quantity || 0)
+  }));
+}
+
+/** Shared input for the close preview and the server save path. */
+export function closeFiguresFromCounts(
+  base: CloseFigures,
+  options: {
+    floatCounts: { denomination: number; quantity: number }[];
+    drawerCounts: { denomination: number; quantity: number }[];
+    bankDeposit: number | null | undefined;
+    returnToFund: number | null | undefined;
+  }
+): CloseFigures {
+  return {
+    ...base,
+    floatCounted: countTotal(options.floatCounts),
+    drawerCounted: countTotal(options.drawerCounts),
+    bankDeposit: money(Number(options.bankDeposit || 0)),
+    returnToFund: resolveReturnToFund(options.returnToFund, base.expenses)
+  };
+}
+

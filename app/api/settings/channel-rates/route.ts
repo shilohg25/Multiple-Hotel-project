@@ -17,6 +17,15 @@ export async function POST(request: Request) {
   if (typeError || !roomType) return jsonError('Room type not found.', 404);
   if (!canAccessHotel(auth.staff.profile, roomType.hotel_id)) return jsonError('Hotel access denied.', 403);
 
+  const { data: existingRates } = await supabaseAdmin
+    .from('room_type_channel_rates')
+    .select('channel, rate')
+    .eq('room_type_id', roomTypeId);
+  const before: Record<string, number> = {};
+  for (const row of existingRates || []) {
+    before[String(row.channel)] = Number(row.rate);
+  }
+
   const saved = [];
   for (const channel of RATE_CHANNELS) {
     if (!(channel in (payload.rates || {}))) continue;
@@ -35,7 +44,7 @@ export async function POST(request: Request) {
     hotel_id: roomType.hotel_id,
     actor_id: auth.staff.userId,
     action: 'rate.channel_defaults_updated',
-    details: { room_type_id: roomTypeId, room_type: roomType.name, rates: payload.rates }
+    details: { room_type_id: roomTypeId, room_type: roomType.name, rates: payload.rates, before }
   });
 
   return NextResponse.json({ rates: saved });
