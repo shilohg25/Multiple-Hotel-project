@@ -11,7 +11,7 @@ import { roomAmountLabel } from '@/lib/hotel-pricing';
 import { BILL_LATER_SOURCES, DIRECT_BOOKING_SOURCES, FULL_PREPAID_OTA_SOURCES, clampGuestCount, quotePublicStay } from '@/lib/public-quote';
 import { queueOfflineItem } from '@/lib/offline/db';
 
-export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Room[] }) {
+export function ReservationForm({ hotels, rooms, today }: { hotels: Hotel[]; rooms: Room[]; today: string }) {
   const router = useRouter();
   const activeRooms = useMemo(() => rooms.filter((room) => room.active), [rooms]);
   const firstHotelWithRooms = useMemo(
@@ -286,11 +286,11 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
 
       <div className="space-y-2">
         <label>Check-in</label>
-        <input name="check_in" type="date" required value={checkIn} onChange={(event) => setCheckIn(event.target.value)} className="w-full" />
+        <input name="check_in" type="date" required min={today} value={checkIn} onChange={(event) => setCheckIn(event.target.value)} className="w-full" />
       </div>
       <div className="space-y-2">
         <label>Check-out</label>
-        <input name="check_out" type="date" required value={checkOut} onChange={(event) => setCheckOut(event.target.value)} className="w-full" />
+        <input name="check_out" type="date" required min={checkIn || today} value={checkOut} onChange={(event) => setCheckOut(event.target.value)} className="w-full" />
       </div>
       <div className="space-y-2">
         <label>Number of guests</label>

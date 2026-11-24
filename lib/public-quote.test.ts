@@ -12,6 +12,7 @@ import {
   readToBeBilled,
   isPastCheckIn,
   pastCheckInRefusal,
+  pastCheckInChangeRefusal,
   PAST_CHECK_IN_ERROR,
   paymentCoversDownpayment,
   paymentWithinRemaining,
@@ -78,6 +79,25 @@ describe('public stay quote', () => {
     assert.equal(pastCheckInRefusal('2026-11-10', today), null);
     assert.equal(pastCheckInRefusal('2026-11-11', today), null);
     assert.equal(PAST_CHECK_IN_ERROR, 'Check-in cannot be a past date.');
+  });
+
+  it('refuses a changed check-in before today on edit or move, but allows an unchanged past stay', () => {
+    const manilaMorningUtc = new Date('2026-11-09T16:30:00.000Z');
+    const today = businessToday('Asia/Manila', manilaMorningUtc);
+    assert.equal(today, '2026-11-10');
+    // Moving or editing the check-in to a past date is refused.
+    assert.equal(pastCheckInChangeRefusal('2026-11-09', '2026-11-12', today), PAST_CHECK_IN_ERROR);
+    assert.equal(pastCheckInChangeRefusal('2026-11-08', '2026-11-09', today), PAST_CHECK_IN_ERROR);
+    // Today and future check-ins are allowed.
+    assert.equal(pastCheckInChangeRefusal('2026-11-10', '2026-11-12', today), null);
+    assert.equal(pastCheckInChangeRefusal('2026-11-11', '2026-11-12', today), null);
+    // Same check-in (including an already-started past stay) is not re-checked.
+    assert.equal(pastCheckInChangeRefusal('2026-11-09', '2026-11-09', today), null);
+    assert.equal(pastCheckInChangeRefusal('2026-11-08', '2026-11-08', today), null);
+    // Omitting check-in, or sending an empty value, means the date did not change.
+    assert.equal(pastCheckInChangeRefusal(undefined, '2026-11-09', today), null);
+    assert.equal(pastCheckInChangeRefusal(null, '2026-11-09', today), null);
+    assert.equal(pastCheckInChangeRefusal('', '2026-11-09', today), null);
   });
 
   it('checks guest count against room capacity', () => {
