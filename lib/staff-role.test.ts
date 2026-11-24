@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { APP_ROLES } from './access.ts';
-import { parseStaffRole, staffAssignmentError, STAFF_HOTEL_REQUIRED_ERROR } from './staff-role.ts';
+import { APP_ROLES as ROLES_FROM_STAFF, parseStaffRole, staffAssignmentError, staffRoleLabel, STAFF_HOTEL_REQUIRED_ERROR } from './staff-role.ts';
 
 describe('staff role parsing', () => {
   it('keeps every app role exactly, including cashier and restaurant staff', () => {
@@ -22,5 +22,19 @@ describe('staff role parsing', () => {
       assert.equal(staffAssignmentError(role, null), STAFF_HOTEL_REQUIRED_ERROR);
       assert.equal(staffAssignmentError(role, 'hotel-1'), null);
     }
+  });
+
+  it('lists a friendly label for every app role, including cashier and restaurant staff', () => {
+    assert.deepEqual(ROLES_FROM_STAFF, APP_ROLES);
+    assert.deepEqual(
+      APP_ROLES.map((role) => [role, staffRoleLabel(role)]),
+      [
+        ['owner', 'Owner'],
+        ['manager', 'Manager'],
+        ['front_desk', 'Front desk'],
+        ['cashier', 'Cashier'],
+        ['restaurant_staff', 'Restaurant staff']
+      ]
+    );
   });
 });
