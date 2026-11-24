@@ -27,6 +27,20 @@ export function pastCheckInRefusal(checkIn: string, today: string): string | nul
   return isPastCheckIn(checkIn, today) ? PAST_CHECK_IN_ERROR : null;
 }
 
+/**
+ * Edit/move guard: refuse only when the check-in date actually changes to a
+ * day before today. Sending the same check-in (or omitting it) stays allowed,
+ * so other fields of an already-started stay can still be edited.
+ */
+export function pastCheckInChangeRefusal(
+  nextCheckIn: string | null | undefined,
+  currentCheckIn: string,
+  today: string
+): string | null {
+  if (!nextCheckIn || nextCheckIn === currentCheckIn) return null;
+  return pastCheckInRefusal(nextCheckIn, today);
+}
+
 export function guestCountAllowed(guestCount: number, capacity: number): boolean {
   const guests = Math.floor(Number(guestCount));
   const cap = Math.floor(Number(capacity));

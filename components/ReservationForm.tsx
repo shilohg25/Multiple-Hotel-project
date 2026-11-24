@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { Hotel, Room } from '@/types/app';
-import { diffDays } from '@/lib/date';
+import { diffDays, staffBookingMinDate } from '@/lib/date';
 import { currency } from '@/lib/money';
 import { calculateDownpayment, downpaymentLabel } from '@/lib/downpayment';
 import { roomAmountLabel } from '@/lib/hotel-pricing';
@@ -38,6 +38,7 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
   const [loading, setLoading] = useState(false);
 
   const hotel = useMemo(() => hotels.find((item) => item.id === hotelId), [hotelId, hotels]);
+  const today = staffBookingMinDate(hotel?.timezone);
   const visibleRooms = useMemo(() => activeRooms.filter((room) => room.hotel_id === hotelId), [activeRooms, hotelId]);
   const selectedRoom = useMemo(() => visibleRooms.find((room) => room.id === roomId) || visibleRooms[0], [roomId, visibleRooms]);
   const hasAnyRooms = Boolean(firstHotelWithRooms);
@@ -286,11 +287,11 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
 
       <div className="space-y-2">
         <label>Check-in</label>
-        <input name="check_in" type="date" required value={checkIn} onChange={(event) => setCheckIn(event.target.value)} className="w-full" />
+        <input name="check_in" type="date" required min={today} value={checkIn} onChange={(event) => setCheckIn(event.target.value)} className="w-full" />
       </div>
       <div className="space-y-2">
         <label>Check-out</label>
-        <input name="check_out" type="date" required value={checkOut} onChange={(event) => setCheckOut(event.target.value)} className="w-full" />
+        <input name="check_out" type="date" required min={checkIn || today} value={checkOut} onChange={(event) => setCheckOut(event.target.value)} className="w-full" />
       </div>
       <div className="space-y-2">
         <label>Number of guests</label>

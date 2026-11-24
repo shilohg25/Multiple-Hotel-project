@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
+import { businessToday, calendarDateRefusal } from '@/lib/date';
+import { pastCheckInChangeRefusal } from '@/lib/public-quote';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { hasReservationConflict } from '@/lib/availability';
 import { isRoomOverlapError, ROOM_JUST_TAKEN } from '@/lib/room-overlap';
@@ -17,7 +19,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const roomId = String(payload.room_id || '');
   const checkIn = String(payload.check_in || '');
   const checkOut = String(payload.check_out || '');
-  if (!roomId || !checkIn || !checkOut || checkOut <= checkIn) return jsonError('Valid room and dates are required.');
+  if (!roomId || !checkIn || !checkOut) return jsonError('Valid room and dates are required.');
+  const invalidDates = calendarDateRefusal(checkIn, checkOut);
+  if (invalidDates) return jsonError(invalidDates);
+  if (checkOut <= checkIn) return jsonError('Valid room and dates are required.');
 
   const { data: reservation, error: reservationError } = await supabaseAdmin
     .from('reservations')
@@ -29,6 +34,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { data: room, error: roomError } = await supabaseAdmin.from('rooms').select('*').eq('id', roomId).single();
   if (roomError || !room || room.hotel_id !== reservation.hotel_id) return jsonError('Room not found for this hotel.', 404);
+
+  const { data: hotelRaw } = await supabaseAdmin.from('hotels').select('timezone').eq('id', reservation.hotel_id).maybeSingle();
+  const pastCheckIn = pastCheckInChangeRefusal(checkIn, String(reservation.check_in || ''), businessToday(hotelRaw?.timezone));
+  if (pastCheckIn) return jsonError(pastCheckIn);
 
   const conflict = await hasReservationConflict({ roomId, checkIn, checkOut, ignoreReservationId: id });
   if (conflict) return jsonError(ROOM_JUST_TAKEN);

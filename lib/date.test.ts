@@ -5,7 +5,11 @@ import {
   businessMonth,
   businessTimeZone,
   businessToday,
+  CALENDAR_DATE_ERROR,
+  calendarDateRefusal,
   formatDate,
+  isCalendarDate,
+  staffBookingMinDate,
   localDayBounds,
   localMonthBounds,
   monthRange
@@ -31,6 +35,19 @@ describe('business calendar', () => {
     const instant = new Date('2026-11-10T07:30:00.000Z');
     assert.equal(businessToday('Asia/Manila', instant), '2026-11-10');
     assert.equal(businessToday('America/Los_Angeles', instant), '2026-11-09');
+  });
+
+  it('sets the staff booking min date from the selected hotel timezone', () => {
+    const instant = new Date('2026-11-10T07:30:00.000Z');
+    // 15:30 in Manila (already Nov 10) and 23:30 the previous evening in Los Angeles.
+    assert.equal(staffBookingMinDate('Asia/Manila', instant), '2026-11-10');
+    assert.equal(staffBookingMinDate('America/Los_Angeles', instant), '2026-11-09');
+    assert.equal(staffBookingMinDate('Pacific/Honolulu', instant), '2026-11-09');
+    // Missing or invalid zones fall back to Asia/Manila, same as the create API.
+    assert.equal(staffBookingMinDate(null, instant), '2026-11-10');
+    assert.equal(staffBookingMinDate('Not/AZone', instant), '2026-11-10');
+    // A hotel behind Manila can still book that hotel's today.
+    assert.notEqual(staffBookingMinDate('America/Los_Angeles', instant), staffBookingMinDate('Asia/Manila', instant));
   });
 
   it('bounds a Manila business day from 16:00Z the previous evening through 15:59:59.999Z', () => {
@@ -59,5 +76,33 @@ describe('business calendar', () => {
 
   it('formats a calendar date in the business zone without shifting the day', () => {
     assert.equal(formatDate('2026-11-10', 'Asia/Manila'), 'Nov 10, 2026');
+  });
+});
+
+describe('calendar date form', () => {
+  it('accepts real YYYY-MM-DD dates and rejects other formats, invalid days, and timestamps', () => {
+    assert.equal(isCalendarDate('2026-11-24'), true);
+    assert.equal(isCalendarDate('2026-11-25'), true);
+    assert.equal(isCalendarDate('2024-02-29'), true);
+    assert.equal(calendarDateRefusal('2026-11-24'), null);
+    assert.equal(calendarDateRefusal('2026-11-24', '2026-11-26'), null);
+
+    for (const value of ['2026/11/23', '20261123', 'November 23, 2026', '23 November 2026']) {
+      assert.equal(isCalendarDate(value), false);
+      assert.equal(calendarDateRefusal(value), CALENDAR_DATE_ERROR);
+      assert.equal(calendarDateRefusal(value, '2026-11-25'), CALENDAR_DATE_ERROR);
+    }
+
+    assert.equal(isCalendarDate('2026-02-30'), false);
+    assert.equal(isCalendarDate('2025-02-29'), false);
+    assert.equal(isCalendarDate('2026-13-01'), false);
+    assert.equal(calendarDateRefusal('2026-02-30'), CALENDAR_DATE_ERROR);
+    assert.equal(CALENDAR_DATE_ERROR, 'Dates must be YYYY-MM-DD.');
+
+    // Same-day start as a UTC ISO timestamp is not a calendar date.
+    assert.equal(isCalendarDate('2026-11-23T16:00:00.000Z'), false);
+    assert.equal(isCalendarDate('2026-11-24T00:00:00.000Z'), false);
+    assert.equal(calendarDateRefusal('2026-11-23T16:00:00.000Z'), CALENDAR_DATE_ERROR);
+    assert.equal(calendarDateRefusal('2026-11-24T00:00:00.000Z'), CALENDAR_DATE_ERROR);
   });
 });
