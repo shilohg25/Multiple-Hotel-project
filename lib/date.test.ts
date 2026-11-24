@@ -6,6 +6,7 @@ import {
   businessTimeZone,
   businessToday,
   formatDate,
+  staffBookingMinDate,
   localDayBounds,
   localMonthBounds,
   monthRange
@@ -31,6 +32,19 @@ describe('business calendar', () => {
     const instant = new Date('2026-11-10T07:30:00.000Z');
     assert.equal(businessToday('Asia/Manila', instant), '2026-11-10');
     assert.equal(businessToday('America/Los_Angeles', instant), '2026-11-09');
+  });
+
+  it('sets the staff booking min date from the selected hotel timezone', () => {
+    const instant = new Date('2026-11-10T07:30:00.000Z');
+    // 15:30 in Manila (already Nov 10) and 23:30 the previous evening in Los Angeles.
+    assert.equal(staffBookingMinDate('Asia/Manila', instant), '2026-11-10');
+    assert.equal(staffBookingMinDate('America/Los_Angeles', instant), '2026-11-09');
+    assert.equal(staffBookingMinDate('Pacific/Honolulu', instant), '2026-11-09');
+    // Missing or invalid zones fall back to Asia/Manila, same as the create API.
+    assert.equal(staffBookingMinDate(null, instant), '2026-11-10');
+    assert.equal(staffBookingMinDate('Not/AZone', instant), '2026-11-10');
+    // A hotel behind Manila can still book that hotel's today.
+    assert.notEqual(staffBookingMinDate('America/Los_Angeles', instant), staffBookingMinDate('Asia/Manila', instant));
   });
 
   it('bounds a Manila business day from 16:00Z the previous evening through 15:59:59.999Z', () => {

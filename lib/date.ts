@@ -63,6 +63,11 @@ export function businessToday(timeZone?: string | null, now: Date = new Date()):
   return formatIsoDate(parts.year, parts.month, parts.day);
 }
 
+/** Min check-in date for the staff booking form. Matches POST /api/reservations, which uses businessToday(hotel.timezone) and defaults to Asia/Manila. */
+export function staffBookingMinDate(timeZone?: string | null, now: Date = new Date()): string {
+  return businessToday(timeZone, now);
+}
+
 export function businessMonth(timeZone?: string | null, now: Date = new Date()): string {
   return businessToday(timeZone, now).slice(0, 7);
 }

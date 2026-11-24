@@ -4,14 +4,14 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { Hotel, Room } from '@/types/app';
-import { diffDays } from '@/lib/date';
+import { diffDays, staffBookingMinDate } from '@/lib/date';
 import { currency } from '@/lib/money';
 import { calculateDownpayment, downpaymentLabel } from '@/lib/downpayment';
 import { roomAmountLabel } from '@/lib/hotel-pricing';
 import { BILL_LATER_SOURCES, DIRECT_BOOKING_SOURCES, FULL_PREPAID_OTA_SOURCES, clampGuestCount, quotePublicStay } from '@/lib/public-quote';
 import { queueOfflineItem } from '@/lib/offline/db';
 
-export function ReservationForm({ hotels, rooms, today }: { hotels: Hotel[]; rooms: Room[]; today: string }) {
+export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Room[] }) {
   const router = useRouter();
   const activeRooms = useMemo(() => rooms.filter((room) => room.active), [rooms]);
   const firstHotelWithRooms = useMemo(
@@ -38,6 +38,7 @@ export function ReservationForm({ hotels, rooms, today }: { hotels: Hotel[]; roo
   const [loading, setLoading] = useState(false);
 
   const hotel = useMemo(() => hotels.find((item) => item.id === hotelId), [hotelId, hotels]);
+  const today = staffBookingMinDate(hotel?.timezone);
   const visibleRooms = useMemo(() => activeRooms.filter((room) => room.hotel_id === hotelId), [activeRooms, hotelId]);
   const selectedRoom = useMemo(() => visibleRooms.find((room) => room.id === roomId) || visibleRooms[0], [roomId, visibleRooms]);
   const hasAnyRooms = Boolean(firstHotelWithRooms);
