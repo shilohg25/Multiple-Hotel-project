@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { closeFiguresFromCounts, countMapForBucket, countTotal, figuresFromLedger, resolveReturnToFund, summarizeClose } from './day-close.ts';
+import { closeFiguresFromCounts, countMapForBucket, countTotal, figuresFromLedger, formNumberValue, resolveReturnToFund, summarizeClose } from './day-close.ts';
 
 describe('close the day', () => {
   it('matches the 8 Nov sheet example, including collectables in room sales', () => {
@@ -125,5 +125,14 @@ describe('close the day', () => {
     assert.equal(preview.status, saved.status);
     // A leftover expenses default would have been 1959 and would not match the saved 800.
     assert.notEqual(preview.returnToFund, base.expenses);
+  });
+
+  it('reloads a saved return-to-fund of 0 as 0, not an empty input', () => {
+    assert.equal(resolveReturnToFund(0, 1959), 0);
+    assert.equal(formNumberValue(0), 0);
+    assert.equal(formNumberValue(800), 800);
+    assert.equal(formNumberValue(null), '');
+    assert.equal(formNumberValue(undefined), '');
+    assert.notEqual(formNumberValue(0), '');
   });
 });

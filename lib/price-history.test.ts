@@ -5,7 +5,8 @@ import {
   entriesFromPaymentChannelAudits,
   entriesFromPriceChangeLogs,
   formatHistoryValue,
-  mergePriceHistory
+  mergePriceHistory,
+  paymentChannelHasChanges
 } from './price-history.ts';
 
 describe('price change history', () => {
@@ -146,5 +147,33 @@ describe('price change history', () => {
     assert.equal(rows[0].new_value, 2600);
     assert.equal(rows.some((row) => row.item_label.includes('ota') || row.item_label.includes('short-time')), false);
     assert.equal(rows.some((row) => row.new_value === null), false);
+  });
+
+  it('writes no history row for a payment-channel audit with no rate or name diff', () => {
+    const rows = entriesFromPaymentChannelAudits([
+      {
+        id: 'audit-noop',
+        action: 'payment_channel.updated',
+        created_at: '2026-11-23T13:00:00.000Z',
+        profiles: { full_name: 'TEST- Manager' },
+        details: {
+          before: { name: 'Card (Metrobank swiper)', surcharge_percent: 4, mdr_percent: 3.5 },
+          after: { name: 'Card (Metrobank swiper)', surcharge_percent: 4, mdr_percent: 3.5 }
+        }
+      }
+    ]);
+    assert.equal(rows.length, 0);
+    assert.equal(rows.some((row) => row.notes === 'Payment channel updated.'), false);
+    assert.equal(rows.some((row) => row.old_value === null && row.new_value === null), false);
+  });
+
+  it('treats a payment-channel save with the same values as a no-op, including 3 vs 3.000', () => {
+    const current = { name: 'Card (Metrobank swiper)', surcharge_percent: 3, mdr_percent: 3.5, requires_proof: false, active: true };
+    assert.equal(paymentChannelHasChanges(current, { ...current, surcharge_percent: 3.000 }), false);
+    assert.equal(paymentChannelHasChanges(current, current), false);
+    assert.equal(paymentChannelHasChanges(current, { ...current, surcharge_percent: 3.002 }), true);
+    assert.equal(paymentChannelHasChanges(current, { ...current, requires_proof: true }), true);
+    assert.equal(paymentChannelHasChanges(current, { ...current, active: false }), true);
+    assert.equal(paymentChannelHasChanges(current, { ...current, name: 'Card (Metrobank swiper) ' }), false);
   });
 });

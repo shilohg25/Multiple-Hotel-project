@@ -64,6 +64,25 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
+
+export type PaymentChannelSnapshot = {
+  name?: unknown;
+  surcharge_percent?: unknown;
+  mdr_percent?: unknown;
+  requires_proof?: unknown;
+  active?: unknown;
+};
+
+/** True when a payment-channel save changes a field the API actually writes. */
+export function paymentChannelHasChanges(before: PaymentChannelSnapshot, after: PaymentChannelSnapshot): boolean {
+  if (String(before.name ?? '').trim() !== String(after.name ?? '').trim()) return true;
+  if (changed(percent(before.surcharge_percent), percent(after.surcharge_percent))) return true;
+  if (changed(percent(before.mdr_percent), percent(after.mdr_percent))) return true;
+  if (Boolean(before.requires_proof) !== Boolean(after.requires_proof)) return true;
+  if (Boolean(before.active) !== Boolean(after.active)) return true;
+  return false;
+}
+
 export function entriesFromPriceChangeLogs(logs: PriceChangeLogLike[]): PriceHistoryEntry[] {
   return logs.map((log) => ({
     id: log.id,
@@ -122,7 +141,8 @@ export function entriesFromPaymentChannelAudits(logs: AuditLogLike[]): PriceHist
       entries.push(...rateRows);
       continue;
     }
-    if (nameChanged || Object.keys(before).length || Object.keys(after).length) {
+    // Name-only changes are still history. A no-op (identical before/after) is not.
+    if (nameChanged) {
       entries.push({
         id: log.id,
         changed_type: 'payment channel',
@@ -132,7 +152,7 @@ export function entriesFromPaymentChannelAudits(logs: AuditLogLike[]): PriceHist
         value_kind: 'percent',
         changed_by_name: actorName(log),
         created_at: log.created_at,
-        notes: nameChanged ? `Renamed from ${String(before.name || 'previous name')} to ${name}.` : 'Payment channel updated.'
+        notes: `Renamed from ${String(before.name || 'previous name')} to ${name}.`
       });
     }
   }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { canAccessHotel, canManagePricingSetup } from '@/lib/auth';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
+import { paymentChannelHasChanges } from '@/lib/price-history';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -21,28 +22,32 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (currentError || !current) return jsonError('Payment channel not found.', 404);
   if (!canAccessHotel(auth.staff.profile, current.hotel_id)) return jsonError('Hotel access denied.', 403);
 
+  const next = {
+    name: String(payload.name || current.name).trim(),
+    surcharge_percent: surcharge,
+    mdr_percent: mdr,
+    requires_proof: Boolean(payload.requires_proof),
+    active: payload.active === undefined ? current.active : Boolean(payload.active)
+  };
+
   const { data, error } = await supabaseAdmin
     .from('payment_channels')
-    .update({
-      name: String(payload.name || current.name).trim(),
-      surcharge_percent: surcharge,
-      mdr_percent: mdr,
-      requires_proof: Boolean(payload.requires_proof),
-      active: payload.active === undefined ? current.active : Boolean(payload.active)
-    })
+    .update(next)
     .eq('id', id)
     .select('*')
     .single();
   if (error || !data) return jsonError(error?.message || 'Failed to save the channel.', 400);
 
-  await supabaseAdmin.from('audit_logs').insert({
-    hotel_id: current.hotel_id,
-    actor_id: auth.staff.userId,
-    action: 'payment_channel.updated',
-    details: {
-      before: { surcharge_percent: current.surcharge_percent, mdr_percent: current.mdr_percent, name: current.name },
-      after: { surcharge_percent: surcharge, mdr_percent: mdr, name: data.name }
-    }
-  });
+  if (paymentChannelHasChanges(current, next)) {
+    await supabaseAdmin.from('audit_logs').insert({
+      hotel_id: current.hotel_id,
+      actor_id: auth.staff.userId,
+      action: 'payment_channel.updated',
+      details: {
+        before: { surcharge_percent: current.surcharge_percent, mdr_percent: current.mdr_percent, name: current.name },
+        after: { surcharge_percent: surcharge, mdr_percent: mdr, name: data.name }
+      }
+    });
+  }
   return NextResponse.json({ channel: data });
 }

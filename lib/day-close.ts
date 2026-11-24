@@ -178,3 +178,8 @@ export function closeFiguresFromCounts(
   };
 }
 
+/** Keep 0 visible in a controlled number input. `value || ''` would show a blank. */
+export function formNumberValue(value: number | null | undefined): number | '' {
+  return value ?? '';
+}
+

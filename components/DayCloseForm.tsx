@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CASH_DENOMINATIONS, closeFiguresFromCounts, countMapForBucket, countRowsFromMap, resolveReturnToFund, summarizeClose, type CloseFigures, type SavedCountRow } from '@/lib/day-close';
+import { CASH_DENOMINATIONS, closeFiguresFromCounts, countMapForBucket, countRowsFromMap, formNumberValue, resolveReturnToFund, summarizeClose, type CloseFigures, type SavedCountRow } from '@/lib/day-close';
 import { currency } from '@/lib/money';
 
 type CountMap = Record<number, number>;
@@ -118,7 +118,7 @@ export function DayCloseForm({
 
       <div className="grid gap-3 md:grid-cols-2">
         <label className="space-y-1">Return to fund
-          <input name="return_to_fund" type="number" min="0" step="0.01" value={returnToFund || ''} onChange={(event) => setReturnToFund(Number(event.target.value || 0))} className="w-full" disabled={locked} />
+          <input name="return_to_fund" type="number" min="0" step="0.01" value={formNumberValue(returnToFund)} onChange={(event) => setReturnToFund(Number(event.target.value || 0))} className="w-full" disabled={locked} />
         </label>
         <label className="space-y-1">Already deposited to the bank
           <input name="bank_deposit" type="number" min="0" step="0.01" value={bankDeposit || ''} onChange={(event) => setBankDeposit(Number(event.target.value || 0))} className="w-full" disabled={locked} />
