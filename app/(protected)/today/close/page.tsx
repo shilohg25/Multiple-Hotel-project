@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { allows } from '@/lib/access';
 import { canAccessHotel, requireStaff } from '@/lib/auth';
 import { businessToday } from '@/lib/date';
-import { figuresFromLedger, type LedgerLike } from '@/lib/day-close';
+import { figuresFromLedger, type LedgerLike, type SavedCountRow } from '@/lib/day-close';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { DayCloseForm } from '@/components/DayCloseForm';
 import { HelpPanel } from '@/components/HelpPanel';
@@ -39,7 +39,18 @@ export default async function CloseDayPage({ searchParams }: { searchParams?: Pr
       : Promise.resolve({ data: [] })
   ]);
 
+  const closeRow = closeRaw as { id: string; float_counted?: number; drawer_counted?: number; bank_deposit?: number; return_to_fund?: number } | null;
+  const { data: countRaw } = closeRow
+    ? await supabaseAdmin.from('day_close_counts').select('bucket, denomination, quantity').eq('day_close_id', closeRow.id)
+    : { data: [] as SavedCountRow[] };
+  const savedCounts = (countRaw || []) as SavedCountRow[];
   const figures = figuresFromLedger((ledgerRaw || []) as LedgerLike[], Number(hotel.rvf_float_amount ?? 10000));
+  if (closeRow) {
+    figures.floatCounted = Number(closeRow.float_counted || 0);
+    figures.drawerCounted = Number(closeRow.drawer_counted || 0);
+    figures.bankDeposit = Number(closeRow.bank_deposit || 0);
+    figures.returnToFund = Number(closeRow.return_to_fund ?? figures.expenses);
+  }
   const outlet = outletRaw as Pick<Outlet, 'name'> | null;
   const shortages = ((shortageResult.data || []) as Array<{ id: string; amount: number; note: string | null; profiles?: { full_name?: string } | { full_name?: string }[] | null }>).map((item) => {
     const profile = Array.isArray(item.profiles) ? item.profiles[0] : item.profiles;
@@ -62,6 +73,7 @@ export default async function CloseDayPage({ searchParams }: { searchParams?: Pr
         </div>
       </div>
       <DayCloseForm
+        key={closeRow?.id || `${hotel.id}-${date}-${outletId || 'hotel'}`}
         hotelId={hotel.id}
         outletId={outletId}
         businessDate={date}
@@ -69,6 +81,7 @@ export default async function CloseDayPage({ searchParams }: { searchParams?: Pr
         figures={figures}
         profiles={(profilesRaw || []) as { id: string; full_name: string | null; role: string }[]}
         existing={closeRaw}
+        savedCounts={savedCounts}
         canLock={canLock}
         shortages={shortages}
       />

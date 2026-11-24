@@ -43,7 +43,7 @@ const ownerCards = [
     description: 'Add and manage bookable rooms, rental units, cottages, villas, or glamping units.'
   },
   {
-    href: '/api/health',
+    href: '/settings/health',
     title: 'System Health',
     description: 'Check whether required deployment environment variables are present.'
   }

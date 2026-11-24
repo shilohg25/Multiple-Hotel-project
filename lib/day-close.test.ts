@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { countTotal, figuresFromLedger, summarizeClose } from './day-close.ts';
+import { closeFiguresFromCounts, countMapForBucket, countTotal, figuresFromLedger, formNumberValue, resolveReturnToFund, summarizeClose } from './day-close.ts';
 
 describe('close the day', () => {
   it('matches the 8 Nov sheet example, including collectables in room sales', () => {
@@ -84,5 +84,55 @@ describe('close the day', () => {
     assert.equal(summary.floatCounted, 10000);
     assert.equal(summary.status, 'short');
     assert.equal(summary.variance, -100);
+  });
+
+  it('resolves return-to-fund the same way the preview and the server do', () => {
+    assert.equal(resolveReturnToFund(undefined, 1959), 1959);
+    assert.equal(resolveReturnToFund(null, 1959), 1959);
+    assert.equal(resolveReturnToFund(Number.NaN, 1959), 1959);
+    assert.equal(resolveReturnToFund(0, 1959), 0);
+    assert.equal(resolveReturnToFund(500, 1959), 500);
+  });
+
+  it('reloads saved denomination counts into the float and drawer maps', () => {
+    const rows = [
+      { bucket: 'float', denomination: 1000, quantity: 10 },
+      { bucket: 'drawer', denomination: 1000, quantity: 4 },
+      { bucket: 'drawer', denomination: 500, quantity: 1 }
+    ];
+    assert.deepEqual(countMapForBucket(rows, 'float'), { 1000: 10 });
+    assert.deepEqual(countMapForBucket(rows, 'drawer'), { 1000: 4, 500: 1 });
+    assert.equal(countTotal(Object.entries(countMapForBucket(rows, 'drawer')).map(([denomination, quantity]) => ({ denomination: Number(denomination), quantity }))), 4500);
+  });
+
+  it('gives the preview and the server the same close figures from one helper', () => {
+    const base = figuresFromLedger([
+      { category: 'room', payment_method: 'cash', amount: 3950 },
+      { category: 'expense', payment_method: 'cash', amount: 1959 }
+    ], 10000);
+    const input = {
+      floatCounts: [{ denomination: 1000, quantity: 10 }],
+      drawerCounts: [{ denomination: 1000, quantity: 2 }],
+      bankDeposit: 0,
+      returnToFund: 800
+    };
+    const preview = summarizeClose(closeFiguresFromCounts(base, input));
+    const saved = summarizeClose(closeFiguresFromCounts(base, input));
+    assert.equal(preview.returnToFund, 800);
+    assert.equal(preview.returnToFund, saved.returnToFund);
+    assert.equal(preview.expectedCash, saved.expectedCash);
+    assert.equal(preview.variance, saved.variance);
+    assert.equal(preview.status, saved.status);
+    // A leftover expenses default would have been 1959 and would not match the saved 800.
+    assert.notEqual(preview.returnToFund, base.expenses);
+  });
+
+  it('reloads a saved return-to-fund of 0 as 0, not an empty input', () => {
+    assert.equal(resolveReturnToFund(0, 1959), 0);
+    assert.equal(formNumberValue(0), 0);
+    assert.equal(formNumberValue(800), 800);
+    assert.equal(formNumberValue(null), '');
+    assert.equal(formNumberValue(undefined), '');
+    assert.notEqual(formNumberValue(0), '');
   });
 });
