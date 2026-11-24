@@ -32,10 +32,22 @@ export type AuditLogLike = {
   profiles?: { full_name?: string | null } | null;
 };
 
-function money(value: unknown): number | null {
+function numeric(value: unknown, places: number): number | null {
   if (value === null || value === undefined || value === '') return null;
   const amount = Number(value);
-  return Number.isFinite(amount) ? Math.round(amount * 100) / 100 : null;
+  if (!Number.isFinite(amount)) return null;
+  const factor = 10 ** places;
+  return Math.round(amount * factor) / factor;
+}
+
+/** Peso amounts are stored to 2 decimals. */
+function money(value: unknown): number | null {
+  return numeric(value, 2);
+}
+
+/** Payment-channel surcharge/MDR are numeric(6,3) and the form allows step 0.001. */
+function percent(value: unknown): number | null {
+  return numeric(value, 3);
 }
 
 function changed(before: number | null, after: number | null) {
@@ -91,8 +103,8 @@ export function entriesFromPaymentChannelAudits(logs: AuditLogLike[]): PriceHist
     const nameChanged = String(before.name || '') !== String(after.name || '') && (before.name != null || after.name != null);
     const rateRows: PriceHistoryEntry[] = [];
     for (const field of fields) {
-      const oldValue = money(before[field.key]);
-      const newValue = money(after[field.key]);
+      const oldValue = percent(before[field.key]);
+      const newValue = percent(after[field.key]);
       if (!changed(oldValue, newValue)) continue;
       rateRows.push({
         id: `${log.id}:${field.key}`,
@@ -141,12 +153,12 @@ export function entriesFromChannelRateAudits(logs: AuditLogLike[]): PriceHistory
     const roomType = String(details.room_type || 'Room type');
     const rates = asRecord(details.rates);
     const before = asRecord(details.before);
-    const channels = Array.from(new Set([...Object.keys(rates), ...Object.keys(before)]));
-    for (const channel of channels) {
+    // Only channels actually submitted in payload.rates. The API skips absent keys,
+    // so unioning with `before` would invent prev -> — rows for untouched channels.
+    for (const channel of Object.keys(rates)) {
       const oldValue = money(before[channel]);
       const newValue = money(rates[channel]);
-      if (!changed(oldValue, newValue) && oldValue !== null) continue;
-      if (newValue === null && oldValue === null) continue;
+      if (!changed(oldValue, newValue)) continue;
       entries.push({
         id: `${log.id}:${channel}`,
         changed_type: 'channel rate',
