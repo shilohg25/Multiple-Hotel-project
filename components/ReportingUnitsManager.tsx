@@ -32,7 +32,7 @@ export function ReportingUnitsManager({ hotels, outlets, role }: { hotels: Hotel
       <div>
         <h2 className="text-lg font-bold">Reporting units</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Monthly totals use these units. Navarro and Sotera Café are separate. Tagosilangan and Tago Resto are separate. Older restaurant rows are left in place.
+          Monthly totals use these units. Each property and its outlets can be reported separately. Older restaurant rows are left in place.
         </p>
       </div>
       {message ? <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm">{message}</p> : null}

@@ -1,6 +1,5 @@
 import { SignOutButton } from '@/components/SignOutButton';
-
-const roles = ['owner', 'manager', 'front_desk'];
+import { APP_ROLES, staffRoleLabel } from '@/lib/staff-role';
 
 const ownerSql = `insert into public.profiles (id, full_name, role, hotel_id)
 select
@@ -31,9 +30,10 @@ export function ProfileMissingNotice() {
         <div className="space-y-3 text-sm text-slate-700">
           <p>Ask the owner/admin to create a row in public.profiles with your user ID and one of these roles:</p>
           <ul className="flex flex-wrap gap-2">
-            {roles.map((role) => (
-              <li key={role} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-1 font-mono text-xs">
-                {role}
+            {APP_ROLES.map((role) => (
+              <li key={role} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-1 text-xs">
+                <span className="font-medium">{staffRoleLabel(role)}</span>{' '}
+                <span className="font-mono text-slate-500">{role}</span>
               </li>
             ))}
           </ul>
