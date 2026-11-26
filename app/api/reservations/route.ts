@@ -41,15 +41,15 @@ export async function POST(request: Request) {
   if (invalidDates) return jsonError(invalidDates);
   if (checkOut <= checkIn) return jsonError('Valid check-in and check-out dates are required.');
 
-  const conflict = await hasReservationConflict({ roomId, checkIn, checkOut });
-  if (conflict) return jsonError(ROOM_JUST_TAKEN);
-
   const [{ data: hotelRaw }, { data: roomRaw }] = await Promise.all([
     supabaseAdmin.from('hotels').select('slug, timezone, downpayment_type, default_downpayment_percent, default_downpayment_amount').eq('id', hotelId).maybeSingle(),
     supabaseAdmin.from('rooms').select('base_rate, room_type_name, hotel_id, capacity').eq('id', roomId).maybeSingle()
   ]);
   if (!hotelRaw || !roomRaw || roomRaw.hotel_id !== hotelId) return jsonError('Room not found for this hotel.', 404);
-  const pastCheckIn = pastCheckInRefusal(checkIn, businessToday(hotelRaw.timezone));
+  const today = businessToday(hotelRaw.timezone);
+  const conflict = await hasReservationConflict({ roomId, checkIn, checkOut, businessToday: today });
+  if (conflict) return jsonError(ROOM_JUST_TAKEN);
+  const pastCheckIn = pastCheckInRefusal(checkIn, today);
   if (pastCheckIn) return jsonError(pastCheckIn);
   const guestCount = Math.max(1, Math.floor(Number(payload.guest_count || 1)));
   const roomCapacity = Math.floor(Number(roomRaw.capacity || 0));

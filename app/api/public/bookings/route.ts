@@ -109,7 +109,7 @@ export async function POST(request: Request) {
 
   let conflict = false;
   try {
-    conflict = await hasReservationConflict({ roomId, checkIn, checkOut });
+    conflict = await hasReservationConflict({ roomId, checkIn, checkOut, businessToday: today });
   } catch (error) {
     return guestFailure('We could not check room availability. Please try again.', error);
   }
