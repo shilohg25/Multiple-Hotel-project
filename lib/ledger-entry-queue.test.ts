@@ -14,6 +14,7 @@ import {
   queuedLedgerHint,
   readLedgerQueue,
   resetStaleSyncingLedgerEntries,
+  resolveLedgerClientRequestId,
   saveLedgerEntryWithQueue,
   syncPendingLedgerEntries
 } from './ledger-entry-queue.ts';
@@ -371,6 +372,98 @@ describe('ledger entry queue', () => {
     });
     assert.equal(calls, 1);
     assert.equal(synced.synced, 1);
+    assert.equal(readLedgerQueue(storage, USER_A).length, 0);
+  });
+
+  it('times out a save when the JSON body stalls, instead of hanging', async () => {
+    const fetchImpl = (async (_input, init) => {
+      const response = new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+      Object.defineProperty(response, 'json', {
+        value: () => new Promise((_resolve, reject) => {
+          const fail = () => {
+            const error = new Error('The operation was aborted.');
+            error.name = 'AbortError';
+            reject(error);
+          };
+          if (init?.signal?.aborted) fail();
+          else init?.signal?.addEventListener('abort', fail, { once: true });
+        })
+      });
+      return response;
+    }) as typeof fetch;
+
+    const result = await postLedgerEntry({ hotel_id: HOTEL_1, amount: '10' }, { timeoutMs: 25, fetchImpl });
+    assert.equal(result.ok, false);
+    assert.equal(result.retryable, true);
+    assert.equal(result.error, LEDGER_TIMEOUT_ERROR);
+  });
+
+  it('reuses a client request id only when retrying the same payload, and mints a new id after the form changes', async () => {
+    assert.equal(resolveLedgerClientRequestId({
+      requestedId: 'old-id',
+      previousPayload: { hotel_id: HOTEL_1, amount: '10', description: 'TEST- snacks' },
+      formValues: { hotel_id: HOTEL_1, amount: '10', description: 'TEST- snacks' },
+      hotelId: HOTEL_1
+    }), 'old-id');
+    const editedId = resolveLedgerClientRequestId({
+      requestedId: 'old-id',
+      previousPayload: { hotel_id: HOTEL_1, amount: '10', description: 'TEST- snacks' },
+      formValues: { hotel_id: HOTEL_1, amount: '25', description: 'TEST- snacks' },
+      hotelId: HOTEL_1,
+      createId: () => 'new-id'
+    });
+    assert.equal(editedId, 'new-id');
+
+    const storage = createMemoryStorage();
+    const posted: string[] = [];
+    const failThenSucceed = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body || '{}')) as { client_request_id?: string; amount?: string };
+      posted.push(`${body.client_request_id}:${body.amount}`);
+      if (body.amount === '10') throw new TypeError('Failed to fetch');
+      return jsonResponse({ entry: { id: 'saved-edited' }, duplicate: body.client_request_id === 'old-id' });
+    }) as typeof fetch;
+
+    const failed = await saveLedgerEntryWithQueue({
+      hotel_id: HOTEL_1,
+      amount: '10',
+      description: 'TEST- snacks'
+    }, { storage, userId: USER_A, hotelId: HOTEL_1, fetchImpl: failThenSucceed, createId: () => 'old-id' });
+    assert.equal(failed.ok, false);
+    assert.equal(failed.clientRequestId, 'old-id');
+
+    const identicalRetry = await saveLedgerEntryWithQueue({
+      hotel_id: HOTEL_1,
+      amount: '10',
+      description: 'TEST- snacks'
+    }, {
+      storage,
+      userId: USER_A,
+      hotelId: HOTEL_1,
+      fetchImpl: failThenSucceed,
+      clientRequestId: 'old-id',
+      previousPayload: { hotel_id: HOTEL_1, amount: '10', description: 'TEST- snacks' }
+    });
+    assert.equal(identicalRetry.ok, false);
+    assert.equal(identicalRetry.clientRequestId, 'old-id');
+
+    let nextId = 0;
+    const edited = await saveLedgerEntryWithQueue({
+      hotel_id: HOTEL_1,
+      amount: '25',
+      description: 'TEST- snacks'
+    }, {
+      storage,
+      userId: USER_A,
+      hotelId: HOTEL_1,
+      fetchImpl: failThenSucceed,
+      clientRequestId: 'old-id',
+      previousPayload: { hotel_id: HOTEL_1, amount: '10', description: 'TEST- snacks' },
+      createId: () => `new-${++nextId}`
+    });
+    assert.equal(edited.ok, true);
+    assert.equal(edited.duplicate, false);
+    assert.equal(edited.clientRequestId, 'new-1');
+    assert.deepEqual(posted, ['old-id:10', 'old-id:10', 'new-1:25']);
     assert.equal(readLedgerQueue(storage, USER_A).length, 0);
   });
 });

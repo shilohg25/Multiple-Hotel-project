@@ -11,6 +11,7 @@ import {
   pendingLedgerEntries,
   queuedLedgerHint,
   resetStaleSyncingLedgerEntries,
+  resolveLedgerClientRequestId,
   retryableLedgerEntries,
   saveLedgerEntryWithQueue,
   syncPendingLedgerEntries
@@ -48,6 +49,7 @@ export function SalesCashManager({
   const router = useRouter();
   const ledgerFormRef = useRef<HTMLFormElement>(null);
   const pendingLedgerIdRef = useRef<string | null>(null);
+  const pendingLedgerPayloadRef = useRef<Record<string, unknown> | null>(null);
   const [message, setMessage] = useState('');
   const [offlineCashDraft, setOfflineCashDraft] = useState<Record<string, unknown> | null>(null);
   const [ledgerLoading, setLedgerLoading] = useState(false);
@@ -83,6 +85,7 @@ export function SalesCashManager({
 
   function clearLedgerPending() {
     pendingLedgerIdRef.current = null;
+    pendingLedgerPayloadRef.current = null;
     setLedgerError('');
     setLedgerCanRetry(false);
   }
@@ -92,8 +95,17 @@ export function SalesCashManager({
     setLedgerError('');
     setLedgerLoading(true);
     try {
+      const requestedId = clientRequestId || pendingLedgerIdRef.current || undefined;
+      const resolvedId = resolveLedgerClientRequestId({
+        requestedId,
+        previousPayload: pendingLedgerPayloadRef.current,
+        formValues,
+        outletId,
+        hotelId: selectedHotel.id
+      });
       const result = await saveLedgerEntryWithQueue(formValues, {
-        clientRequestId: clientRequestId || pendingLedgerIdRef.current || undefined,
+        clientRequestId: resolvedId,
+        previousPayload: pendingLedgerPayloadRef.current,
         outletId,
         userId,
         hotelId: selectedHotel.id,
@@ -107,9 +119,13 @@ export function SalesCashManager({
         router.refresh();
         return;
       }
+      pendingLedgerPayloadRef.current = formValues;
       setLedgerCanRetry(result.retryable || Boolean(result.needsAttention));
       setLedgerError(queuedLedgerHint(result.error, result.retryable, Boolean(result.needsAttention)));
-      if (!result.retryable && !result.needsAttention) pendingLedgerIdRef.current = null;
+      if (!result.retryable && !result.needsAttention) {
+        pendingLedgerIdRef.current = null;
+        pendingLedgerPayloadRef.current = null;
+      }
     } catch (error) {
       setLedgerCanRetry(true);
       setLedgerError(queuedLedgerHint(error instanceof Error ? error.message : "Couldn't save this entry. Check your connection and try again.", true));
@@ -127,6 +143,8 @@ export function SalesCashManager({
     const queued = retryableLedgerEntries(window.localStorage, userId);
     const item = queued.find((entry) => entry.clientRequestId === pendingLedgerIdRef.current) || queued[0];
     if (item) {
+      pendingLedgerIdRef.current = item.clientRequestId;
+      pendingLedgerPayloadRef.current = item.payload;
       await submitLedgerEntry(item.payload, item.clientRequestId);
       return;
     }
@@ -142,6 +160,7 @@ export function SalesCashManager({
       const attention = needsAttentionLedgerEntries(window.localStorage, userId);
       if (attention.length) {
         pendingLedgerIdRef.current = attention[0].clientRequestId;
+        pendingLedgerPayloadRef.current = attention[0].payload;
         setLedgerCanRetry(true);
         setLedgerError(queuedLedgerHint(attention[0].error || LEDGER_NEEDS_ATTENTION_ERROR, false, true));
       }
@@ -168,6 +187,7 @@ export function SalesCashManager({
         const leftoverAttention = needsAttentionLedgerEntries(window.localStorage, userId);
         if (leftoverAttention.length) {
           pendingLedgerIdRef.current = leftoverAttention[0].clientRequestId;
+          pendingLedgerPayloadRef.current = leftoverAttention[0].payload;
           setLedgerCanRetry(true);
           setLedgerError(queuedLedgerHint(leftoverAttention[0].error || LEDGER_NEEDS_ATTENTION_ERROR, false, true));
         }

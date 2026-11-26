@@ -1,4 +1,4 @@
-import { fetchWithTimeout, isNetworkError, RequestTimeoutError } from './fetch-timeout.ts';
+import { fetchJsonWithTimeout, isNetworkError, RequestTimeoutError } from './fetch-timeout.ts';
 
 export const LEDGER_SAVE_TIMEOUT_MS = 12_000;
 export const LEDGER_QUEUE_STORAGE_KEY = 'hotel_ops_ledger_entry_queue';
@@ -202,12 +202,65 @@ export function hotelIdFromLedgerValues(formValues: Record<string, unknown>, hot
   return '';
 }
 
+function stableJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableJsonValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.keys(value as Record<string, unknown>)
+        .sort()
+        .map((key) => [key, stableJsonValue((value as Record<string, unknown>)[key])])
+    );
+  }
+  return value;
+}
+
+export function ledgerRetrySignature(
+  values: Record<string, unknown>,
+  options: { outletId?: string | null; hotelId?: string } = {}
+) {
+  const payload = buildLedgerPayload(values, {
+    outletId: options.outletId,
+    hotelId: options.hotelId,
+    clientRequestId: '_'
+  });
+  delete payload.client_request_id;
+  return JSON.stringify(stableJsonValue(payload));
+}
+
+export function sameLedgerRetryPayload(
+  previousPayload: Record<string, unknown> | null | undefined,
+  nextValues: Record<string, unknown>,
+  options: { outletId?: string | null; hotelId?: string } = {}
+) {
+  if (!previousPayload) return false;
+  return ledgerRetrySignature(previousPayload, options) === ledgerRetrySignature(nextValues, options);
+}
+
+export function resolveLedgerClientRequestId(input: {
+  requestedId?: string | null;
+  previousPayload?: Record<string, unknown> | null;
+  formValues: Record<string, unknown>;
+  outletId?: string | null;
+  hotelId?: string;
+  createId?: () => string;
+}) {
+  const requestedId = input.requestedId?.trim() || '';
+  if (requestedId && !input.previousPayload) return requestedId;
+  if (requestedId && sameLedgerRetryPayload(input.previousPayload, input.formValues, {
+    outletId: input.outletId,
+    hotelId: input.hotelId
+  })) {
+    return requestedId;
+  }
+  return createLedgerClientRequestId(input.createId);
+}
+
 export async function postLedgerEntry(
   payload: Record<string, unknown>,
   options: { timeoutMs?: number; fetchImpl?: typeof fetch } = {}
 ): Promise<Omit<PostLedgerSuccess, 'clientRequestId'> | Omit<PostLedgerFailure, 'clientRequestId'>> {
   try {
-    const response = await fetchWithTimeout('/api/ledger', {
+    const { response, json } = await fetchJsonWithTimeout('/api/ledger', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -215,7 +268,6 @@ export async function postLedgerEntry(
       timeoutMs: options.timeoutMs ?? LEDGER_SAVE_TIMEOUT_MS,
       fetchImpl: options.fetchImpl
     });
-    const json = await response.json().catch(() => ({}));
     if (!response.ok) {
       const needsAttention = isLedgerAuthFailure(response.status);
       return {
@@ -245,6 +297,7 @@ export async function saveLedgerEntryWithQueue(
   formValues: Record<string, unknown>,
   options: {
     clientRequestId?: string;
+    previousPayload?: Record<string, unknown> | null;
     outletId?: string | null;
     userId: string;
     hotelId?: string;
@@ -255,20 +308,34 @@ export async function saveLedgerEntryWithQueue(
     now?: () => string;
   }
 ): Promise<PostLedgerResult> {
-  const clientRequestId = options.clientRequestId || createLedgerClientRequestId(options.createId);
   const hotelId = hotelIdFromLedgerValues(formValues, options.hotelId);
+  const existing = options.clientRequestId
+    ? readLedgerQueue(options.storage, options.userId).find((item) => item.clientRequestId === options.clientRequestId)
+    : undefined;
+  const previousPayload = existing?.payload ?? options.previousPayload ?? null;
+  const clientRequestId = resolveLedgerClientRequestId({
+    requestedId: options.clientRequestId,
+    previousPayload,
+    formValues,
+    outletId: options.outletId,
+    hotelId,
+    createId: options.createId
+  });
+  if (options.clientRequestId && options.clientRequestId !== clientRequestId) {
+    removeLedgerQueueItem(options.storage, options.userId, options.clientRequestId);
+  }
   const payload = buildLedgerPayload(formValues, {
     outletId: options.outletId,
     clientRequestId,
     hotelId
   });
-  const existing = readLedgerQueue(options.storage, options.userId).find((item) => item.clientRequestId === clientRequestId);
+  const queued = readLedgerQueue(options.storage, options.userId).find((item) => item.clientRequestId === clientRequestId);
   const baseItem: LedgerQueueItem = {
     clientRequestId,
     userId: options.userId,
-    hotelId: existing?.hotelId || hotelId,
+    hotelId: queued?.hotelId || hotelId,
     payload,
-    createdAt: existing?.createdAt || (options.now ? options.now() : new Date().toISOString()),
+    createdAt: queued?.createdAt || (options.now ? options.now() : new Date().toISOString()),
     status: 'pending',
     error: null
   };
