@@ -7,6 +7,13 @@ export function isFrontline(role: string | null | undefined): boolean {
   return role === 'front_desk' || role === 'cashier' || role === 'restaurant_staff';
 }
 
+/** Owner, manager, and front desk can create staff reservations. Cashier and restaurant staff cannot. */
+export function canCreateReservation(role: string | null | undefined): boolean {
+  return role === 'owner' || role === 'manager' || role === 'front_desk';
+}
+
+export const CREATE_RESERVATION_DENIED = 'Front desk, managers, and owners can create reservations.';
+
 export function allows(role: string | null | undefined, capability: Capability): boolean {
   if (role === 'owner') return true;
   if (role === 'manager') return capability !== 'owner';
@@ -14,7 +21,7 @@ export function allows(role: string | null | undefined, capability: Capability):
   return false;
 }
 
-const DAILY_EXACT = new Set(['/today', '/sales', '/offline', '/reservations/new', '/help']);
+const DAILY_EXACT = new Set(['/today', '/sales', '/offline', '/help']);
 
 /** Path only, without a host, query, or trailing slash. */
 export function normalizePathname(value: string | null | undefined): string {
@@ -38,6 +45,7 @@ export function canOpenPath(role: string | null | undefined, pathname: string): 
   pathname = normalizePathname(pathname);
   if (!isFrontline(role)) return true;
   if (!pathname) return true;
+  if (pathname === '/reservations/new') return canCreateReservation(role);
   if (DAILY_EXACT.has(pathname) || pathname === '/dashboard') return true;
   if (pathname.startsWith('/today/')) return true;
   if (pathname.startsWith('/sales/')) return true;

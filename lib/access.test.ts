@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { allows, canOpenPath, isFrontline } from './access.ts';
+import { APP_ROLES, allows, canCreateReservation, canOpenPath, isFrontline } from './access.ts';
 
 describe('staff access', () => {
   it('limits cashier, front desk, and restaurant staff to the daily screens', () => {
@@ -33,5 +33,30 @@ describe('staff access', () => {
   it('lets the owner open everything', () => {
     assert.equal(allows('owner', 'owner'), true);
     assert.equal(canOpenPath('owner', '/hotels'), true);
+  });
+
+  it('lets only owner, manager, and front desk create reservations', () => {
+    assert.deepEqual(
+      APP_ROLES.map((role) => [role, canCreateReservation(role)]),
+      [
+        ['owner', true],
+        ['manager', true],
+        ['front_desk', true],
+        ['cashier', false],
+        ['restaurant_staff', false]
+      ]
+    );
+    assert.equal(canCreateReservation(null), false);
+    assert.equal(canCreateReservation(undefined), false);
+    assert.equal(canCreateReservation('admin'), false);
+  });
+
+  it('opens /reservations/new only for roles that can create reservations', () => {
+    for (const role of APP_ROLES) {
+      assert.equal(canOpenPath(role, '/reservations/new'), canCreateReservation(role));
+      assert.equal(canOpenPath(role, '/reservations/new/'), canCreateReservation(role));
+    }
+    assert.equal(canOpenPath('cashier', '/reservations/abc'), true);
+    assert.equal(canOpenPath('restaurant_staff', '/reservations/abc'), true);
   });
 });
