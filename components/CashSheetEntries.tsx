@@ -13,7 +13,7 @@ import {
   clearSheetHeldMarks,
   markSentByThisTab,
   sheetAutoSendSkips,
-  sheetTabId,
+  watchSheetHeldMarks,
   wasSentByThisTab,
   withSheetSaving,
   writeSheetHeldMark,
@@ -50,6 +50,7 @@ import {
   type LedgerQueueItem
 } from '@/lib/ledger-entry-queue';
 import { currency } from '@/lib/money';
+import { sheetTabIdentity } from '@/lib/sheet-tab-id';
 import { createSheetBusyGate, startSheetAutoSend, watchSheetSource, type SheetAutoSendReason } from '@/lib/sheet-auto-send';
 
 type Row = {
@@ -62,6 +63,9 @@ type Row = {
 };
 
 /** Translated sentences for the "earlier entry didn't save" choice. {old} and {new} are filled with amounts. */
+/** Held-mark stamps written by this page load, so cleanup never clears another tab's. */
+const heldMarksThisLoad = new Set<string>();
+
 export type CashSheetChoiceCopy = {
   question: string;
   send: string;
@@ -227,7 +231,7 @@ export function CashSheetEntries({
       return;
     }
     const link = linkRef.current;
-    const gone = sheetSourceGone({ storage: window.localStorage, session: window.sessionStorage, userId, hotelId, outletId, link, formValues: readForm(formRef.current) });
+    const gone = sheetSourceGone({ storage: window.localStorage, session: window.sessionStorage, tabId: sheetTabIdentity().id, userId, hotelId, outletId, link, formValues: readForm(formRef.current) });
     if (gone && link) applyGone(gone, link.values, link.draft);
   }
 
@@ -242,7 +246,7 @@ export function CashSheetEntries({
     if (state.link?.draft && !String(readForm(formRef.current).amount ?? '').trim()) fillForm(state.link.draft);
     const formValues = readForm(formRef.current);
     if (state.goneLink) {
-      const gone = sheetSourceGone({ storage: window.localStorage, session: window.sessionStorage, userId, hotelId, outletId, link: state.goneLink, formValues });
+      const gone = sheetSourceGone({ storage: window.localStorage, session: window.sessionStorage, tabId: sheetTabIdentity().id, userId, hotelId, outletId, link: state.goneLink, formValues });
       if (gone) {
         applyGone(gone, state.goneLink.values, state.goneLink.draft);
         return;
@@ -261,12 +265,12 @@ export function CashSheetEntries({
   function goneFromChoice(item: LedgerQueueItem, origin: 'send' | 'replace', formAtClick: Record<string, unknown>) {
     if (origin === 'send') {
       // Staff chose the earlier amount; it was sent elsewhere: their edit is intentionally dropped.
-      const here = wasSentByThisTab(window.sessionStorage, userId, item.clientRequestId);
+      const here = wasSentByThisTab(window.sessionStorage, userId, item.clientRequestId, sheetTabIdentity().id);
       finishChoice(fillSheetCopy(here ? choiceCopy.sentHere : choiceCopy.sentElsewhere, { old: money(item.payload.amount) }), formAtClick);
       return;
     }
     const link = { clientRequestId: item.clientRequestId, values: item.payload };
-    const gone = sheetSourceGone({ storage: window.localStorage, session: window.sessionStorage, userId, hotelId, outletId, link, formValues: readForm(formRef.current) });
+    const gone = sheetSourceGone({ storage: window.localStorage, session: window.sessionStorage, tabId: sheetTabIdentity().id, userId, hotelId, outletId, link, formValues: readForm(formRef.current) });
     if (gone) applyGone(gone, item.payload, formAtClick);
     else finishChoice(choiceCopy.gone, formAtClick);
   }
@@ -445,7 +449,7 @@ export function CashSheetEntries({
     setSaving(true);
     setMessage('');
     try {
-      markSentByThisTab(window.sessionStorage, userId, item.clientRequestId);
+      markSentByThisTab(window.sessionStorage, userId, item.clientRequestId, sheetTabIdentity().id);
       const result = await sendHeldSheetEntry(item, { userId, hotelId, outletId, storage: window.localStorage });
       if (result.ok) {
         finishChoice(fillSheetCopy(choiceCopy.saved, { amount: money(item.payload.amount) }), formAtClick);
@@ -505,20 +509,32 @@ export function CashSheetEntries({
 
   // While a choice is pending here, mark the entry held in localStorage so every tab's auto-send skips it.
   // Refreshed every 30 s; it expires if this tab closes.
+  // Only the stamps this page load wrote are cleared (heldMarksThisLoad), never another tab's.
   useEffect(() => {
     if (!held) return;
-    const id = sheetTabId(window.sessionStorage);
-    const mark = () => writeSheetHeldMark(window.localStorage, userId, held.clientRequestId, id);
-    mark();
-    const timer = setInterval(mark, 30_000);
+    let stopped = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const identity = sheetTabIdentity();
+    const start = (id: string) => {
+      if (stopped) return;
+      const mark = () => {
+        heldMarksThisLoad.add(held.clientRequestId);
+        writeSheetHeldMark(window.localStorage, userId, held.clientRequestId, id);
+      };
+      mark();
+      timer = setInterval(mark, 30_000);
+    };
+    // Once the id is settled, re-mark in the same task as the previous cleanup, so a re-render that
+    // keeps the same entry held never leaves a gap another tab could send in.
+    if (identity.settled) start(identity.id);
+    else void identity.ready.then(start);
     return () => {
-      clearInterval(timer);
-      clearSheetHeldMarks(window.localStorage, userId, id);
+      stopped = true;
+      if (timer) clearInterval(timer);
+      clearSheetHeldMarks(window.localStorage, userId, identity.id, heldMarksThisLoad);
+      heldMarksThisLoad.clear();
     };
   }, [held, userId]);
-
-  useEffect(() => {
-  });
 
   useEffect(() => {
     const stop = watchSheetSource({
@@ -543,6 +559,8 @@ export function CashSheetEntries({
     }
     async function flush(reason: SheetAutoSendReason): Promise<{ remaining: number }> {
       if (!userId) return { remaining: 0 };
+      // Settle the tab id first (a Duplicate-tab copy gets its own) so holds and "sent here" are right.
+      const tabId = await sheetTabIdentity().ready;
       const storage = window.localStorage;
       // A save staff started is still running: leave its entry alone and look again shortly.
       if (busy.busy) return { remaining: sheetWaitingCount(readLedgerQueue(storage, userId)) };
@@ -566,7 +584,7 @@ export function CashSheetEntries({
       // another tab is holding for a choice; everything else queued auto-sends.
       const skipIds = [...new Set([
         ...(waiting ? [waiting.clientRequestId] : []),
-        ...sheetAutoSendSkips({ storage, userId, hotelId, outletId, tabId: sheetTabId(window.sessionStorage), link: linkRef.current, formValues })
+        ...sheetAutoSendSkips({ storage, userId, hotelId, outletId, tabId, link: linkRef.current, formValues })
       ])];
       const toSend = pendingLedgerEntries(storage, userId).filter((item) => !skipIds.includes(item.clientRequestId));
       if (!toSend.length) return { remaining: sheetWaitingCount(readLedgerQueue(storage, userId), skipIds) };
@@ -581,7 +599,7 @@ export function CashSheetEntries({
           userId,
           skipIds,
           resetStale: false,
-          onSend: (id) => markSentByThisTab(window.sessionStorage, userId, id)
+          onSend: (id) => markSentByThisTab(window.sessionStorage, userId, id, tabId)
         });
         if (result.synced.length > 0) {
           if (pendingRef.current && result.synced.includes(pendingRef.current.clientRequestId)) clearPending();
@@ -611,8 +629,19 @@ export function CashSheetEntries({
     }
     const sender = startSheetAutoSend({ win: window, doc: document, run: flush, isOnline: () => navigator.onLine });
     autoSendRef.current = sender;
+    // Another tab's hold went away (released, or expired because that tab closed): send now, even if
+    // the timer had disarmed because the held entry was the only thing waiting.
+    const holds = watchSheetHeldMarks({
+      win: window,
+      storage: window.localStorage,
+      userId,
+      tabId: () => sheetTabIdentity().id,
+      onRelease: () => void sender.kick('released')
+    });
+    void sheetTabIdentity().ready.then(() => holds.check());
     return () => {
       cancelled = true;
+      holds.stop();
       sender.stop();
       if (watchRef.current) clearInterval(watchRef.current);
       watchRef.current = null;

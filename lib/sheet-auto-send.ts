@@ -14,7 +14,7 @@
  */
 export const SHEET_AUTO_SEND_DELAYS_MS = [3_000, 6_000, 12_000, 24_000, 30_000];
 
-export type SheetAutoSendReason = 'load' | 'online' | 'visible' | 'timer';
+export type SheetAutoSendReason = 'load' | 'online' | 'visible' | 'timer' | 'released';
 
 type Listenable = {
   addEventListener(type: string, listener: (event: Event) => void): void;

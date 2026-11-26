@@ -518,8 +518,9 @@ export function sheetSourceGone(input: {
   outletId?: string | null;
   link: SheetFormLink | null;
   formValues: Record<string, unknown>;
-  /** This tab's sessionStorage: did this tab (any page of it) send the entry? */
+  /** This tab's sessionStorage and id: did this tab (any page of it) send the entry? */
   session?: StorageLike;
+  tabId?: string;
 }): SheetSourceGone | null {
   if (!input.link) return null;
   if (sheetQueueState(input.storage, input.userId, input.link.clientRequestId) !== 'gone') return null;
@@ -528,44 +529,41 @@ export function sheetSourceGone(input: {
   const values = !typed && input.link.draft ? input.link.draft : input.formValues;
   const newAmount = String(values.amount ?? '').trim();
   const unchanged = !newAmount || sameLedgerRetryPayload(input.link.values, values, { outletId: input.outletId, hotelId: input.hotelId });
-  const byThisTab = input.session ? wasSentByThisTab(input.session, input.userId, input.link.clientRequestId) : false;
+  const byThisTab = input.session && input.tabId ? wasSentByThisTab(input.session, input.userId, input.link.clientRequestId, input.tabId) : false;
   return { kind: unchanged ? 'unchanged' : 'edited', oldAmount: Number(input.link.values.amount || 0), newAmount, byThisTab };
-}
-
-/** One id per browser tab, in sessionStorage: survives navigation and reload in the same tab, not shared. */
-export function sheetTabId(session: StorageLike, createId: () => string = () => Math.random().toString(36).slice(2) + Date.now().toString(36)) {
-  const key = 'hotel_ops_tab_id';
-  try {
-    const existing = session.getItem(key);
-    if (existing) return existing;
-    const id = createId();
-    session.setItem(key, id);
-    return id;
-  } catch {
-    return 'tab';
-  }
 }
 
 function sentHereKey(userId: string) {
   return `hotel_ops_sheet_sent_here:${userId}`;
 }
 
+/**
+ * "This tab sent it", stamped with the tab id. Duplicate tab copies sessionStorage, but the copy gets a
+ * new tab id (lib/sheet-tab-id.ts), so it never claims the original's sends.
+ */
+function readSentHere(session: StorageLike, userId: string, tabId: string): string[] {
+  const raw = session.getItem(sentHereKey(userId));
+  if (!raw) return [];
+  const parsed = JSON.parse(raw) as { tabId?: unknown; ids?: unknown } | unknown[];
+  // Older format (a bare list) has no owner: trust nobody's claim.
+  if (!parsed || Array.isArray(parsed) || parsed.tabId !== tabId || !Array.isArray(parsed.ids)) return [];
+  return parsed.ids.filter((id): id is string => typeof id === 'string');
+}
+
 /** Record that this tab is sending (or sent) the entry, before the request goes out. */
-export function markSentByThisTab(session: StorageLike, userId: string, clientRequestId: string) {
+export function markSentByThisTab(session: StorageLike, userId: string, clientRequestId: string, tabId: string) {
   try {
-    const raw = session.getItem(sentHereKey(userId));
-    const ids = raw ? (JSON.parse(raw) as unknown[]).filter((id): id is string => typeof id === 'string') : [];
+    const ids = readSentHere(session, userId, tabId);
     if (!ids.includes(clientRequestId)) ids.push(clientRequestId);
-    session.setItem(sentHereKey(userId), JSON.stringify(ids.slice(-50)));
+    session.setItem(sentHereKey(userId), JSON.stringify({ tabId, ids: ids.slice(-50) }));
   } catch {
     // Nothing to record into: the note then says "another tab", the safe direction.
   }
 }
 
-export function wasSentByThisTab(session: StorageLike, userId: string, clientRequestId: string) {
+export function wasSentByThisTab(session: StorageLike, userId: string, clientRequestId: string, tabId: string) {
   try {
-    const raw = session.getItem(sentHereKey(userId));
-    return raw ? (JSON.parse(raw) as unknown[]).includes(clientRequestId) : false;
+    return readSentHere(session, userId, tabId).includes(clientRequestId);
   } catch {
     return false;
   }
@@ -573,51 +571,163 @@ export function wasSentByThisTab(session: StorageLike, userId: string, clientReq
 
 /**
  * "A choice is pending on this entry in tab X": in localStorage so every tab's auto-send skips it.
- * The holding tab refreshes it; it expires (ttl) if that tab closed.
+ * Each holding tab has its own stamp per entry (a duplicate holding the same entry does not
+ * overwrite the original's). The holder refreshes it; it expires (ttl) if that tab closed.
  */
 export const SHEET_HELD_MARK_TTL_MS = 90_000;
 
-function heldMarkKey(userId: string) {
+export function sheetHeldMarkKey(userId: string) {
   return `hotel_ops_sheet_held:${userId}`;
 }
 
-type HeldMarks = Record<string, { tabId: string; at: number }>;
+/** clientRequestId -> tabId -> when that tab last confirmed it is holding it. */
+type HeldMarks = Record<string, Record<string, number>>;
 
 function readHeldMarks(storage: StorageLike, userId: string): HeldMarks {
   try {
-    const raw = storage.getItem(heldMarkKey(userId));
+    const raw = storage.getItem(sheetHeldMarkKey(userId));
     const parsed = raw ? JSON.parse(raw) : {};
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as HeldMarks : {};
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const marks: HeldMarks = {};
+    for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!value || typeof value !== 'object') continue;
+      const old = value as { tabId?: unknown; at?: unknown };
+      // d9d0f07 format: { tabId, at }.
+      if (typeof old.tabId === 'string') marks[id] = { [old.tabId]: Number(old.at || 0) };
+      else {
+        const holders: Record<string, number> = {};
+        for (const [tab, at] of Object.entries(value as Record<string, unknown>)) holders[tab] = Number(at || 0);
+        marks[id] = holders;
+      }
+    }
+    return marks;
   } catch {
     return {};
   }
 }
 
-export function writeSheetHeldMark(storage: StorageLike, userId: string, clientRequestId: string, tabId: string, now = Date.now()) {
-  const marks = readHeldMarks(storage, userId);
-  marks[clientRequestId] = { tabId, at: now };
-  try { storage.setItem(heldMarkKey(userId), JSON.stringify(marks)); } catch { /* best effort */ }
+function writeHeldMarks(storage: StorageLike, userId: string, marks: HeldMarks) {
+  try {
+    if (Object.keys(marks).length) storage.setItem(sheetHeldMarkKey(userId), JSON.stringify(marks));
+    else storage.removeItem(sheetHeldMarkKey(userId));
+  } catch { /* best effort */ }
 }
 
-export function clearSheetHeldMarks(storage: StorageLike, userId: string, tabId: string) {
+function pruneHeldMarks(marks: HeldMarks, now: number, ttlMs: number) {
+  for (const [id, holders] of Object.entries(marks)) {
+    for (const [tab, at] of Object.entries(holders)) if (now - at >= ttlMs) delete holders[tab];
+    if (!Object.keys(holders).length) delete marks[id];
+  }
+  return marks;
+}
+
+/** Mark (or refresh) this tab's hold on an entry; expired stamps of any tab are pruned on the way. */
+export function writeSheetHeldMark(storage: StorageLike, userId: string, clientRequestId: string, tabId: string, now = Date.now(), ttlMs = SHEET_HELD_MARK_TTL_MS) {
+  const marks = pruneHeldMarks(readHeldMarks(storage, userId), now, ttlMs);
+  marks[clientRequestId] = { ...(marks[clientRequestId] ?? {}), [tabId]: now };
+  writeHeldMarks(storage, userId, marks);
+}
+
+/**
+ * Drop this tab's stamps on the entries it marked in THIS page load (tracked in memory by the caller),
+ * never other tabs' stamps, even if they share the id.
+ */
+export function clearSheetHeldMarks(storage: StorageLike, userId: string, tabId: string, clientRequestIds: Iterable<string>) {
   const marks = readHeldMarks(storage, userId);
   let changed = false;
-  for (const [id, mark] of Object.entries(marks)) {
-    if (mark.tabId === tabId) {
-      delete marks[id];
+  for (const id of clientRequestIds) {
+    if (marks[id] && tabId in marks[id]) {
+      delete marks[id][tabId];
+      if (!Object.keys(marks[id]).length) delete marks[id];
       changed = true;
     }
   }
-  if (changed) {
-    try { storage.setItem(heldMarkKey(userId), JSON.stringify(marks)); } catch { /* best effort */ }
-  }
+  if (changed) writeHeldMarks(storage, userId, marks);
 }
 
 /** Entries some other live tab is holding for a choice: auto-send must skip them. */
 export function sheetHeldElsewhere(storage: StorageLike, userId: string, tabId: string, now = Date.now(), ttlMs = SHEET_HELD_MARK_TTL_MS) {
   return Object.entries(readHeldMarks(storage, userId))
-    .filter(([, mark]) => mark.tabId !== tabId && now - Number(mark.at || 0) < ttlMs)
+    .filter(([, holders]) => Object.entries(holders).some(([tab, at]) => tab !== tabId && now - at < ttlMs))
     .map(([id]) => id);
+}
+
+/** When the next other-tab hold expires (ms timestamp), or null if none. */
+export function nextSheetHeldExpiry(storage: StorageLike, userId: string, tabId: string, now = Date.now(), ttlMs = SHEET_HELD_MARK_TTL_MS) {
+  let next: number | null = null;
+  for (const holders of Object.values(readHeldMarks(storage, userId))) {
+    for (const [tab, at] of Object.entries(holders)) {
+      if (tab === tabId || now - at >= ttlMs) continue;
+      const expires = at + ttlMs;
+      if (next === null || expires < next) next = expires;
+    }
+  }
+  return next;
+}
+
+/**
+ * Start an auto-send pass when another tab's hold goes away: on the storage event for the held-mark
+ * key (cleared or released), and at the expiry time of the next hold (a tab that closed without
+ * cleaning up). A refresh that keeps the same entries held does not trigger anything.
+ */
+export function watchSheetHeldMarks(options: {
+  win: { addEventListener(type: string, listener: (event: Event) => void): void; removeEventListener(type: string, listener: (event: Event) => void): void };
+  storage: StorageLike;
+  userId: string;
+  tabId: () => string;
+  onRelease: () => void;
+  now?: () => number;
+  ttlMs?: number;
+  setTimer?: (callback: () => void, ms: number) => unknown;
+  clearTimer?: (handle: unknown) => void;
+}) {
+  const now = options.now ?? (() => Date.now());
+  const ttlMs = options.ttlMs ?? SHEET_HELD_MARK_TTL_MS;
+  const setTimer = options.setTimer ?? ((callback, ms) => setTimeout(callback, ms));
+  const clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
+  const key = sheetHeldMarkKey(options.userId);
+  let timer: unknown = null;
+  let stopped = false;
+  const heldNow = () => new Set(sheetHeldElsewhere(options.storage, options.userId, options.tabId(), now(), ttlMs));
+  let last = heldNow();
+
+  function schedule() {
+    if (timer !== null) clearTimer(timer);
+    timer = null;
+    if (stopped) return;
+    const next = nextSheetHeldExpiry(options.storage, options.userId, options.tabId(), now(), ttlMs);
+    if (next === null) return;
+    timer = setTimer(() => {
+      timer = null;
+      check();
+    }, Math.max(0, next - now()) + 50);
+  }
+
+  function check() {
+    if (stopped) return;
+    const current = heldNow();
+    const released = [...last].some((id) => !current.has(id));
+    last = current;
+    schedule();
+    if (released) options.onRelease();
+  }
+
+  const onStorage = (event: Event) => {
+    const changed = (event as Event & { key?: string | null }).key;
+    if (changed == null || changed === key) check();
+  };
+  options.win.addEventListener('storage', onStorage);
+  schedule();
+  return {
+    /** Re-read now (e.g. after this tab's identity settled). */
+    check,
+    stop() {
+      stopped = true;
+      if (timer !== null) clearTimer(timer);
+      timer = null;
+      options.win.removeEventListener('storage', onStorage);
+    }
+  };
 }
 
 /** Entries to keep out of an auto-send pass: the one held here (form or kept draft differs) and those held in other tabs. */
