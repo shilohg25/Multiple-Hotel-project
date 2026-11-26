@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { isFrontline } from '@/lib/access';
+import { canCreateReservation, isFrontline } from '@/lib/access';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { requireStaff, canAccessHotel } from '@/lib/auth';
 import { businessToday, localDayBounds } from '@/lib/date';
@@ -116,7 +116,7 @@ export default async function DashboardPage() {
           <p className="mt-1 text-slate-500">Reservations, payment proofs, and hotel operations.</p>
         </div>
         <div className="flex gap-2">
-          <Link href="/reservations/new" className="btn-primary">New reservation</Link>
+          {canCreateReservation(staff.profile.role) ? <Link href="/reservations/new" className="btn-primary">New reservation</Link> : null}
           <Link href={hotels[0] ? `/book/${hotels[0].slug}` : '/hotels'} className="btn-secondary">Public booking page</Link>
         </div>
       </div>

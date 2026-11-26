@@ -40,7 +40,8 @@ export function ReservationBoard({
   rooms,
   reservations,
   from,
-  to
+  to,
+  canCreate
 }: {
   hotel: Hotel;
   hotels: Hotel[];
@@ -48,6 +49,7 @@ export function ReservationBoard({
   reservations: Reservation[];
   from: string;
   to: string;
+  canCreate: boolean;
 }) {
   const [density, setDensity] = useState<Density>('compact');
   const [roomSearch, setRoomSearch] = useState('');
@@ -162,7 +164,7 @@ export function ReservationBoard({
               {value === 'compact' ? 'Compact' : 'Comfortable'}
             </button>
           ))}
-          <Link href="/reservations/new" className="btn-primary">New reservation</Link>
+          {canCreate ? <Link href="/reservations/new" className="btn-primary">New reservation</Link> : null}
         </div>
       </div>
 

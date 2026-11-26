@@ -1,3 +1,5 @@
+import Link from 'next/link';
+import { canCreateReservation } from '@/lib/access';
 import { requireStaff, canAccessHotel } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { ReservationForm } from '@/components/ReservationForm';
@@ -5,6 +7,15 @@ import type { Hotel, Room } from '@/types/app';
 
 export default async function NewReservationPage() {
   const staff = await requireStaff();
+  if (!canCreateReservation(staff.profile.role)) {
+    return (
+      <section className="card mx-auto max-w-lg space-y-3 p-6">
+        <h1 className="text-2xl font-black">You cannot create a reservation</h1>
+        <p className="text-sm text-slate-600">Front desk, managers, and owners can create reservations. Cashier and restaurant staff use Today and daily sales.</p>
+        <Link href="/today" className="btn-primary">Go to Today</Link>
+      </section>
+    );
+  }
   const [{ data: hotelsRaw }, { data: roomsRaw }] = await Promise.all([
     supabaseAdmin.from('hotels').select('*').eq('active', true).order('name'),
     supabaseAdmin.from('rooms').select('*').eq('active', true).order('sort_order').order('name')

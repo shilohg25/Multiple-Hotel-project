@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { canCreateReservation, CREATE_RESERVATION_DENIED } from '@/lib/access';
 import { canAccessHotel } from '@/lib/auth';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { businessToday, calendarDateRefusal } from '@/lib/date';
@@ -17,6 +18,7 @@ export async function POST(request: Request) {
   const denied = denyUnless(auth.staff, 'daily');
   if (denied) return denied;
   const staff = auth.staff;
+  if (!canCreateReservation(staff.profile.role)) return jsonError(CREATE_RESERVATION_DENIED, 403);
 
   const payload = await request.json();
   const hotelId = String(payload.hotel_id || '');
