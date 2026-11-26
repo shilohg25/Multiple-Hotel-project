@@ -169,3 +169,46 @@ export async function saveSheetEntry(
     return { ok: false, error: 'Could not save this entry.', canRetry: true };
   }
 }
+
+/** The entry fields read from the sheet form, without any request id. */
+export function sheetEntryPayload(
+  fields: { category?: unknown; description?: unknown; amount?: unknown; payment_method?: unknown },
+  scope: { hotelId: string; businessDate: string; outletId?: string | null }
+): Record<string, unknown> {
+  const category = String(fields.category || 'other');
+  const payload: Record<string, unknown> = {
+    hotel_id: scope.hotelId,
+    entry_date: scope.businessDate,
+    category,
+    description: String(fields.description || ''),
+    amount: fields.amount ?? '',
+    payment_method: fields.payment_method || 'cash',
+    is_collectible: category === 'collectible' ? 'true' : 'false'
+  };
+  if (scope.outletId) payload.outlet_id = scope.outletId;
+  return payload;
+}
+
+function stableJson(value: Record<string, unknown>): string {
+  return JSON.stringify(Object.keys(value).sort().map((key) => [key, value[key]]));
+}
+
+export type SheetEntryAttempt = { payload: Record<string, unknown>; requestId: string };
+
+/**
+ * Request id for a save or Retry, built from what is in the form NOW (same rule as PR #33):
+ * the same entry as the last failed try keeps its client_request_id, so a late server save is not
+ * saved twice; an edited entry is a different entry and gets a new id.
+ */
+export function nextSheetEntryAttempt(
+  previous: SheetEntryAttempt | null,
+  payload: Record<string, unknown>,
+  newId: () => string
+): SheetEntryAttempt {
+  if (previous && stableJson(previous.payload) === stableJson(payload)) return { payload, requestId: previous.requestId };
+  return { payload, requestId: newId() };
+}
+
+export function sheetEntryBody(attempt: SheetEntryAttempt): Record<string, unknown> {
+  return { ...attempt.payload, client_request_id: attempt.requestId };
+}

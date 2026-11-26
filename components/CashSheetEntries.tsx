@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { saveSheetEntry, SHEET_ENTRY_CATEGORIES, SHEET_ENTRY_METHODS } from '@/lib/cash-sheet';
+import { nextSheetEntryAttempt, saveSheetEntry, sheetEntryBody, sheetEntryPayload, SHEET_ENTRY_CATEGORIES, SHEET_ENTRY_METHODS, type SheetEntryAttempt } from '@/lib/cash-sheet';
 import { currency } from '@/lib/money';
 
 type Row = {
@@ -40,20 +40,28 @@ export function CashSheetEntries({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
 
-  // The last body that failed, kept so Retry sends the same entry with the same client_request_id.
-  const [pending, setPending] = useState<{ body: Record<string, unknown>; form: HTMLFormElement } | null>(null);
+  // The last try that failed. Retry rebuilds the entry from the form as it is now and keeps the
+  // request id only when nothing was edited (same rule as PR #33).
+  const [failed, setFailed] = useState<SheetEntryAttempt | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
-  async function submit(body: Record<string, unknown>, formElement: HTMLFormElement) {
+  async function submit(formElement: HTMLFormElement) {
+    const form = new FormData(formElement);
+    const payload = sheetEntryPayload(
+      { category: form.get('category'), description: form.get('description'), amount: form.get('amount'), payment_method: form.get('payment_method') },
+      { hotelId, businessDate, outletId }
+    );
+    const attempt = nextSheetEntryAttempt(failed, payload, () => crypto.randomUUID());
     setSaving(true);
     setMessage('');
     try {
-      const result = await saveSheetEntry(body);
+      const result = await saveSheetEntry(sheetEntryBody(attempt));
       if (!result.ok) {
         setMessage(result.error);
-        setPending(result.canRetry ? { body, form: formElement } : null);
+        setFailed(result.canRetry ? attempt : null);
         return;
       }
-      setPending(null);
+      setFailed(null);
       formElement.reset();
       setMessage('Entry saved.');
       router.refresh();
@@ -64,21 +72,7 @@ export function CashSheetEntries({
 
   async function addEntry(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const formElement = event.currentTarget;
-    const form = new FormData(formElement);
-    const category = String(form.get('category') || 'other');
-    const body: Record<string, unknown> = {
-      hotel_id: hotelId,
-      entry_date: businessDate,
-      category,
-      description: String(form.get('description') || ''),
-      amount: form.get('amount'),
-      payment_method: form.get('payment_method') || 'cash',
-      is_collectible: category === 'collectible' ? 'true' : 'false',
-      client_request_id: crypto.randomUUID()
-    };
-    if (outletId) body.outlet_id = outletId;
-    await submit(body, formElement);
+    await submit(event.currentTarget);
   }
 
   return (
@@ -117,7 +111,7 @@ export function CashSheetEntries({
         {locked ? (
           <p className="text-sm font-semibold">This day is locked. A manager has to unlock it before anything new is added.</p>
         ) : (
-          <form onSubmit={addEntry} className="space-y-3">
+          <form ref={formRef} onSubmit={addEntry} className="space-y-3">
             {message ? <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm" role="status">{message}</p> : null}
             <label className="block space-y-1">What is it?
               <select name="category" className="w-full" defaultValue="other">
@@ -138,8 +132,8 @@ export function CashSheetEntries({
               <input name="description" className="w-full" />
             </label>
             <button className="btn-primary w-full" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save entry'}</button>
-            {pending && !saving ? (
-              <button className="btn-secondary w-full" type="button" onClick={() => void submit(pending.body, pending.form)}>Retry</button>
+            {failed && !saving ? (
+              <button className="btn-secondary w-full" type="button" onClick={() => { if (formRef.current) void submit(formRef.current); }}>Retry</button>
             ) : null}
           </form>
         )}

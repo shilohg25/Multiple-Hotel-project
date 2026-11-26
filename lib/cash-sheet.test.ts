@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { CASH_DENOMINATIONS, closeFiguresFromCounts, figuresFromLedger, resolveReturnToFund, summarizeClose, type LedgerLike } from './day-close.ts';
-import { saveSheetEntry, SHEET_ENTRY_OFFLINE_MESSAGE, SHEET_ENTRY_TIMEOUT_MESSAGE, SHEET_ENTRY_CATEGORIES, sheetBaseFigures, sheetCloseSummary, sheetInitialReturnToFund, sheetReturnToFund, splitSheetLedger, type SavedCloseRow, type SheetLedgerRow } from './cash-sheet.ts';
+import { nextSheetEntryAttempt, sheetEntryBody, sheetEntryPayload, saveSheetEntry, SHEET_ENTRY_OFFLINE_MESSAGE, SHEET_ENTRY_TIMEOUT_MESSAGE, SHEET_ENTRY_CATEGORIES, sheetBaseFigures, sheetCloseSummary, sheetInitialReturnToFund, sheetReturnToFund, splitSheetLedger, type SavedCloseRow, type SheetLedgerRow } from './cash-sheet.ts';
 
 /*
  * FROZEN copy of the close path at origin/main f392e0c (lib/day-close.ts, app/api/day-closes/route.ts,
@@ -364,5 +364,53 @@ describe('sheet Save entry never hangs', () => {
     assert.deepEqual(await saveSheetEntry(body, { fetchImpl: flaky }), { ok: true });
     assert.equal(sent[0], sent[1]);
     assert.ok(sent[1].includes('"client_request_id":"req-1"'));
+  });
+});
+
+describe('sheet Retry uses what is in the form now', () => {
+  const scope = { hotelId: 'h1', businessDate: '2026-11-27', outletId: null };
+  const ids = () => { let n = 0; return () => `id-${++n}`; };
+
+  it('save 650, time out, edit to 560, Retry: 560 is sent with a new request id', async () => {
+    const newId = ids();
+    const first = nextSheetEntryAttempt(null, sheetEntryPayload({ category: 'other', amount: '650', payment_method: 'cash', description: 'TEST- snack' }, scope), newId);
+    const stalled = ((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => { const error = new Error('aborted'); error.name = 'AbortError'; reject(error); }, { once: true });
+    })) as typeof fetch;
+    const timedOut = await saveSheetEntry(sheetEntryBody(first), { fetchImpl: stalled, timeoutMs: 30 });
+    assert.equal(timedOut.ok, false);
+
+    const sent: Record<string, unknown>[] = [];
+    const ok = ((_input: RequestInfo | URL, init?: RequestInit) => { sent.push(JSON.parse(String(init?.body))); return Promise.resolve(Response.json({ entry: { id: 'x' } })); }) as typeof fetch;
+    const retry = nextSheetEntryAttempt(first, sheetEntryPayload({ category: 'other', amount: '560', payment_method: 'cash', description: 'TEST- snack' }, scope), newId);
+    assert.deepEqual(await saveSheetEntry(sheetEntryBody(retry), { fetchImpl: ok }), { ok: true });
+    assert.equal(sent[0].amount, '560');
+    assert.equal(sent[0].client_request_id, 'id-2');
+    assert.notEqual(retry.requestId, first.requestId);
+  });
+
+  it('Retry with nothing edited keeps the same request id', () => {
+    const newId = ids();
+    const fields = { category: 'expense', amount: '120', payment_method: 'cash', description: 'TEST- ice' };
+    const first = nextSheetEntryAttempt(null, sheetEntryPayload(fields, scope), newId);
+    const retry = nextSheetEntryAttempt(first, sheetEntryPayload({ ...fields }, scope), newId);
+    assert.equal(retry.requestId, first.requestId);
+    assert.deepEqual(sheetEntryBody(retry), sheetEntryBody(first));
+  });
+
+  it('any edited field (category, method, note, amount) gets a new id', () => {
+    const base = { category: 'other', amount: '100', payment_method: 'cash', description: 'a' };
+    for (const change of [{ category: 'expense' }, { payment_method: 'gcash' }, { description: 'b' }, { amount: '100.5' }]) {
+      const newId = ids();
+      const first = nextSheetEntryAttempt(null, sheetEntryPayload(base, scope), newId);
+      const next = nextSheetEntryAttempt(first, sheetEntryPayload({ ...base, ...change }, scope), newId);
+      assert.notEqual(next.requestId, first.requestId, JSON.stringify(change));
+    }
+  });
+
+  it('builds the same entry fields as before (collectible flag, outlet, no id inside the payload)', () => {
+    const payload = sheetEntryPayload({ category: 'collectible', amount: '800', payment_method: 'cash', description: '' }, { ...scope, outletId: 'cafe' });
+    assert.deepEqual(payload, { hotel_id: 'h1', entry_date: '2026-11-27', category: 'collectible', description: '', amount: '800', payment_method: 'cash', is_collectible: 'true', outlet_id: 'cafe' });
+    assert.equal('client_request_id' in payload, false);
   });
 });
