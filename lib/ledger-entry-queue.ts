@@ -6,6 +6,9 @@ export const LEDGER_NETWORK_ERROR = "Couldn't save this entry. Check your connec
 export const LEDGER_TIMEOUT_ERROR = "Couldn't save this entry. The request timed out. Check your connection and try again.";
 export const LEDGER_QUEUE_HINT = "It's saved on this device and will be sent when you're back online.";
 export const LEDGER_NEEDS_ATTENTION_ERROR = "This entry is still saved on this device but could not be sent. Sign in with the same account and try again.";
+export const LEDGER_LEGACY_QUEUE_ATTENTION = "This entry was saved on this device from an earlier session. Review it, then press Retry if it should be sent.";
+export const LEDGER_409_BACKOFF_MS = 2_000;
+export const LEDGER_409_BACKOFF_MAX_MS = 30_000;
 
 export type StorageLike = {
   getItem(key: string): string | null;
@@ -23,6 +26,8 @@ export type LedgerQueueItem = {
   createdAt: string;
   status: LedgerQueueStatus;
   error: string | null;
+  retryAfter?: string | null;
+  retryCount?: number;
 };
 
 export type PostLedgerSuccess = {
@@ -100,10 +105,32 @@ export function ledgerSaveFailureMessage(error: unknown): string {
   return LEDGER_NETWORK_ERROR;
 }
 
-export function isRetryableLedgerStatus(status: number | undefined): boolean {
+export function isLockedDayLedgerError(error?: string | null): boolean {
+  const text = (error || '').toLowerCase();
+  if (!text) return false;
+  return text.includes('day is locked') || (text.includes('locked') && text.includes('unlock'));
+}
+
+export function isRetryableLedgerStatus(status: number | undefined, error?: string | null): boolean {
   if (status == null) return true;
   if (status >= 500) return true;
-  return status === 408 || status === 429;
+  if (status === 408 || status === 429) return true;
+  if (status === 409) return !isLockedDayLedgerError(error);
+  return false;
+}
+
+function ledgerBackoffDelayMs(retryCount: number) {
+  const delay = LEDGER_409_BACKOFF_MS * (2 ** Math.max(0, retryCount));
+  return Math.min(LEDGER_409_BACKOFF_MAX_MS, delay);
+}
+
+export function nextLedgerRetryAfter(retryCount: number, now: string | Date) {
+  const base = typeof now === 'string' ? new Date(now) : now;
+  return new Date(base.getTime() + ledgerBackoffDelayMs(retryCount)).toISOString();
+}
+
+function isWaitingForLedgerBackoff(item: LedgerQueueItem, now: string) {
+  return typeof item.retryAfter === 'string' && item.retryAfter > now;
 }
 
 export function isLedgerAuthFailure(status: number | undefined): boolean {
@@ -144,9 +171,10 @@ export function removeLedgerQueueItem(storage: StorageLike, userId: string, clie
   );
 }
 
-export function pendingLedgerEntries(storage: StorageLike, userId: string): LedgerQueueItem[] {
+export function pendingLedgerEntries(storage: StorageLike, userId: string, now: string = new Date().toISOString()): LedgerQueueItem[] {
   return readLedgerQueue(storage, userId)
     .filter((item) => item.status === 'pending' || item.status === 'failed')
+    .filter((item) => !isWaitingForLedgerBackoff(item, now))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
@@ -162,7 +190,96 @@ export function retryableLedgerEntries(storage: StorageLike, userId: string): Le
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
+export function migrateLegacyLedgerQueue(storage: StorageLike, userId: string) {
+  const raw = storage.getItem(LEDGER_QUEUE_STORAGE_KEY);
+  if (!raw) return { migrated: 0, needsAttention: 0 };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    storage.removeItem(LEDGER_QUEUE_STORAGE_KEY);
+    return { migrated: 0, needsAttention: 0 };
+  }
+
+  if (!Array.isArray(parsed)) {
+    storage.removeItem(LEDGER_QUEUE_STORAGE_KEY);
+    return { migrated: 0, needsAttention: 0 };
+  }
+
+  let migrated = 0;
+  let needsAttention = 0;
+  for (const value of parsed) {
+    const item = normalizeLegacyLedgerQueueItem(value, userId);
+    if (!item) continue;
+    const existing = readLedgerQueue(storage, item.userId);
+    if (!existing.some((entry) => entry.clientRequestId === item.clientRequestId)) {
+      upsertLedgerQueueItem(storage, item.userId, item);
+    }
+    migrated += 1;
+    if (item.status === 'needs_attention') needsAttention += 1;
+  }
+  storage.removeItem(LEDGER_QUEUE_STORAGE_KEY);
+  return { migrated, needsAttention };
+}
+
+function normalizeLegacyLedgerQueueItem(value: unknown, currentUserId: string): LedgerQueueItem | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Record<string, unknown>;
+  const clientRequestId = typeof raw.clientRequestId === 'string' ? raw.clientRequestId.trim() : '';
+  if (!clientRequestId) return null;
+  const payload = raw.payload && typeof raw.payload === 'object' ? raw.payload as Record<string, unknown> : null;
+  if (!payload) return null;
+  const payloadHotel = payload.hotel_id;
+  const hotelId = (typeof raw.hotelId === 'string' && raw.hotelId.trim())
+    || (typeof payloadHotel === 'string' && payloadHotel.trim())
+    || '';
+  if (!hotelId) return null;
+  const rawUser = typeof raw.userId === 'string' ? raw.userId.trim() : '';
+  const createdAt = typeof raw.createdAt === 'string' && raw.createdAt ? raw.createdAt : new Date().toISOString();
+  const rawStatus = raw.status;
+  const status: LedgerQueueStatus = rawStatus === 'failed' || rawStatus === 'needs_attention' || rawStatus === 'pending'
+    ? rawStatus
+    : 'pending';
+  const error = typeof raw.error === 'string' ? raw.error : null;
+
+  if (rawUser && rawUser !== currentUserId) {
+    return {
+      clientRequestId,
+      userId: rawUser,
+      hotelId,
+      payload,
+      createdAt,
+      status,
+      error
+    };
+  }
+
+  if (!rawUser) {
+    return {
+      clientRequestId,
+      userId: currentUserId,
+      hotelId,
+      payload,
+      createdAt,
+      status: 'needs_attention',
+      error: error || LEDGER_LEGACY_QUEUE_ATTENTION
+    };
+  }
+
+  return {
+    clientRequestId,
+    userId: currentUserId,
+    hotelId,
+    payload,
+    createdAt,
+    status,
+    error
+  };
+}
+
 export function resetStaleSyncingLedgerEntries(storage: StorageLike, userId: string) {
+  migrateLegacyLedgerQueue(storage, userId);
   const items = readLedgerQueue(storage, userId);
   let changed = false;
   const reset = items.map((item) => {
@@ -270,10 +387,11 @@ export async function postLedgerEntry(
     });
     if (!response.ok) {
       const needsAttention = isLedgerAuthFailure(response.status);
+      const error = errorMessageFromJson(json, needsAttention ? LEDGER_NEEDS_ATTENTION_ERROR : 'Unable to save ledger entry.');
       return {
         ok: false,
-        error: errorMessageFromJson(json, needsAttention ? LEDGER_NEEDS_ATTENTION_ERROR : 'Unable to save ledger entry.'),
-        retryable: isRetryableLedgerStatus(response.status),
+        error,
+        retryable: isRetryableLedgerStatus(response.status, error),
         needsAttention,
         status: response.status
       };
@@ -359,10 +477,15 @@ export async function saveLedgerEntryWithQueue(
       error: result.error || LEDGER_NEEDS_ATTENTION_ERROR
     });
   } else if (result.retryable) {
+    const inProgress409 = result.status === 409;
+    const retryCount = queued?.retryCount || 0;
+    const now = options.now ? options.now() : new Date().toISOString();
     upsertLedgerQueueItem(options.storage, options.userId, {
       ...baseItem,
-      status: 'failed',
-      error: result.error
+      status: inProgress409 ? 'pending' : 'failed',
+      error: result.error,
+      retryCount: inProgress409 ? retryCount + 1 : retryCount,
+      retryAfter: inProgress409 ? nextLedgerRetryAfter(retryCount, now) : null
     });
   } else {
     removeLedgerQueueItem(options.storage, options.userId, clientRequestId);
@@ -377,6 +500,7 @@ export async function syncPendingLedgerEntries(options: {
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
   isOnline?: () => boolean;
+  now?: () => string;
 }): Promise<SyncLedgerQueueResult> {
   if (options.isOnline && !options.isOnline()) {
     return { processed: 0, synced: 0, failed: 0, lastError: LEDGER_NETWORK_ERROR };
@@ -384,8 +508,9 @@ export async function syncPendingLedgerEntries(options: {
 
   resetStaleSyncingLedgerEntries(options.storage, options.userId);
   const result: SyncLedgerQueueResult = { processed: 0, synced: 0, failed: 0, lastError: null };
+  const now = options.now ? options.now() : new Date().toISOString();
 
-  for (const item of pendingLedgerEntries(options.storage, options.userId)) {
+  for (const item of pendingLedgerEntries(options.storage, options.userId, now)) {
     result.processed += 1;
     const saved = await saveLedgerEntryWithQueue(item.payload, {
       clientRequestId: item.clientRequestId,

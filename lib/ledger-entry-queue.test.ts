@@ -1,13 +1,17 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  LEDGER_LEGACY_QUEUE_ATTENTION,
   LEDGER_NEEDS_ATTENTION_ERROR,
   LEDGER_NETWORK_ERROR,
   LEDGER_QUEUE_HINT,
+  LEDGER_QUEUE_STORAGE_KEY,
   LEDGER_TIMEOUT_ERROR,
   buildLedgerPayload,
   createMemoryStorage,
+  isRetryableLedgerStatus,
   ledgerQueueStorageKey,
+  migrateLegacyLedgerQueue,
   needsAttentionLedgerEntries,
   pendingLedgerEntries,
   postLedgerEntry,
@@ -15,9 +19,11 @@ import {
   readLedgerQueue,
   resetStaleSyncingLedgerEntries,
   resolveLedgerClientRequestId,
+  retryableLedgerEntries,
   saveLedgerEntryWithQueue,
   syncPendingLedgerEntries
 } from './ledger-entry-queue.ts';
+import { LEDGER_IDEMPOTENCY_IN_PROGRESS } from './ledger-idempotency.ts';
 
 const USER_A = 'user-a';
 const USER_B = 'user-b';
@@ -465,5 +471,124 @@ describe('ledger entry queue', () => {
     assert.equal(edited.clientRequestId, 'new-1');
     assert.deepEqual(posted, ['old-id:10', 'old-id:10', 'new-1:25']);
     assert.equal(readLedgerQueue(storage, USER_A).length, 0);
+  });
+
+
+  it('keeps an in-progress 409 pending with backoff and Retry still visible', async () => {
+    assert.equal(isRetryableLedgerStatus(409), true);
+    assert.equal(isRetryableLedgerStatus(409, LEDGER_IDEMPOTENCY_IN_PROGRESS), true);
+    assert.equal(isRetryableLedgerStatus(409, 'This day is locked. A manager has to unlock it before anything else can be entered.'), false);
+
+    const storage = createMemoryStorage();
+    const now = '2026-11-26T16:00:00.000Z';
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls += 1;
+      return jsonResponse({ error: LEDGER_IDEMPOTENCY_IN_PROGRESS }, 409);
+    }) as typeof fetch;
+
+    const result = await saveLedgerEntryWithQueue({ hotel_id: HOTEL_1, amount: '10' }, {
+      storage,
+      userId: USER_A,
+      hotelId: HOTEL_1,
+      fetchImpl,
+      createId: () => 'in-progress-1',
+      now: () => now
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.retryable, true);
+    assert.equal(result.status, 409);
+    const queued = readLedgerQueue(storage, USER_A);
+    assert.equal(queued.length, 1);
+    assert.equal(queued[0].status, 'pending');
+    assert.equal(queued[0].error, LEDGER_IDEMPOTENCY_IN_PROGRESS);
+    assert.equal(typeof queued[0].retryAfter, 'string');
+    assert.equal((queued[0].retryAfter || '') > now, true);
+    assert.equal(pendingLedgerEntries(storage, USER_A, now).length, 0);
+    assert.equal(retryableLedgerEntries(storage, USER_A).length, 1);
+
+    const skipped = await syncPendingLedgerEntries({
+      storage,
+      userId: USER_A,
+      fetchImpl,
+      now: () => now
+    });
+    assert.equal(skipped.processed, 0);
+    assert.equal(calls, 1);
+    assert.equal(readLedgerQueue(storage, USER_A).length, 1);
+    assert.equal(retryableLedgerEntries(storage, USER_A)[0].status, 'pending');
+  });
+
+  it('does not treat a locked-day 409 as retryable and drops it from the queue', async () => {
+    const storage = createMemoryStorage();
+    const locked = 'This day is locked. A manager has to unlock it before anything else can be entered.';
+    const result = await saveLedgerEntryWithQueue({ hotel_id: HOTEL_1, amount: '10' }, {
+      storage,
+      userId: USER_A,
+      hotelId: HOTEL_1,
+      fetchImpl: (async () => jsonResponse({ error: locked }, 409)) as typeof fetch,
+      createId: () => 'locked-1'
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.retryable, false);
+    assert.equal(result.error, locked);
+    assert.equal(readLedgerQueue(storage, USER_A).length, 0);
+  });
+
+  it('migrates the unsuffixed queue key into the current user key, flags unknown items, and removes the legacy key', () => {
+    const storage = createMemoryStorage({
+      [LEDGER_QUEUE_STORAGE_KEY]: JSON.stringify([
+        {
+          clientRequestId: 'legacy-own',
+          userId: USER_A,
+          hotelId: HOTEL_1,
+          payload: { hotel_id: HOTEL_1, amount: '12', client_request_id: 'legacy-own' },
+          createdAt: '2026-11-26T15:00:00.000Z',
+          status: 'pending',
+          error: null
+        },
+        {
+          clientRequestId: 'legacy-unknown',
+          payload: { hotel_id: HOTEL_1, amount: '8', client_request_id: 'legacy-unknown' },
+          createdAt: '2026-11-26T15:01:00.000Z',
+          status: 'pending',
+          error: null
+        },
+        {
+          clientRequestId: 'legacy-other',
+          userId: USER_B,
+          hotelId: HOTEL_1,
+          payload: { hotel_id: HOTEL_1, amount: '9', client_request_id: 'legacy-other' },
+          createdAt: '2026-11-26T15:02:00.000Z',
+          status: 'failed',
+          error: 'offline'
+        }
+      ])
+    });
+
+    const migrated = migrateLegacyLedgerQueue(storage, USER_A);
+    assert.equal(migrated.migrated, 3);
+    assert.equal(migrated.needsAttention, 1);
+    assert.equal(storage.getItem(LEDGER_QUEUE_STORAGE_KEY), null);
+
+    const mine = readLedgerQueue(storage, USER_A);
+    assert.equal(mine.length, 2);
+    assert.equal(mine.find((item) => item.clientRequestId === 'legacy-own')?.status, 'pending');
+    const unknown = mine.find((item) => item.clientRequestId === 'legacy-unknown');
+    assert.equal(unknown?.status, 'needs_attention');
+    assert.equal(unknown?.userId, USER_A);
+    assert.equal(unknown?.hotelId, HOTEL_1);
+    assert.equal(unknown?.error, LEDGER_LEGACY_QUEUE_ATTENTION);
+    assert.equal(needsAttentionLedgerEntries(storage, USER_A).length, 1);
+
+    const other = readLedgerQueue(storage, USER_B);
+    assert.equal(other.length, 1);
+    assert.equal(other[0].clientRequestId, 'legacy-other');
+    assert.equal(other[0].status, 'failed');
+
+    const reset = resetStaleSyncingLedgerEntries(storage, USER_A);
+    assert.equal(reset.some((item) => item.clientRequestId === 'legacy-own'), true);
+    assert.equal(storage.getItem(LEDGER_QUEUE_STORAGE_KEY), null);
   });
 });

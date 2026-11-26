@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { supabaseAdmin } from './supabase-admin';
-import type { LedgerIdempotencyStore, OfflineSyncRow } from './ledger-idempotency';
+import type { LedgerIdempotencyStore, LedgerReclaimResult, OfflineSyncRow } from './ledger-idempotency';
 
 function isConflict(error: { code?: string; message?: string; status?: number } | null) {
   if (!error) return false;
@@ -21,7 +21,8 @@ function asRow(data: unknown): OfflineSyncRow | null {
     server_table: typeof row.server_table === 'string' ? row.server_table : null,
     server_id: typeof row.server_id === 'string' ? row.server_id : null,
     status: String(row.status || ''),
-    created_by: typeof row.created_by === 'string' ? row.created_by : null
+    created_by: typeof row.created_by === 'string' ? row.created_by : null,
+    created_at: typeof row.created_at === 'string' ? row.created_at : null
   };
 }
 
@@ -54,6 +55,19 @@ export function createSupabaseLedgerIdempotencyStore(): LedgerIdempotencyStore {
       if (error) return null;
       return asRow(data);
     },
+    async assignServerId(input) {
+      const { error } = await supabaseAdmin
+        .from('offline_sync_requests')
+        .update({
+          server_table: input.serverTable || 'ledger_entries',
+          server_id: input.serverId
+        })
+        .eq('client_request_id', input.clientRequestId)
+        .eq('created_by', input.createdBy)
+        .in('status', ['reserved', 'reclaiming'])
+        .is('server_id', null);
+      if (error) throw error;
+    },
     async complete(input) {
       const { error } = await supabaseAdmin
         .from('offline_sync_requests')
@@ -72,8 +86,25 @@ export function createSupabaseLedgerIdempotencyStore(): LedgerIdempotencyStore {
         .delete()
         .eq('client_request_id', input.clientRequestId)
         .eq('created_by', input.createdBy)
-        .eq('status', 'reserved')
-        .is('server_id', null);
+        .in('status', ['reserved', 'reclaiming']);
+    },
+    async tryReclaim(input): Promise<LedgerReclaimResult> {
+      const now = input.now || new Date().toISOString();
+      const { data, error } = await supabaseAdmin
+        .from('offline_sync_requests')
+        .update({
+          status: 'reclaiming',
+          created_at: now
+        })
+        .eq('client_request_id', input.clientRequestId)
+        .eq('created_by', input.createdBy)
+        .in('status', ['reserved', 'reclaiming'])
+        .lt('created_at', input.olderThan)
+        .select('*')
+        .maybeSingle();
+      if (error) throw error;
+      const row = asRow(data);
+      return row ? { status: 'reclaimed', serverId: row.server_id } : { status: 'busy' };
     }
   };
 }

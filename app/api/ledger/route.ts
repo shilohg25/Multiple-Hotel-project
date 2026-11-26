@@ -28,10 +28,11 @@ export async function POST(request: Request) {
   const category = String(payload.category || 'room');
   const collectible = category === 'collectible' || payload.is_collectible === true || payload.is_collectible === 'true';
 
-  async function createEntry() {
+  async function createEntry(id?: string) {
     const { data, error } = await supabaseAdmin
       .from('ledger_entries')
       .insert({
+        ...(id ? { id } : {}),
         hotel_id: hotelId,
         outlet_id: outletId,
         entry_date: entryDate,
@@ -46,6 +47,13 @@ export async function POST(request: Request) {
       .single();
 
     if (error) {
+      const conflict = error.code === '23505'
+        || String(error.message || '').toLowerCase().includes('duplicate')
+        || String(error.message || '').toLowerCase().includes('unique');
+      if (id && conflict) {
+        const existing = await getEntry(id);
+        if (existing) return existing;
+      }
       const failure = new Error(error.message);
       (failure as Error & { status?: number }).status = 400;
       throw failure;

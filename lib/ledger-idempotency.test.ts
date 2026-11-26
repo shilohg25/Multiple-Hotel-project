@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   LEDGER_IDEMPOTENCY_IN_PROGRESS,
+  LEDGER_RESERVATION_STALE_MS,
   createLedgerEntryOnce,
   createMemoryLedgerIdempotencyStore,
   mayReturnLedgerDuplicate,
@@ -47,13 +48,18 @@ describe('scoped ledger request ids', () => {
 describe('createLedgerEntryOnce', () => {
   it('rejects a cross-user replay of the same client request id and does not return the original entry', async () => {
     const store = createMemoryLedgerIdempotencyStore();
+    const entries = new Map<string, ReturnType<typeof entry>>();
     const first = await createLedgerEntryOnce({
       userId: userA,
       hotelId: hotel2,
       clientRequestId: clientId,
       store,
-      createEntry: async () => entry('entry-owner', userA, hotel2),
-      getEntry: async (id) => entry(id, userA, hotel2)
+      createEntry: async (id) => {
+        const record = entry(id || 'entry-owner', userA, hotel2);
+        entries.set(record.id, record);
+        return record;
+      },
+      getEntry: async (id) => entries.get(id) ?? null
     });
     assert.equal(first.ok, true);
     if (!first.ok) throw new Error('expected first save to succeed');
@@ -64,30 +70,37 @@ describe('createLedgerEntryOnce', () => {
       hotelId: hotel2,
       clientRequestId: clientId,
       store,
-      createEntry: async () => {
+      createEntry: async (id) => {
         createdForB += 1;
-        return entry('entry-cashier', userB, hotel2);
+        const record = entry(id || 'entry-cashier', userB, hotel2);
+        entries.set(record.id, record);
+        return record;
       },
-      getEntry: async (id) => (id === 'entry-owner' ? entry(id, userA, hotel2) : entry(id, userB, hotel2))
+      getEntry: async (id) => entries.get(id) ?? null
     });
 
     assert.equal(second.ok, true);
     if (!second.ok) throw new Error('expected second user to create their own entry');
     assert.equal(second.duplicate, false);
-    assert.equal(second.entry.id, 'entry-cashier');
     assert.notEqual(second.entry.id, first.entry.id);
+    assert.equal(second.entry.created_by, userB);
     assert.equal(createdForB, 1);
   });
 
   it('rejects a cross-hotel replay of the same client request id and does not return the original entry', async () => {
     const store = createMemoryLedgerIdempotencyStore();
+    const entries = new Map<string, ReturnType<typeof entry>>();
     const first = await createLedgerEntryOnce({
       userId: userA,
       hotelId: hotel1,
       clientRequestId: clientId,
       store,
-      createEntry: async () => entry('entry-h1', userA, hotel1),
-      getEntry: async (id) => entry(id, userA, hotel1)
+      createEntry: async (id) => {
+        const record = entry(id || 'entry-h1', userA, hotel1);
+        entries.set(record.id, record);
+        return record;
+      },
+      getEntry: async (id) => entries.get(id) ?? null
     });
     assert.equal(first.ok, true);
     if (!first.ok) throw new Error('expected first hotel save to succeed');
@@ -97,26 +110,33 @@ describe('createLedgerEntryOnce', () => {
       hotelId: hotel2,
       clientRequestId: clientId,
       store,
-      createEntry: async () => entry('entry-h2', userA, hotel2),
-      getEntry: async (id) => (id === 'entry-h1' ? entry(id, userA, hotel1) : entry(id, userA, hotel2))
+      createEntry: async (id) => {
+        const record = entry(id || 'entry-h2', userA, hotel2);
+        entries.set(record.id, record);
+        return record;
+      },
+      getEntry: async (id) => entries.get(id) ?? null
     });
 
     assert.equal(second.ok, true);
     if (!second.ok) throw new Error('expected second hotel to create its own entry');
     assert.equal(second.duplicate, false);
-    assert.equal(second.entry.id, 'entry-h2');
     assert.notEqual(second.entry.id, first.entry.id);
+    assert.equal(second.entry.hotel_id, hotel2);
   });
 
   it('lets only the request that reserved the row insert, and returns the original entry to the same user and hotel', async () => {
     const store = createMemoryLedgerIdempotencyStore();
     let created = 0;
-    const createEntry = async () => {
+    const entries = new Map<string, ReturnType<typeof entry>>();
+    const createEntry = async (id?: string) => {
       created += 1;
       await new Promise((resolve) => setTimeout(resolve, 20));
-      return entry('entry-shared', userA, hotel1);
+      const record = entry(id || 'entry-shared', userA, hotel1);
+      entries.set(record.id, record);
+      return record;
     };
-    const getEntry = async (id: string) => entry(id, userA, hotel1);
+    const getEntry = async (id: string) => entries.get(id) ?? null;
 
     const [first, second] = await Promise.all([
       createLedgerEntryOnce({
@@ -145,8 +165,7 @@ describe('createLedgerEntryOnce', () => {
     assert.equal(first.ok, true);
     assert.equal(second.ok, true);
     if (!first.ok || !second.ok) throw new Error('expected both concurrent results to succeed');
-    assert.equal(first.entry.id, 'entry-shared');
-    assert.equal(second.entry.id, 'entry-shared');
+    assert.equal(first.entry.id, second.entry.id);
     assert.equal(first.duplicate || second.duplicate, true);
     assert.equal(first.duplicate && second.duplicate, false);
   });
@@ -226,5 +245,245 @@ describe('createLedgerEntryOnce', () => {
     if (result.ok) throw new Error('expected in-progress failure');
     assert.equal(result.status, 409);
     assert.equal(result.error, LEDGER_IDEMPOTENCY_IN_PROGRESS);
+  });
+
+
+  it('does not release or double-insert when complete() throws after a successful insert', async () => {
+    const store = createMemoryLedgerIdempotencyStore();
+    let completes = 0;
+    const wrapped = {
+      ...store,
+      async complete(_input: Parameters<typeof store.complete>[0]) {
+        completes += 1;
+        throw new Error('complete failed');
+      }
+    };
+    let created = 0;
+    const entries = new Map<string, ReturnType<typeof entry>>();
+    const createEntry = async (id?: string) => {
+      created += 1;
+      const record = entry(id || `entry-${created}`, userA, hotel1);
+      entries.set(record.id, record);
+      return record;
+    };
+    const getEntry = async (id: string) => entries.get(id) ?? null;
+
+    const first = await createLedgerEntryOnce({
+      userId: userA,
+      hotelId: hotel1,
+      clientRequestId: clientId,
+      store: wrapped,
+      createEntry,
+      getEntry
+    });
+    assert.equal(first.ok, true);
+    if (!first.ok) throw new Error('expected first save to succeed after insert');
+    assert.equal(first.duplicate, false);
+    assert.equal(created, 1);
+    assert.equal(completes >= 1, true);
+
+    const scoped = scopedLedgerRequestId(userA, hotel1, clientId);
+    const row = await store.get(scoped);
+    assert.equal(row?.server_id, first.entry.id);
+    assert.notEqual(row?.status, 'processed');
+
+    const second = await createLedgerEntryOnce({
+      userId: userA,
+      hotelId: hotel1,
+      clientRequestId: clientId,
+      store: wrapped,
+      createEntry,
+      getEntry,
+      attempts: 4,
+      delayMs: 1
+    });
+    assert.equal(second.ok, true);
+    if (!second.ok) throw new Error('expected retry to return the already-inserted entry');
+    assert.equal(second.duplicate, true);
+    assert.equal(second.entry.id, first.entry.id);
+    assert.equal(created, 1);
+    assert.equal(entries.size, 1);
+  });
+
+  it('still releases a reservation when the insert never happens so a retry can create the entry', async () => {
+    const store = createMemoryLedgerIdempotencyStore();
+    let shouldFail = true;
+    let created = 0;
+    const entries = new Map<string, ReturnType<typeof entry>>();
+    const createEntry = async (id?: string) => {
+      if (shouldFail) throw new Error('invalid payment method');
+      created += 1;
+      const record = entry(id || `entry-${created}`, userA, hotel1);
+      entries.set(record.id, record);
+      return record;
+    };
+
+    await assert.rejects(
+      () => createLedgerEntryOnce({
+        userId: userA,
+        hotelId: hotel1,
+        clientRequestId: clientId,
+        store,
+        createEntry,
+        getEntry: async (id) => entries.get(id) ?? null
+      }),
+      /invalid payment method/
+    );
+    assert.equal(await store.get(scopedLedgerRequestId(userA, hotel1, clientId)), null);
+
+    shouldFail = false;
+    const retry = await createLedgerEntryOnce({
+      userId: userA,
+      hotelId: hotel1,
+      clientRequestId: clientId,
+      store,
+      createEntry,
+      getEntry: async (id) => entries.get(id) ?? null
+    });
+    assert.equal(retry.ok, true);
+    if (!retry.ok) throw new Error('expected retry after a failed insert to succeed');
+    assert.equal(retry.duplicate, false);
+    assert.equal(created, 1);
+  });
+
+  it('lets only one of two concurrent reclaimers insert a stale reserved key', async () => {
+    const scoped = scopedLedgerRequestId(userA, hotel1, clientId);
+    const staleAt = new Date(Date.now() - LEDGER_RESERVATION_STALE_MS - 1_000).toISOString();
+    const store = createMemoryLedgerIdempotencyStore([{
+      client_request_id: scoped,
+      request_type: 'ledger_entry.create',
+      server_table: null,
+      server_id: null,
+      status: 'reserved',
+      created_by: userA,
+      created_at: staleAt
+    }]);
+
+    let created = 0;
+    const entries = new Map<string, ReturnType<typeof entry>>();
+    const createEntry = async (id?: string) => {
+      created += 1;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const record = entry(id || `reclaimed-${created}`, userA, hotel1);
+      entries.set(record.id, record);
+      return record;
+    };
+    const getEntry = async (id: string) => entries.get(id) ?? null;
+    const options = {
+      userId: userA,
+      hotelId: hotel1,
+      clientRequestId: clientId,
+      store,
+      createEntry,
+      getEntry,
+      delayMs: 5,
+      attempts: 40,
+      now: () => new Date()
+    };
+
+    const [first, second] = await Promise.all([
+      createLedgerEntryOnce(options),
+      createLedgerEntryOnce(options)
+    ]);
+
+    assert.equal(created, 1);
+    assert.equal(first.ok, true);
+    assert.equal(second.ok, true);
+    if (!first.ok || !second.ok) throw new Error('expected both reclaimers to resolve');
+    assert.equal(first.entry.id, second.entry.id);
+    assert.equal(first.duplicate || second.duplicate, true);
+    assert.equal(first.duplicate && second.duplicate, false);
+    assert.equal(entries.size, 1);
+    const row = await store.get(scoped);
+    assert.equal(row?.server_id, first.entry.id);
+    assert.equal(row?.status, 'processed');
+  });
+
+  it('does not let another user reclaim a stale reservation', async () => {
+    const scoped = scopedLedgerRequestId(userA, hotel1, clientId);
+    const store = createMemoryLedgerIdempotencyStore([{
+      client_request_id: scoped,
+      request_type: 'ledger_entry.create',
+      server_table: null,
+      server_id: null,
+      status: 'reserved',
+      created_by: userA,
+      created_at: new Date(Date.now() - LEDGER_RESERVATION_STALE_MS - 1_000).toISOString()
+    }]);
+
+    let created = 0;
+    const result = await createLedgerEntryOnce({
+      userId: userB,
+      hotelId: hotel1,
+      clientRequestId: clientId,
+      store,
+      createEntry: async (id) => {
+        created += 1;
+        return entry(id || 'should-not-insert', userB, hotel1);
+      },
+      getEntry: async () => null,
+      attempts: 2,
+      delayMs: 1,
+      now: () => new Date()
+    });
+
+    // user B uses a different scoped key, so they reserve their own row and insert.
+    assert.equal(result.ok, true);
+    if (!result.ok) throw new Error('expected other user to insert under their own key');
+    assert.equal(created, 1);
+    const original = await store.get(scoped);
+    assert.equal(original?.status, 'reserved');
+    assert.equal(original?.server_id, null);
+  });
+
+
+  it('does not insert a second row when two reclaimers find a stale reservation that already has a server_id', async () => {
+    const scoped = scopedLedgerRequestId(userA, hotel1, clientId);
+    const existingId = 'already-inserted';
+    const entries = new Map([[existingId, entry(existingId, userA, hotel1)]]);
+    const store = createMemoryLedgerIdempotencyStore([{
+      client_request_id: scoped,
+      request_type: 'ledger_entry.create',
+      server_table: 'ledger_entries',
+      server_id: existingId,
+      status: 'reserved',
+      created_by: userA,
+      created_at: new Date(Date.now() - LEDGER_RESERVATION_STALE_MS - 1_000).toISOString()
+    }]);
+
+    let created = 0;
+    const options = {
+      userId: userA,
+      hotelId: hotel1,
+      clientRequestId: clientId,
+      store,
+      createEntry: async (id?: string) => {
+        created += 1;
+        const record = entry(id || `second-${created}`, userA, hotel1);
+        entries.set(record.id, record);
+        return record;
+      },
+      getEntry: async (id: string) => entries.get(id) ?? null,
+      delayMs: 5,
+      attempts: 20,
+      now: () => new Date()
+    };
+
+    const [first, second] = await Promise.all([
+      createLedgerEntryOnce(options),
+      createLedgerEntryOnce(options)
+    ]);
+
+    assert.equal(created, 0);
+    assert.equal(first.ok, true);
+    assert.equal(second.ok, true);
+    if (!first.ok || !second.ok) throw new Error('expected both to return the existing entry');
+    assert.equal(first.entry.id, existingId);
+    assert.equal(second.entry.id, existingId);
+    assert.equal(first.duplicate, true);
+    assert.equal(second.duplicate, true);
+    const row = await store.get(scoped);
+    assert.equal(row?.status, 'processed');
+    assert.equal(row?.server_id, existingId);
   });
 });
