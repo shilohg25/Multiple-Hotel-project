@@ -9,6 +9,8 @@ export type StaySlice = {
 
 export type RoomDayStatus = 'vacant' | 'arrival' | 'in_house' | 'departure' | 'overdue';
 
+export type DatedStay = { stay: StaySlice; status: Exclude<RoomDayStatus, 'vacant'> };
+
 export function stayOnDate(stay: StaySlice, date: string): RoomDayStatus | null {
   if (stay.status === 'cancelled' || stay.status === 'no_show') return null;
   if (stay.status === 'checked_in' && stay.check_in <= date && date > stay.check_out) return 'overdue';
@@ -18,11 +20,16 @@ export function stayOnDate(stay: StaySlice, date: string): RoomDayStatus | null 
   return null;
 }
 
+/** Every stay that belongs on the Today lists or charge/payment picker for `date`. */
+export function staysOnDate(stays: StaySlice[], date: string): DatedStay[] {
+  return stays
+    .map((stay) => ({ stay, status: stayOnDate(stay, date) }))
+    .filter((item): item is DatedStay => item.status !== null);
+}
+
 export function roomStatus(stays: StaySlice[], date: string): { status: RoomDayStatus; stay: StaySlice | null } {
   const ranked: RoomDayStatus[] = ['overdue', 'departure', 'in_house', 'arrival'];
-  const matches = stays
-    .map((stay) => ({ stay, status: stayOnDate(stay, date) }))
-    .filter((item): item is { stay: StaySlice; status: RoomDayStatus } => item.status !== null);
+  const matches = staysOnDate(stays, date);
   for (const status of ranked) {
     const found = matches.find((item) => item.status === status);
     if (found) return found;

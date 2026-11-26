@@ -7,7 +7,7 @@ import { readToBeBilled } from '@/lib/public-quote';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { balanceDueLabel } from '@/lib/stay-cleanup';
 import { stayFolioView } from '@/lib/stay-total';
-import { roomStatus, type StaySlice } from '@/lib/today-board';
+import { roomStatus, staysOnDate, type DatedStay, type StaySlice } from '@/lib/today-board';
 import { BookingAlerts, type BookingAlert } from '@/components/BookingAlerts';
 import { StayActionLinks } from '@/components/StayActionLinks';
 import { HelpPanel } from '@/components/HelpPanel';
@@ -168,19 +168,32 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
     byId.set(stay.id, stay);
   }
   const stays = [...byId.values()];
+  const roomsById = new Map(rooms.map((room) => [room.id, room]));
+  const listed = staysOnDate(stays, date);
   const cards = rooms.map((room) => ({ room, ...roomStatus(stays.filter((stay) => stay.room_id === room.id), date) }));
-  const arrivals = cards.filter((card) => card.status === 'arrival');
-  const inHouse = cards.filter((card) => card.status === 'in_house');
-  const departures = cards.filter((card) => card.status === 'departure');
-  const overdue = cards.filter((card) => card.status === 'overdue');
-  const overdueLines = await overdueBalanceLines(overdue.flatMap((card) => (card.stay ? [card.stay.id] : [])), hotel);
+  const overdueRoomIds = new Set(listed.filter((item) => item.status === 'overdue').map((item) => item.stay.room_id));
+  const listCards = (
+    status: DatedStay['status'],
+    detailFor?: (stay: StaySlice) => string | undefined
+  ) => listed.flatMap((item) => {
+    if (item.status !== status) return [];
+    const room = roomsById.get(item.stay.room_id);
+    if (!room) return [];
+    const detail = detailFor?.(item.stay);
+    return [{ room, stay: item.stay, detail }];
+  });
+  const arrivals = listCards('arrival', (stay) => (
+    overdueRoomIds.has(stay.room_id) ? 'Room still occupied (overdue guest)' : undefined
+  ));
+  const inHouse = listCards('in_house');
+  const departures = listCards('departure');
+  const overdue = listCards('overdue');
+  const overdueLines = await overdueBalanceLines(overdue.map((card) => card.stay.id), hotel);
   const overdueCards = overdue.map((card) => ({
     ...card,
-    detail: card.stay
-      ? [`Checkout was ${card.stay.check_out}`, overdueLines.get(card.stay.id)].filter(Boolean).join(' · ')
-      : undefined
+    detail: [`Checkout was ${card.stay.check_out}`, overdueLines.get(card.stay.id)].filter(Boolean).join(' · ')
   }));
-  const actionable = [...overdue, ...inHouse, ...arrivals, ...departures].filter((card) => card.stay);
+  const actionable = [...overdue, ...inHouse, ...arrivals, ...departures];
   const alertSelect = 'id, check_in, guest_count, with_breakfast, guests(full_name)';
   const [onlineResult, pastResult] = await Promise.all([
     supabaseAdmin
@@ -301,7 +314,7 @@ function StayList({
       <h2 className="text-lg font-bold">{title}</h2>
       <div className="mt-3 space-y-2">
         {cards.map((card) => (
-          <Link key={card.room.id} href={card.stay ? `/reservations/${card.stay.id}` : '/reservations/new'} className="block rounded-lg border border-slate-200 px-3 py-3 hover:bg-slate-50">
+          <Link key={card.stay?.id || card.room.id} href={card.stay ? `/reservations/${card.stay.id}` : '/reservations/new'} className="block rounded-lg border border-slate-200 px-3 py-3 hover:bg-slate-50">
             <p className="font-bold">Room {card.room.name}</p>
             <p className="text-sm text-slate-600">{card.stay?.guest_name}</p>
             {card.detail ? <p className="text-sm font-medium text-slate-800">{card.detail}</p> : null}
