@@ -5,6 +5,7 @@ import { businessToday, calendarDateRefusal } from '@/lib/date';
 import { pastCheckInChangeRefusal } from '@/lib/public-quote';
 import { AUTO_BREAKFAST_REMOVED_ACTION, AUTO_POST_SOURCE, BREAKFAST_TURN_OFF_BLOCKED, autoChargeRemovedFromRead, breakfastTurnOffBlocked, isAutoPostedCharge, shouldPostAutoStayCharge } from '@/lib/breakfast-toggle';
 import { priceStay } from '@/lib/hotel-pricing';
+import { hasReservationConflict } from '@/lib/availability';
 import { isRoomOverlapError, ROOM_JUST_TAKEN } from '@/lib/room-overlap';
 import { billLaterMarkerChangeBlocked, billingReferenceAudit, billingReferenceEdit } from '@/lib/to-be-billed';
 import { loadStayMoney } from '@/lib/stay-money';
@@ -113,6 +114,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if ('status' in payload) update.status = payload.status;
   for (const field of RESERVATION_MONEY_FIELDS) {
     if (field in nextMoney) update[field] = nextMoney[field];
+  }
+
+  if ('check_in' in update || 'check_out' in update) {
+    const nextCheckIn = String(('check_in' in update ? update.check_in : currentRaw.check_in) || '');
+    const nextCheckOut = String(('check_out' in update ? update.check_out : currentRaw.check_out) || '');
+    const { data: hotelForConflict } = await supabaseAdmin.from('hotels').select('timezone').eq('id', currentRaw.hotel_id).maybeSingle();
+    const conflict = await hasReservationConflict({
+      roomId: String(currentRaw.room_id || ''),
+      checkIn: nextCheckIn,
+      checkOut: nextCheckOut,
+      businessToday: businessToday(hotelForConflict?.timezone),
+      ignoreReservationId: id
+    });
+    if (conflict) return jsonError(ROOM_JUST_TAKEN);
   }
 
   const { data: reservationRaw, error: updateError } = await supabaseAdmin

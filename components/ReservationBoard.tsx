@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import type { Hotel, Reservation, Room } from '@/types/app';
 import { addDays, diffDays, eachDate, formatDate, toISODate } from '@/lib/date';
 import { currency } from '@/lib/money';
+import { boardBarRange, effectiveCheckOut } from '@/lib/occupancy';
 import { ReservationStatusBadge } from './StatusBadge';
 
 type DraftMove = {
@@ -41,6 +42,7 @@ export function ReservationBoard({
   reservations,
   from,
   to,
+  today,
   canCreate
 }: {
   hotel: Hotel;
@@ -49,6 +51,7 @@ export function ReservationBoard({
   reservations: Reservation[];
   from: string;
   to: string;
+  today: string;
   canCreate: boolean;
 }) {
   const [density, setDensity] = useState<Density>('compact');
@@ -249,21 +252,25 @@ export function ReservationBoard({
             {visibleReservations.map((reservation, reservationListIndex) => {
               const draft = drafts[reservation.id];
               const checkIn = draft?.check_in || reservation.check_in;
-              const checkOut = draft?.check_out || reservation.check_out;
+              const scheduledOut = draft?.check_out || reservation.check_out;
+              const checkOut = draft?.check_out || effectiveCheckOut(reservation, today);
               const roomId = draft?.room_id || reservation.room_id;
               const y = roomIndex.get(roomId);
               if (y === undefined) return null;
-              const start = Math.max(0, diffDays(from, checkIn));
-              const length = Math.max(1, diffDays(checkIn, checkOut));
+              const bar = boardBarRange(checkIn, checkOut, from, to);
+              if (!bar) return null;
+              const { start, length } = bar;
               const left = densityConfig.roomLabelWidth + start * densityConfig.dayWidth + 4;
+              const occupyOut = (item: typeof reservation) => {
+                const otherDraft = drafts[item.id];
+                return otherDraft?.check_out || effectiveCheckOut(item, today);
+              };
+              const occupyIn = (item: typeof reservation) => drafts[item.id]?.check_in || item.check_in;
               const overlapLevel = visibleReservations
                 .slice(0, reservationListIndex)
                 .filter((other) => {
-                  const otherDraft = drafts[other.id];
-                  const otherRoomId = otherDraft?.room_id || other.room_id;
-                  const otherCheckIn = otherDraft?.check_in || other.check_in;
-                  const otherCheckOut = otherDraft?.check_out || other.check_out;
-                  return otherRoomId === roomId && rangesOverlap(checkIn, checkOut, otherCheckIn, otherCheckOut);
+                  const otherRoomId = drafts[other.id]?.room_id || other.room_id;
+                  return otherRoomId === roomId && rangesOverlap(checkIn, checkOut, occupyIn(other), occupyOut(other));
                 }).length % 2;
               const top = densityConfig.headerHeight + y * densityConfig.rowHeight + 4 + overlapLevel * (densityConfig.barHeight + 4);
               const width = Math.max(densityConfig.dayWidth - 8, length * densityConfig.dayWidth - 8);
@@ -284,7 +291,7 @@ export function ReservationBoard({
                   }}
                   className={`absolute z-10 cursor-grab overflow-hidden rounded-md border px-2 py-0.5 text-[11px] shadow-sm active:cursor-grabbing ${reservationColor(reservation.status)}`}
                   style={{ left, top, width, height }}
-                  title={`${reservation.guests?.full_name || 'Guest'}\nCheck-in: ${formatDate(checkIn)}\nCheck-out: ${formatDate(checkOut)}\nStatus: ${reservation.status.replace('_', ' ')}`}
+                  title={`${reservation.guests?.full_name || 'Guest'}\nCheck-in: ${formatDate(checkIn)}\nCheck-out: ${formatDate(scheduledOut)}\nStatus: ${reservation.status.replace('_', ' ')}`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="truncate font-semibold">{reservation.guests?.full_name || 'Guest'}</span>
