@@ -3,6 +3,9 @@ import { createHash } from 'node:crypto';
 export const LEDGER_IDEMPOTENCY_TYPE = 'ledger_entry.create';
 export const LEDGER_IDEMPOTENCY_IN_PROGRESS = 'This entry is still being saved. Please try again in a moment.';
 export const LEDGER_RESERVATION_STALE_MS = 120_000;
+/** A client_request_id staff replaced with a corrected entry. A late copy of it is refused, never saved. */
+export const LEDGER_RETIRED_STATUS = 'retired';
+export const LEDGER_REPLACED_ERROR = 'This entry was replaced by a corrected one, so it was not saved.';
 
 export type OfflineSyncRow = {
   client_request_id: string;
@@ -32,6 +35,10 @@ export type LedgerIdempotencyStore = {
   complete(input: { clientRequestId: string; serverId: string; createdBy: string; serverTable?: string }): Promise<void>;
   release(input: { clientRequestId: string; createdBy: string }): Promise<void>;
   tryReclaim(input: { clientRequestId: string; createdBy: string; olderThan: string; now?: string }): Promise<LedgerReclaimResult>;
+  /** Atomically claim an unused id as retired (one insert; the unique key decides). */
+  tryRetire(input: { clientRequestId: string; requestType: string; createdBy: string }): Promise<'retired' | 'exists'>;
+  /** Retire an owned reservation that went stale without an entry. True when this call retired it. */
+  markRetired(input: { clientRequestId: string; createdBy: string; olderThan: string }): Promise<boolean>;
 };
 
 export type CreateLedgerOnceSuccess = {
@@ -136,6 +143,27 @@ export function createMemoryLedgerIdempotencyStore(
       if (row.status === 'processed') return;
       if (!isOpenReservation(row)) return;
       rows.delete(input.clientRequestId);
+    },
+    async tryRetire(input) {
+      if (rows.has(input.clientRequestId)) return 'exists';
+      rows.set(input.clientRequestId, {
+        client_request_id: input.clientRequestId,
+        request_type: input.requestType,
+        server_table: null,
+        server_id: null,
+        status: LEDGER_RETIRED_STATUS,
+        created_by: input.createdBy,
+        created_at: clock().toISOString()
+      });
+      return 'retired';
+    },
+    async markRetired(input) {
+      const row = rows.get(input.clientRequestId);
+      if (!row || row.created_by !== input.createdBy) return false;
+      if (!isOpenReservation(row)) return false;
+      if (!row.created_at || row.created_at >= input.olderThan) return false;
+      rows.set(input.clientRequestId, { ...row, status: LEDGER_RETIRED_STATUS });
+      return true;
     },
     async tryReclaim(input) {
       const row = rows.get(input.clientRequestId);
@@ -332,6 +360,9 @@ export async function createLedgerEntryOnce(input: {
   if (row && row.created_by !== input.userId) {
     return { ok: false, error: 'Hotel access denied.', status: 403 };
   }
+  if (row?.status === LEDGER_RETIRED_STATUS) {
+    return { ok: false, error: LEDGER_REPLACED_ERROR, status: 410 };
+  }
   if (row?.server_id) {
     const found = await ownedEntry(row.server_id);
     if (found) {
@@ -347,8 +378,53 @@ export async function createLedgerEntryOnce(input: {
   if (existing) return existing;
 
   const rowAfterWait = await input.store.get(scopedId);
+  if (rowAfterWait?.status === LEDGER_RETIRED_STATUS && rowAfterWait.created_by === input.userId) {
+    return { ok: false, error: LEDGER_REPLACED_ERROR, status: 410 };
+  }
   const reclaimedAfterWait = await reclaimIfStale(rowAfterWait);
   if (reclaimedAfterWait) return reclaimedAfterWait;
 
   return { ok: false, error: LEDGER_IDEMPOTENCY_IN_PROGRESS, status: 409 };
+}
+
+export type RetireLedgerResult =
+  | { status: 'retired' }
+  | { status: 'already_saved'; entry: LedgerEntryRecord }
+  | { status: 'busy' }
+  | { status: 'denied' };
+
+/**
+ * "Replace with the corrected entry": decide what happened to an earlier client_request_id
+ * without inserting, editing or deleting any ledger row.
+ * - Never reached the server: claim the id as retired in one atomic insert. A late copy is refused (410).
+ * - Already saved for this user and hotel: report it, so staff correct it with an adjustment.
+ * - Still being saved right now: busy; staff try again in a moment.
+ * - A reservation that went stale without an entry is retired, the same staleness rule as reclaim.
+ */
+export async function retireLedgerRequest(input: {
+  userId: string;
+  hotelId: string;
+  clientRequestId: string;
+  store: LedgerIdempotencyStore;
+  getEntry: (id: string) => Promise<LedgerEntryRecord | null>;
+  now?: () => Date;
+  staleMs?: number;
+}): Promise<RetireLedgerResult> {
+  const scopedId = scopedLedgerRequestId(input.userId, input.hotelId, input.clientRequestId);
+  const claimed = await input.store.tryRetire({ clientRequestId: scopedId, requestType: LEDGER_IDEMPOTENCY_TYPE, createdBy: input.userId });
+  if (claimed === 'retired') return { status: 'retired' };
+
+  const row = await input.store.get(scopedId);
+  if (!row) return { status: 'busy' };
+  if (row.created_by !== input.userId) return { status: 'denied' };
+  if (row.status === LEDGER_RETIRED_STATUS) return { status: 'retired' };
+  if (row.server_id) {
+    const entry = await input.getEntry(row.server_id);
+    if (entry && mayReturnLedgerDuplicate(row, entry, input.userId, input.hotelId)) return { status: 'already_saved', entry };
+  }
+  if (row.status === 'processed') return { status: 'busy' };
+  const now = input.now ?? defaultNow;
+  const olderThan = new Date(now().getTime() - (input.staleMs ?? LEDGER_RESERVATION_STALE_MS)).toISOString();
+  if (await input.store.markRetired({ clientRequestId: scopedId, createdBy: input.userId, olderThan })) return { status: 'retired' };
+  return { status: 'busy' };
 }

@@ -8,7 +8,20 @@ import {
   type CloseSummary,
   type LedgerLike
 } from './day-close.ts';
-import { saveLedgerEntryWithQueue, type LedgerQueueItem, type PostLedgerResult, type StorageLike } from './ledger-entry-queue.ts';
+import {
+  ledgerSaveFailureMessage,
+  pendingLedgerEntries,
+  removeLedgerQueueItem,
+  resetStaleSyncingLedgerEntries,
+  sameLedgerRetryPayload,
+  saveLedgerEntryWithQueue,
+  LEDGER_NETWORK_ERROR,
+  LEDGER_SAVE_TIMEOUT_MS,
+  type LedgerQueueItem,
+  type PostLedgerResult,
+  type StorageLike
+} from './ledger-entry-queue.ts';
+import { fetchJsonWithTimeout, isNetworkError } from './fetch-timeout.ts';
 
 /**
  * One daily cash sheet.
@@ -199,4 +212,140 @@ export function saveSheetEntryWithQueue(
     fetchImpl: options.fetchImpl,
     createId: options.createId
   });
+}
+
+/**
+ * Option (a): an earlier entry is still queued on this device and the form now says something else
+ * (staff saved 650, it timed out, they changed the form to 560). Nothing is sent by itself; staff choose.
+ * Returns the queued entry to ask about, or null when the form is empty or matches a queued entry
+ * (then today's auto-send and Retry apply).
+ */
+export function sheetHeldEntry(input: {
+  formValues: Record<string, unknown>;
+  queued: LedgerQueueItem[];
+  hotelId: string;
+  outletId?: string | null;
+  preferId?: string | null;
+}): LedgerQueueItem | null {
+  if (!String(input.formValues.amount ?? '').trim()) return null;
+  const mine = input.queued.filter((item) => item.hotelId === input.hotelId);
+  if (!mine.length) return null;
+  const options = { outletId: input.outletId, hotelId: input.hotelId };
+  if (mine.some((item) => sameLedgerRetryPayload(item.payload, input.formValues, options))) return null;
+  return mine.find((item) => item.clientRequestId === input.preferId) || mine[0];
+}
+
+/** #33's auto-send, except for entries staff still have to choose about. */
+export async function syncSheetQueue(options: {
+  storage: StorageLike;
+  userId: string;
+  skipIds?: string[];
+  timeoutMs?: number;
+  fetchImpl?: typeof fetch;
+  isOnline?: () => boolean;
+  /** Turn 'syncing' left over from a closed page back into 'pending'. Only on load: mid-session a 'syncing' entry is in flight. */
+  resetStale?: boolean;
+}): Promise<{ synced: string[]; failed: number; lastError: string | null }> {
+  const result = { synced: [] as string[], failed: 0, lastError: null as string | null };
+  if (options.isOnline && !options.isOnline()) return { ...result, lastError: LEDGER_NETWORK_ERROR };
+  if (options.resetStale !== false) resetStaleSyncingLedgerEntries(options.storage, options.userId);
+  const skip = new Set(options.skipIds || []);
+  for (const item of pendingLedgerEntries(options.storage, options.userId)) {
+    if (skip.has(item.clientRequestId)) continue;
+    const saved = await saveLedgerEntryWithQueue(item.payload, {
+      clientRequestId: item.clientRequestId,
+      userId: options.userId,
+      hotelId: item.hotelId,
+      storage: options.storage,
+      timeoutMs: options.timeoutMs,
+      fetchImpl: options.fetchImpl,
+      now: () => item.createdAt
+    });
+    if (saved.ok) result.synced.push(item.clientRequestId);
+    else {
+      result.failed += 1;
+      result.lastError = saved.error;
+    }
+  }
+  return result;
+}
+
+type SheetSendOptions = {
+  userId: string;
+  hotelId: string;
+  outletId?: string | null;
+  storage: StorageLike;
+  timeoutMs?: number;
+  fetchImpl?: typeof fetch;
+  createId?: () => string;
+};
+
+/** "Send ₱650": the queued entry, unchanged, with its original client_request_id. */
+export function sendHeldSheetEntry(item: LedgerQueueItem, options: SheetSendOptions): Promise<PostLedgerResult> {
+  return saveSheetEntryWithQueue(
+    { values: item.payload, clientRequestId: item.clientRequestId, previousPayload: item.payload },
+    { ...options, hotelId: item.hotelId || options.hotelId }
+  );
+}
+
+export type SheetReplaceResult =
+  | { kind: 'already_saved'; amount: number }
+  | { kind: 'sent'; result: PostLedgerResult }
+  | { kind: 'busy' | 'offline' | 'error'; error: string };
+
+/**
+ * "Replace with ₱560": exactly one row may land.
+ * 1. Ask the server about the earlier client_request_id (PATCH /api/ledger, scoped to this user and hotel).
+ *    - Already saved: insert nothing; staff correct it with an adjustment. No ledger row is edited or deleted.
+ *    - Not saved: the server retires that id, so a late copy of it is refused.
+ * 2. Only after it is retired, send the form as a new entry with a new id.
+ * If the server cannot be reached, nothing changes and the choice stays on screen.
+ */
+export async function replaceHeldSheetEntry(
+  item: LedgerQueueItem,
+  formValues: Record<string, unknown>,
+  options: SheetSendOptions
+): Promise<SheetReplaceResult> {
+  const hotelId = item.hotelId || options.hotelId;
+  let status = 0;
+  let json: Record<string, unknown> = {};
+  try {
+    const answer = await fetchJsonWithTimeout('/api/ledger', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'retire', hotel_id: hotelId, client_request_id: item.clientRequestId })
+    }, { timeoutMs: options.timeoutMs ?? LEDGER_SAVE_TIMEOUT_MS, fetchImpl: options.fetchImpl });
+    status = answer.response.status;
+    json = answer.json && typeof answer.json === 'object' ? answer.json as Record<string, unknown> : {};
+    if (!answer.response.ok) {
+      const error = typeof json.error === 'string' ? json.error : 'Could not check the earlier entry.';
+      return { kind: status === 409 ? 'busy' : 'error', error };
+    }
+  } catch (error) {
+    return { kind: isNetworkError(error) ? 'offline' : 'error', error: ledgerSaveFailureMessage(error) };
+  }
+
+  if (json.status === 'already_saved') {
+    removeLedgerQueueItem(options.storage, options.userId, item.clientRequestId);
+    return { kind: 'already_saved', amount: Number(item.payload.amount || 0) };
+  }
+  if (json.status !== 'retired') return { kind: 'error', error: 'Could not check the earlier entry.' };
+
+  removeLedgerQueueItem(options.storage, options.userId, item.clientRequestId);
+  const result = await saveSheetEntryWithQueue(
+    { values: formValues, previousPayload: null },
+    { ...options, hotelId }
+  );
+  return { kind: 'sent', result };
+}
+
+/** Fill {old} and {new} in a translated sentence with the real amounts. */
+export function fillSheetCopy(template: string, values: Record<string, string>) {
+  return template.replace(/\{(\w+)\}/g, (match, key: string) => (key in values ? values[key] : match));
+}
+
+/** Entries still waiting to be auto-sent (pending, failed or backing off), minus the ones staff must choose about. */
+export function sheetWaitingCount(queued: LedgerQueueItem[], skipIds: string[] = []) {
+  const skip = new Set(skipIds);
+  return queued.filter((item) => (item.status === 'pending' || item.status === 'failed' || item.status === 'syncing') && !skip.has(item.clientRequestId)).length;
 }

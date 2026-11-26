@@ -152,6 +152,13 @@ export default async function DailyCashSheetPage({ searchParams }: { searchParam
         total={split.typedTotal}
         locked={locked}
         userId={staff.userId}
+        choiceCopy={{
+          question: label(locale, 'close.heldQuestion'),
+          send: label(locale, 'close.heldSend'),
+          replace: label(locale, 'close.heldReplace'),
+          alreadySaved: label(locale, 'close.heldAlreadySaved'),
+          saved: label(locale, 'close.entrySaved')
+        }}
       />
 
       <DayCloseForm

@@ -2,17 +2,33 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { saveSheetEntryWithQueue, sheetEntryPayload, sheetRetrySource, SHEET_ENTRY_CATEGORIES, SHEET_ENTRY_METHODS, type SheetPendingEntry } from '@/lib/cash-sheet';
+import {
+  fillSheetCopy,
+  replaceHeldSheetEntry,
+  saveSheetEntryWithQueue,
+  sendHeldSheetEntry,
+  sheetEntryPayload,
+  sheetHeldEntry,
+  sheetRetrySource,
+  sheetWaitingCount,
+  syncSheetQueue,
+  SHEET_ENTRY_CATEGORIES,
+  SHEET_ENTRY_METHODS,
+  type SheetPendingEntry
+} from '@/lib/cash-sheet';
 import {
   LEDGER_NEEDS_ATTENTION_ERROR,
   needsAttentionLedgerEntries,
   pendingLedgerEntries,
   queuedLedgerHint,
   resetStaleSyncingLedgerEntries,
+  readLedgerQueue,
   retryableLedgerEntries,
-  syncPendingLedgerEntries
+  sameLedgerRetryPayload,
+  type LedgerQueueItem
 } from '@/lib/ledger-entry-queue';
 import { currency } from '@/lib/money';
+import { startSheetAutoSend, type SheetAutoSendReason } from '@/lib/sheet-auto-send';
 
 type Row = {
   id?: string;
@@ -22,6 +38,34 @@ type Row = {
   is_collectible?: boolean;
   amount?: number | string | null;
 };
+
+/** Translated sentences for the "earlier entry didn't save" choice. {old} and {new} are filled with amounts. */
+export type CashSheetChoiceCopy = {
+  question: string;
+  send: string;
+  replace: string;
+  alreadySaved: string;
+  saved: string;
+};
+
+function readSheetForm(formElement: HTMLFormElement | null, context: { hotelId: string; businessDate: string; outletId: string | null }) {
+  if (!formElement) return { amount: '' } as Record<string, unknown>;
+  const form = new FormData(formElement);
+  return sheetEntryPayload(
+    { category: form.get('category'), description: form.get('description'), amount: form.get('amount'), payment_method: form.get('payment_method') },
+    context
+  );
+}
+
+function findHeldEntry(formValues: Record<string, unknown>, context: { userId: string; hotelId: string; outletId: string | null; preferId?: string | null }) {
+  return sheetHeldEntry({
+    formValues,
+    queued: retryableLedgerEntries(window.localStorage, context.userId),
+    hotelId: context.hotelId,
+    outletId: context.outletId,
+    preferId: context.preferId
+  });
+}
 
 function plain(value: string | null | undefined) {
   return String(value || '').replaceAll('_', ' ');
@@ -36,7 +80,8 @@ export function CashSheetEntries({
   rows,
   total,
   locked,
-  userId
+  userId,
+  choiceCopy
 }: {
   hotelId: string;
   outletId: string | null;
@@ -46,6 +91,7 @@ export function CashSheetEntries({
   total: number;
   locked: boolean;
   userId: string;
+  choiceCopy: CashSheetChoiceCopy;
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -57,13 +103,15 @@ export function CashSheetEntries({
   const [canRetry, setCanRetry] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
+  // Option (a): an earlier entry is queued and the form now says something else. Nothing is sent by itself.
+  const [held, setHeld] = useState<LedgerQueueItem | null>(null);
+  // A save staff started is running; auto-send waits. autoSendRef re-arms the retry timer after a failure.
+  const busyRef = useRef(false);
+  const autoSendRef = useRef<ReturnType<typeof startSheetAutoSend> | null>(null);
+  const [formAmount, setFormAmount] = useState('');
+
   function readForm(formElement: HTMLFormElement | null) {
-    if (!formElement) return { amount: '' } as Record<string, unknown>;
-    const form = new FormData(formElement);
-    return sheetEntryPayload(
-      { category: form.get('category'), description: form.get('description'), amount: form.get('amount'), payment_method: form.get('payment_method') },
-      { hotelId, businessDate, outletId }
-    );
+    return readSheetForm(formElement, { hotelId, businessDate, outletId });
   }
 
   function clearPending() {
@@ -71,13 +119,54 @@ export function CashSheetEntries({
     setCanRetry(false);
   }
 
+  function findHeld(formValues: Record<string, unknown>) {
+    return findHeldEntry(formValues, { userId, hotelId, outletId, preferId: pendingRef.current?.clientRequestId });
+  }
+
+  function money(value: unknown) {
+    return currency(Number(value || 0), currencyCode);
+  }
+
+  function finishSaved(text: string) {
+    setHeld(null);
+    clearPending();
+    formRef.current?.reset();
+    setFormAmount('');
+    setMessage(text);
+    router.refresh();
+  }
+
+  function onFormInput() {
+    const values = readForm(formRef.current);
+    setFormAmount(String(values.amount ?? ''));
+    if (!held) return;
+    const stillHeld = findHeld(values);
+    setHeld(stillHeld);
+    // The form matches the queued entry again (or is empty): back to normal auto-send.
+    if (!stillHeld) autoSendRef.current?.soon();
+  }
+
   async function submit() {
+    const formValues = readForm(formRef.current);
+    const waiting = findHeld(formValues);
+    if (waiting) {
+      setHeld(waiting);
+      setFormAmount(String(formValues.amount ?? ''));
+      setMessage('');
+      return;
+    }
+    const queued = retryableLedgerEntries(window.localStorage, userId);
+    // The form matches an entry still queued here (for example after a reload): resend that one, same id.
+    const sameAsQueued = String(formValues.amount ?? '').trim()
+      ? queued.find((item) => item.hotelId === hotelId && sameLedgerRetryPayload(item.payload, formValues, { outletId, hotelId }))
+      : undefined;
     const source = sheetRetrySource({
-      formValues: readForm(formRef.current),
-      pending: pendingRef.current,
-      queued: retryableLedgerEntries(window.localStorage, userId)
+      formValues,
+      pending: sameAsQueued ? { clientRequestId: sameAsQueued.clientRequestId, payload: sameAsQueued.payload } : pendingRef.current,
+      queued
     });
     if (!source) return;
+    busyRef.current = true;
     setSaving(true);
     setMessage('');
     try {
@@ -97,7 +186,64 @@ export function CashSheetEntries({
       setCanRetry(true);
       setMessage(queuedLedgerHint(error instanceof Error ? error.message : "Couldn't save this entry. Check your connection and try again.", true));
     } finally {
+      busyRef.current = false;
       setSaving(false);
+      autoSendRef.current?.soon();
+    }
+  }
+
+  async function chooseSend() {
+    const item = held;
+    if (!item) return;
+    busyRef.current = true;
+    setSaving(true);
+    setMessage('');
+    try {
+      const result = await sendHeldSheetEntry(item, { userId, hotelId, outletId, storage: window.localStorage });
+      if (result.ok) {
+        finishSaved(fillSheetCopy(choiceCopy.saved, { amount: money(item.payload.amount) }));
+        return;
+      }
+      if (!result.retryable && !result.needsAttention) setHeld(null);
+      setMessage(queuedLedgerHint(result.error, result.retryable, Boolean(result.needsAttention)));
+    } finally {
+      busyRef.current = false;
+      setSaving(false);
+      autoSendRef.current?.soon();
+    }
+  }
+
+  async function chooseReplace() {
+    const item = held;
+    if (!item) return;
+    const formValues = readForm(formRef.current);
+    busyRef.current = true;
+    setSaving(true);
+    setMessage('');
+    try {
+      const outcome = await replaceHeldSheetEntry(item, formValues, { userId, hotelId, outletId, storage: window.localStorage });
+      if (outcome.kind === 'already_saved') {
+        finishSaved(fillSheetCopy(choiceCopy.alreadySaved, { old: money(outcome.amount) }));
+        return;
+      }
+      if (outcome.kind !== 'sent') {
+        setMessage(outcome.error);
+        return;
+      }
+      setHeld(null);
+      const result = outcome.result;
+      if (result.ok) {
+        finishSaved(fillSheetCopy(choiceCopy.saved, { amount: money(formValues.amount) }));
+        return;
+      }
+      const keep = result.retryable || Boolean(result.needsAttention);
+      pendingRef.current = keep ? { clientRequestId: result.clientRequestId, payload: formValues } : null;
+      setCanRetry(keep);
+      setMessage(queuedLedgerHint(result.error, result.retryable, Boolean(result.needsAttention)));
+    } finally {
+      busyRef.current = false;
+      setSaving(false);
+      autoSendRef.current?.soon();
     }
   }
 
@@ -116,18 +262,40 @@ export function CashSheetEntries({
       setCanRetry(true);
       setMessage(queuedLedgerHint(attention[0].error || LEDGER_NEEDS_ATTENTION_ERROR, false, true));
     }
-    async function flush() {
-      if (!userId) return;
-      resetStaleSyncingLedgerEntries(window.localStorage, userId);
+    async function flush(reason: SheetAutoSendReason): Promise<{ remaining: number }> {
+      if (!userId) return { remaining: 0 };
+      const storage = window.localStorage;
+      // A save staff started is still running: leave its entry alone and look again shortly.
+      if (busyRef.current) return { remaining: sheetWaitingCount(readLedgerQueue(storage, userId)) };
+      if (reason === 'load') resetStaleSyncingLedgerEntries(storage, userId);
       showAttention();
-      if (!navigator.onLine || !pendingLedgerEntries(window.localStorage, userId).length) return;
+      const formValues = readSheetForm(formRef.current, { hotelId, businessDate, outletId });
+      const waiting = findHeldEntry(formValues, { userId, hotelId, outletId, preferId: pendingRef.current?.clientRequestId });
+      if (waiting) {
+        // The form differs from what is queued: ask, do not send.
+        setHeld(waiting);
+        setFormAmount(String(formValues.amount ?? ''));
+      }
+      const skipIds = waiting
+        ? retryableLedgerEntries(storage, userId).filter((item) => item.hotelId === hotelId).map((item) => item.clientRequestId)
+        : [];
+      const toSend = pendingLedgerEntries(storage, userId).filter((item) => !skipIds.includes(item.clientRequestId));
+      if (!toSend.length) return { remaining: sheetWaitingCount(readLedgerQueue(storage, userId), skipIds) };
+      const formMatch = String(formValues.amount ?? '').trim()
+        ? toSend.find((item) => item.hotelId === hotelId && sameLedgerRetryPayload(item.payload, formValues, { outletId, hotelId }))
+        : undefined;
+      busyRef.current = true;
       setSaving(true);
       try {
-        const result = await syncPendingLedgerEntries({ storage: window.localStorage, userId, isOnline: () => navigator.onLine });
-        if (cancelled) return;
-        if (result.synced > 0) {
+        const result = await syncSheetQueue({ storage, userId, skipIds, resetStale: false });
+        if (cancelled) return { remaining: 0 };
+        if (result.synced.length > 0) {
           clearPending();
-          setMessage(result.synced === 1 ? 'Entry saved.' : `${result.synced} entries saved.`);
+          if (formMatch && result.synced.includes(formMatch.clientRequestId)) {
+            formRef.current?.reset();
+            setFormAmount('');
+          }
+          setMessage(result.synced.length === 1 ? 'Entry saved.' : `${result.synced.length} entries saved.`);
           router.refresh();
         }
         if (result.failed > 0 && result.lastError) {
@@ -135,20 +303,20 @@ export function CashSheetEntries({
           setMessage(queuedLedgerHint(result.lastError, true));
         }
         showAttention();
-      } catch {
-        // Keep the form as it is if a queued entry cannot be sent yet.
       } finally {
+        busyRef.current = false;
         if (!cancelled) setSaving(false);
       }
+      return { remaining: sheetWaitingCount(readLedgerQueue(storage, userId), skipIds) };
     }
-    const onOnline = () => { void flush(); };
-    void flush();
-    window.addEventListener('online', onOnline);
+    const sender = startSheetAutoSend({ win: window, doc: document, run: flush, isOnline: () => navigator.onLine });
+    autoSendRef.current = sender;
     return () => {
       cancelled = true;
-      window.removeEventListener('online', onOnline);
+      sender.stop();
+      if (autoSendRef.current === sender) autoSendRef.current = null;
     };
-  }, [router, userId, hotelId]);
+  }, [router, userId, hotelId, outletId, businessDate]);
 
   return (
     <section className="card p-5">
@@ -186,8 +354,21 @@ export function CashSheetEntries({
         {locked ? (
           <p className="text-sm font-semibold">This day is locked. A manager has to unlock it before anything new is added.</p>
         ) : (
-          <form ref={formRef} onSubmit={addEntry} className="space-y-3">
+          <form ref={formRef} onSubmit={addEntry} onInput={onFormInput} className="space-y-3">
             {message ? <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm" role="status">{message}</p> : null}
+            {held ? (
+              <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3 text-sm" role="alert">
+                <p className="font-semibold">{fillSheetCopy(choiceCopy.question, { old: money(held.payload.amount), new: money(formAmount) })}</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button className="btn-secondary" type="button" disabled={saving} onClick={() => void chooseSend()}>
+                    {fillSheetCopy(choiceCopy.send, { old: money(held.payload.amount) })}
+                  </button>
+                  <button className="btn-primary" type="button" disabled={saving} onClick={() => void chooseReplace()}>
+                    {fillSheetCopy(choiceCopy.replace, { new: money(formAmount) })}
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <label className="block space-y-1">What is it?
               <select name="category" className="w-full" defaultValue="other">
                 {SHEET_ENTRY_CATEGORIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
@@ -206,8 +387,8 @@ export function CashSheetEntries({
             <label className="block space-y-1">Note (optional)
               <input name="description" className="w-full" />
             </label>
-            <button className="btn-primary w-full" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save entry'}</button>
-            {canRetry && !saving ? (
+            <button className="btn-primary w-full" type="submit" disabled={saving || Boolean(held)}>{saving ? 'Saving…' : 'Save entry'}</button>
+            {canRetry && !saving && !held ? (
               <button className="btn-secondary w-full" type="button" onClick={() => void submit()}>Retry</button>
             ) : null}
           </form>

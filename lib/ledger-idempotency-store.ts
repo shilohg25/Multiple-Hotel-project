@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { supabaseAdmin } from './supabase-admin';
-import type { LedgerIdempotencyStore, LedgerReclaimResult, OfflineSyncRow } from './ledger-idempotency';
+import { LEDGER_RETIRED_STATUS, type LedgerIdempotencyStore, type LedgerReclaimResult, type OfflineSyncRow } from './ledger-idempotency';
 
 function isConflict(error: { code?: string; message?: string; status?: number } | null) {
   if (!error) return false;
@@ -87,6 +87,36 @@ export function createSupabaseLedgerIdempotencyStore(): LedgerIdempotencyStore {
         .eq('client_request_id', input.clientRequestId)
         .eq('created_by', input.createdBy)
         .in('status', ['reserved', 'reclaiming']);
+    },
+    async tryRetire(input) {
+      const { data, error } = await supabaseAdmin
+        .from('offline_sync_requests')
+        .insert({
+          client_request_id: input.clientRequestId,
+          request_type: input.requestType,
+          status: LEDGER_RETIRED_STATUS,
+          created_by: input.createdBy
+        })
+        .select('client_request_id')
+        .maybeSingle();
+      if (error) {
+        if (isConflict(error)) return 'exists';
+        throw error;
+      }
+      return data ? 'retired' : 'exists';
+    },
+    async markRetired(input) {
+      const { data, error } = await supabaseAdmin
+        .from('offline_sync_requests')
+        .update({ status: LEDGER_RETIRED_STATUS })
+        .eq('client_request_id', input.clientRequestId)
+        .eq('created_by', input.createdBy)
+        .in('status', ['reserved', 'reclaiming'])
+        .lt('created_at', input.olderThan)
+        .select('client_request_id')
+        .maybeSingle();
+      if (error) throw error;
+      return Boolean(data);
     },
     async tryReclaim(input): Promise<LedgerReclaimResult> {
       const now = input.now || new Date().toISOString();
