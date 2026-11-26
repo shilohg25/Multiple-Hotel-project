@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { canCreateReservation } from '@/lib/access';
 import { requireStaff, canAccessHotel } from '@/lib/auth';
 import { monthRange } from '@/lib/date';
 import { ReservationBoard } from '@/components/ReservationBoard';
@@ -47,7 +48,7 @@ export default async function ReservationsPage({ searchParams }: { searchParams?
         <h1 className="text-3xl font-black tracking-tight">Reservations</h1>
         <p className="mt-1 text-slate-500">Gantt-style room board with drag-to-move scheduling.</p>
       </div>
-      <ReservationBoard hotel={hotel} hotels={hotels} rooms={rooms} reservations={reservations} from={from} to={to} />
+      <ReservationBoard hotel={hotel} hotels={hotels} rooms={rooms} reservations={reservations} from={from} to={to} canCreate={canCreateReservation(staff.profile.role)} />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { canCreateReservation } from '@/lib/access';
 import { canAccessHotel, requireStaff } from '@/lib/auth';
 import { businessToday } from '@/lib/date';
 import { supabaseAdmin } from '@/lib/supabase-admin';
@@ -99,6 +100,7 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
   const onlineAlerts = ((onlineResult.data || []) as AlertRow[]).map(toAlert);
   const pastAlerts = ((pastResult.data || []) as AlertRow[]).map(toAlert);
   const query = `hotel=${hotel.id}&date=${date}${outlet ? `&outlet=${outlet.id}` : ''}`;
+  const canCreate = canCreateReservation(staff.profile.role);
 
   return (
     <div className="space-y-6">
@@ -132,8 +134,8 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
         prompt={label(locale, 'today.whichStay')}
         chooseLabel={label(locale, 'today.chooseStay')}
       />
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Link href={`/reservations/new`} className="btn-primary min-h-16 text-base">{label(locale, 'today.checkIn')}</Link>
+      <div className={`grid gap-3 ${canCreate ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+        {canCreate ? <Link href={`/reservations/new`} className="btn-primary min-h-16 text-base">{label(locale, 'today.checkIn')}</Link> : null}
         <Link href={`/sales?hotel=${hotel.id}&date=${date}${outlet ? `&outlet=${outlet.id}` : ''}`} className="btn-primary min-h-16 text-base">{label(locale, 'today.expense')}</Link>
         <Link href={`/today/close?${query}`} className="btn-primary min-h-16 bg-emerald-800 text-base hover:bg-emerald-700">{label(locale, 'today.close')}</Link>
       </div>
@@ -145,22 +147,31 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
       ) : null}
 
       <section className="grid gap-4 lg:grid-cols-3">
-        <StayList title={label(locale, 'today.arrivals')} empty={label(locale, 'today.noArrivals')} cards={arrivals} actionLabel={label(locale, 'today.checkIn')} />
-        <StayList title={label(locale, 'today.inHouse')} empty={label(locale, 'today.noInHouse')} cards={inHouse} actionLabel="Open stay" />
-        <StayList title={label(locale, 'today.departures')} empty={label(locale, 'today.noDepartures')} cards={departures} actionLabel="Check out" />
+        <StayList title={label(locale, 'today.arrivals')} empty={label(locale, 'today.noArrivals')} cards={arrivals} actionLabel={label(locale, 'today.checkIn')} canCreate={canCreate} />
+        <StayList title={label(locale, 'today.inHouse')} empty={label(locale, 'today.noInHouse')} cards={inHouse} actionLabel="Open stay" canCreate={canCreate} />
+        <StayList title={label(locale, 'today.departures')} empty={label(locale, 'today.noDepartures')} cards={departures} actionLabel="Check out" canCreate={canCreate} />
       </section>
 
       <section className="card p-4">
         <h2 className="text-lg font-bold">{label(locale, 'today.rooms')}</h2>
         <p className="mt-1 text-sm text-slate-500">Amber is arriving, green is in house, blue is leaving, grey is empty.</p>
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
-          {cards.map((card) => (
-            <Link key={card.room.id} href={card.stay ? `/reservations/${card.stay.id}` : `/reservations/new`} className={`rounded-xl px-3 py-3 ${tone[card.status]}`}>
-              <p className="text-lg font-black">{card.room.name}</p>
-              <p className="text-xs capitalize">{card.status.replace('_', ' ')}</p>
-              <p className="truncate text-sm">{card.stay?.guest_name || 'Empty'}</p>
-            </Link>
-          ))}
+          {cards.map((card) => {
+            const href = card.stay ? `/reservations/${card.stay.id}` : canCreate ? '/reservations/new' : null;
+            const className = `rounded-xl px-3 py-3 ${tone[card.status]}`;
+            const body = (
+              <>
+                <p className="text-lg font-black">{card.room.name}</p>
+                <p className="text-xs capitalize">{card.status.replace('_', ' ')}</p>
+                <p className="truncate text-sm">{card.stay?.guest_name || 'Empty'}</p>
+              </>
+            );
+            return href ? (
+              <Link key={card.room.id} href={href} className={className}>{body}</Link>
+            ) : (
+              <div key={card.room.id} className={className}>{body}</div>
+            );
+          })}
           {!cards.length ? <p className="text-sm text-slate-500">This property has no active rooms yet.</p> : null}
         </div>
       </section>
@@ -172,24 +183,34 @@ function StayList({
   title,
   empty,
   cards,
-  actionLabel
+  actionLabel,
+  canCreate
 }: {
   title: string;
   empty: string;
   cards: { room: Room; stay: StaySlice | null }[];
   actionLabel: string;
+  canCreate: boolean;
 }) {
   return (
     <section className="card p-4">
       <h2 className="text-lg font-bold">{title}</h2>
       <div className="mt-3 space-y-2">
-        {cards.map((card) => (
-          <Link key={card.room.id} href={card.stay ? `/reservations/${card.stay.id}` : '/reservations/new'} className="block rounded-lg border border-slate-200 px-3 py-3 hover:bg-slate-50">
-            <p className="font-bold">Room {card.room.name}</p>
-            <p className="text-sm text-slate-600">{card.stay?.guest_name}</p>
-            <p className="text-sm font-semibold text-slate-900">{actionLabel}</p>
-          </Link>
-        ))}
+        {cards.map((card) => {
+          const href = card.stay ? `/reservations/${card.stay.id}` : canCreate ? '/reservations/new' : null;
+          const body = (
+            <>
+              <p className="font-bold">Room {card.room.name}</p>
+              <p className="text-sm text-slate-600">{card.stay?.guest_name}</p>
+              <p className="text-sm font-semibold text-slate-900">{actionLabel}</p>
+            </>
+          );
+          return href ? (
+            <Link key={card.room.id} href={href} className="block rounded-lg border border-slate-200 px-3 py-3 hover:bg-slate-50">{body}</Link>
+          ) : (
+            <div key={card.room.id} className="rounded-lg border border-slate-200 px-3 py-3">{body}</div>
+          );
+        })}
         {!cards.length ? <p className="text-sm text-slate-500">{empty}</p> : null}
       </div>
     </section>
