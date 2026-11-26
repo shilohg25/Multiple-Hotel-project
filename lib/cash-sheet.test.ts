@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { CASH_DENOMINATIONS, closeFiguresFromCounts, figuresFromLedger, resolveReturnToFund, summarizeClose, type LedgerLike } from './day-close.ts';
-import { SHEET_ENTRY_CATEGORIES, sheetBaseFigures, sheetCloseSummary, sheetInitialReturnToFund, sheetReturnToFund, splitSheetLedger, type SavedCloseRow, type SheetLedgerRow } from './cash-sheet.ts';
+import { saveSheetEntry, SHEET_ENTRY_OFFLINE_MESSAGE, SHEET_ENTRY_TIMEOUT_MESSAGE, SHEET_ENTRY_CATEGORIES, sheetBaseFigures, sheetCloseSummary, sheetInitialReturnToFund, sheetReturnToFund, splitSheetLedger, type SavedCloseRow, type SheetLedgerRow } from './cash-sheet.ts';
 
 /*
  * FROZEN copy of the close path at origin/main f392e0c (lib/day-close.ts, app/api/day-closes/route.ts,
@@ -318,5 +318,51 @@ describe('return to fund after typing on the same sheet (no reload)', () => {
     for (const key of summaryKeys) assert.equal(preview[key], old.preview[key], `preview ${key}`);
     for (const key of storedKeys) assert.equal(newSave.record[key], oldSave.record[key], `stored ${key}`);
     assert.equal(newSave.summary.status, 'balanced');
+  });
+});
+
+describe('sheet Save entry never hangs', () => {
+  const abortable = (makeResponse?: () => Response): typeof fetch => ((_input, init) => new Promise((resolve, reject) => {
+    const signal = init?.signal;
+    signal?.addEventListener('abort', () => { const error = new Error('aborted'); error.name = 'AbortError'; reject(error); }, { once: true });
+    if (makeResponse) resolve(makeResponse());
+  })) as typeof fetch;
+
+  it('times out when the server never answers, with Retry', async () => {
+    const started = Date.now();
+    const result = await saveSheetEntry({ amount: 10 }, { fetchImpl: abortable(), timeoutMs: 50 });
+    assert.deepEqual(result, { ok: false, error: SHEET_ENTRY_TIMEOUT_MESSAGE, canRetry: true });
+    assert.ok(Date.now() - started < 2000);
+  });
+
+  it('times out when headers arrive but the body stalls', async () => {
+    const stalledBody = () => new Response(new ReadableStream({ start() { /* never sends */ } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    const result = await saveSheetEntry({ amount: 10 }, { fetchImpl: abortable(stalledBody), timeoutMs: 50 });
+    assert.deepEqual(result, { ok: false, error: SHEET_ENTRY_TIMEOUT_MESSAGE, canRetry: true });
+  });
+
+  it('reports no internet with Retry when fetch fails', async () => {
+    const offline = (() => Promise.reject(new TypeError('Failed to fetch'))) as typeof fetch;
+    assert.deepEqual(await saveSheetEntry({ amount: 10 }, { fetchImpl: offline, timeoutMs: 50 }), { ok: false, error: SHEET_ENTRY_OFFLINE_MESSAGE, canRetry: true });
+  });
+
+  it('shows the server error without Retry for a refused entry (for example a locked day)', async () => {
+    const locked = (() => Promise.resolve(Response.json({ error: 'This day is locked.' }, { status: 409 }))) as typeof fetch;
+    assert.deepEqual(await saveSheetEntry({ amount: 10 }, { fetchImpl: locked }), { ok: false, error: 'This day is locked.', canRetry: false });
+  });
+
+  it('saves, and Retry sends the same client_request_id', async () => {
+    const sent: string[] = [];
+    let calls = 0;
+    const flaky = ((_input: RequestInfo | URL, init?: RequestInit) => {
+      sent.push(String(init?.body));
+      calls += 1;
+      return calls === 1 ? Promise.reject(new TypeError('Failed to fetch')) : Promise.resolve(Response.json({ entry: { id: 'x' } }));
+    }) as typeof fetch;
+    const body = { amount: 10, client_request_id: 'req-1' };
+    assert.equal((await saveSheetEntry(body, { fetchImpl: flaky })).ok, false);
+    assert.deepEqual(await saveSheetEntry(body, { fetchImpl: flaky }), { ok: true });
+    assert.equal(sent[0], sent[1]);
+    assert.ok(sent[1].includes('"client_request_id":"req-1"'));
   });
 });

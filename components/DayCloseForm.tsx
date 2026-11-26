@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { CASH_DENOMINATIONS, countMapForBucket, formNumberValue, type CloseFigures, type SavedCountRow } from '@/lib/day-close';
 import { sheetCloseSummary, sheetReturnToFund } from '@/lib/cash-sheet';
 import { currency } from '@/lib/money';
+import { fetchJsonWithTimeout, RequestTimeoutError } from '@/lib/fetch-timeout';
 
 type CountMap = Record<number, number>;
 
@@ -58,7 +59,7 @@ export function DayCloseForm({
     setSaving(true);
     setMessage('');
     try {
-      const response = await fetch('/api/day-closes', {
+      const { response, json: raw } = await fetchJsonWithTimeout('/api/day-closes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -73,10 +74,14 @@ export function DayCloseForm({
           drawer_counts: CASH_DENOMINATIONS.map((denomination) => ({ denomination, quantity: drawerCounts[denomination] || 0 }))
         })
       });
-      const json = await response.json().catch(() => ({}));
+      const json = (raw || {}) as { error?: string; summary?: { status?: string } };
       setMessage(response.ok ? `Saved. The day is ${json.summary?.status || 'saved'}.` : json.error || 'Could not save.');
       if (response.ok) router.refresh();
-    } catch {
+    } catch (error) {
+      if (error instanceof RequestTimeoutError) {
+        setMessage('No answer from the server. The cash sheet may not be saved. Your count is still on the screen. Press Save cash sheet again.');
+        return;
+      }
       setMessage('No internet. The cash sheet was not saved. Your count is still on the screen. Press Save again when you are back online.');
     } finally {
       setSaving(false);

@@ -8,6 +8,7 @@ import {
   type CloseSummary,
   type LedgerLike
 } from './day-close.ts';
+import { DEFAULT_FETCH_TIMEOUT_MS, fetchJsonWithTimeout, isNetworkError, RequestTimeoutError } from './fetch-timeout.ts';
 
 /**
  * One daily cash sheet.
@@ -134,3 +135,37 @@ export const SHEET_ENTRY_CATEGORIES = [
 ] as const;
 
 export const SHEET_ENTRY_METHODS = ['cash', 'gcash', 'maya', 'bank_transfer', 'card', 'cheque', 'online_gateway', 'booking_dot_com', 'trip_dot_com', 'other'] as const;
+
+export type SheetEntrySaveResult =
+  | { ok: true }
+  | { ok: false; error: string; canRetry: boolean };
+
+export const SHEET_ENTRY_TIMEOUT_MESSAGE = 'Could not save this entry: no answer from the server. What you typed is still in the form. Press Retry.';
+export const SHEET_ENTRY_OFFLINE_MESSAGE = 'No internet. This entry was not saved. What you typed is still in the form. Press Retry when you are back online.';
+
+/**
+ * Save one typed sheet entry. The 12 s timeout covers the response body too, so the button can
+ * never sit on "Saving…". The body carries a client_request_id that stays the same on Retry, so a
+ * server with ledger dedupe (PR #33) never saves it twice; servers without it ignore the field.
+ */
+export async function saveSheetEntry(
+  body: Record<string, unknown>,
+  options: { fetchImpl?: typeof fetch; timeoutMs?: number } = {}
+): Promise<SheetEntrySaveResult> {
+  try {
+    const { response, json } = await fetchJsonWithTimeout('/api/ledger', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }, { timeoutMs: options.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS, fetchImpl: options.fetchImpl });
+    if (!response.ok) {
+      const error = (json as { error?: string } | null)?.error || 'Could not save this entry.';
+      return { ok: false, error, canRetry: response.status >= 500 };
+    }
+    return { ok: true };
+  } catch (error) {
+    if (error instanceof RequestTimeoutError) return { ok: false, error: SHEET_ENTRY_TIMEOUT_MESSAGE, canRetry: true };
+    if (isNetworkError(error)) return { ok: false, error: SHEET_ENTRY_OFFLINE_MESSAGE, canRetry: true };
+    return { ok: false, error: 'Could not save this entry.', canRetry: true };
+  }
+}

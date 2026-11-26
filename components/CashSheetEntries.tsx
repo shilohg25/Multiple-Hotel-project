@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { SHEET_ENTRY_CATEGORIES, SHEET_ENTRY_METHODS } from '@/lib/cash-sheet';
+import { saveSheetEntry, SHEET_ENTRY_CATEGORIES, SHEET_ENTRY_METHODS } from '@/lib/cash-sheet';
 import { currency } from '@/lib/money';
 
 type Row = {
@@ -40,6 +40,28 @@ export function CashSheetEntries({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
 
+  // The last body that failed, kept so Retry sends the same entry with the same client_request_id.
+  const [pending, setPending] = useState<{ body: Record<string, unknown>; form: HTMLFormElement } | null>(null);
+
+  async function submit(body: Record<string, unknown>, formElement: HTMLFormElement) {
+    setSaving(true);
+    setMessage('');
+    try {
+      const result = await saveSheetEntry(body);
+      if (!result.ok) {
+        setMessage(result.error);
+        setPending(result.canRetry ? { body, form: formElement } : null);
+        return;
+      }
+      setPending(null);
+      formElement.reset();
+      setMessage('Entry saved.');
+      router.refresh();
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function addEntry(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formElement = event.currentTarget;
@@ -52,30 +74,11 @@ export function CashSheetEntries({
       description: String(form.get('description') || ''),
       amount: form.get('amount'),
       payment_method: form.get('payment_method') || 'cash',
-      is_collectible: category === 'collectible' ? 'true' : 'false'
+      is_collectible: category === 'collectible' ? 'true' : 'false',
+      client_request_id: crypto.randomUUID()
     };
     if (outletId) body.outlet_id = outletId;
-    setSaving(true);
-    setMessage('');
-    try {
-      const response = await fetch('/api/ledger', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      const json = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setMessage(json.error || 'Could not save this entry.');
-        return;
-      }
-      formElement.reset();
-      setMessage('Entry saved.');
-      router.refresh();
-    } catch {
-      setMessage('No internet. This entry was not saved. What you typed is still in the form. Press Save entry again when you are back online.');
-    } finally {
-      setSaving(false);
-    }
+    await submit(body, formElement);
   }
 
   return (
@@ -135,6 +138,9 @@ export function CashSheetEntries({
               <input name="description" className="w-full" />
             </label>
             <button className="btn-primary w-full" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save entry'}</button>
+            {pending && !saving ? (
+              <button className="btn-secondary w-full" type="button" onClick={() => void submit(pending.body, pending.form)}>Retry</button>
+            ) : null}
           </form>
         )}
       </div>
