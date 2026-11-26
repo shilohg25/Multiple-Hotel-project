@@ -34,6 +34,8 @@ export const en: MessageCatalog = {
     'close.heldSend': 'Send {old}',
     'close.heldReplace': 'Replace with {new}',
     'close.heldAlreadySaved': '{old} was already saved. Correct it with an adjustment.',
+    'close.heldReplacementExists': '{amount} was already saved as the replacement. Correct it with an adjustment.',
+    'close.heldGone': 'This entry was already sent or replaced in another tab. Nothing more was saved.',
     'close.entrySaved': '{amount} saved.',
     'help.title': 'How to',
     'help.intro': 'Short steps for a new shift. The app calculates the totals. You count the cash, name the guest, and ask a manager when a price or a day needs approval.',

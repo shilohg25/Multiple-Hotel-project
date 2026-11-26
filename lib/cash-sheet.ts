@@ -9,7 +9,10 @@ import {
   type LedgerLike
 } from './day-close.ts';
 import {
+  buildLedgerPayload,
+  isLockedDayLedgerError,
   ledgerSaveFailureMessage,
+  readLedgerQueue,
   pendingLedgerEntries,
   removeLedgerQueueItem,
   resetStaleSyncingLedgerEntries,
@@ -215,24 +218,44 @@ export function saveSheetEntryWithQueue(
 }
 
 /**
- * Option (a): an earlier entry is still queued on this device and the form now says something else
- * (staff saved 650, it timed out, they changed the form to 560). Nothing is sent by itself; staff choose.
- * Returns the queued entry to ask about, or null when the form is empty or matches a queued entry
- * (then today's auto-send and Retry apply).
+ * Option (a): staff saved an entry, it did not reach the server and is still queued, and they then
+ * changed the form (650 timed out, form edited to 560).
+ *
+ * "Conflicting" means exactly one entry: the one the current form came from, i.e. the last save from
+ * this form that failed and is still queued (sourceId). Only that entry is held and only while the form
+ * has an amount that differs from it. Every other queued entry auto-sends as usual, and once staff
+ * empty the amount (or the source leaves the queue) the form is a new entry and Save works normally.
  */
 export function sheetHeldEntry(input: {
   formValues: Record<string, unknown>;
   queued: LedgerQueueItem[];
   hotelId: string;
   outletId?: string | null;
-  preferId?: string | null;
+  sourceId?: string | null;
 }): LedgerQueueItem | null {
+  if (!input.sourceId) return null;
   if (!String(input.formValues.amount ?? '').trim()) return null;
-  const mine = input.queued.filter((item) => item.hotelId === input.hotelId);
-  if (!mine.length) return null;
-  const options = { outletId: input.outletId, hotelId: input.hotelId };
-  if (mine.some((item) => sameLedgerRetryPayload(item.payload, input.formValues, options))) return null;
-  return mine.find((item) => item.clientRequestId === input.preferId) || mine[0];
+  const source = input.queued.find((item) => item.clientRequestId === input.sourceId && item.hotelId === input.hotelId);
+  if (!source) return null;
+  if (sameLedgerRetryPayload(source.payload, input.formValues, { outletId: input.outletId, hotelId: input.hotelId })) return null;
+  return source;
+}
+
+/** True while this entry is still in the device queue (another tab may have sent or replaced it). */
+export function sheetEntryStillQueued(storage: StorageLike, userId: string, clientRequestId: string) {
+  return readLedgerQueue(storage, userId).some((item) => item.clientRequestId === clientRequestId && item.status !== 'syncing');
+}
+
+/**
+ * After a save finished: clear the form only if it still shows what was sent.
+ * An edit typed while the save was running is kept.
+ */
+export function sheetFormStillSent(
+  currentValues: Record<string, unknown>,
+  sentValues: Record<string, unknown>,
+  options: { outletId?: string | null; hotelId?: string }
+) {
+  return sameLedgerRetryPayload(sentValues, currentValues, options);
 }
 
 /** #33's auto-send, except for entries staff still have to choose about. */
@@ -289,54 +312,51 @@ export function sendHeldSheetEntry(item: LedgerQueueItem, options: SheetSendOpti
 }
 
 export type SheetReplaceResult =
-  | { kind: 'already_saved'; amount: number }
-  | { kind: 'sent'; result: PostLedgerResult }
+  | { kind: 'already_saved' | 'replaced' | 'replacement_exists'; amount: number }
+  | { kind: 'gone' }
   | { kind: 'busy' | 'offline' | 'error'; error: string };
 
 /**
- * "Replace with ₱560": exactly one row may land.
- * 1. Ask the server about the earlier client_request_id (PATCH /api/ledger, scoped to this user and hotel).
- *    - Already saved: insert nothing; staff correct it with an adjustment. No ledger row is edited or deleted.
- *    - Not saved: the server retires that id, so a late copy of it is refused.
- * 2. Only after it is retired, send the form as a new entry with a new id.
- * If the server cannot be reached, nothing changes and the choice stays on screen.
+ * "Replace with ₱560": one call, PATCH /api/ledger { action: 'replace' }. The server enforces one row:
+ * - earlier entry already saved: nothing inserted ('already_saved', staff use an adjustment);
+ * - otherwise it retires the earlier id and inserts the correction under an id it derives from it,
+ *   so a second tab or a retry gets the existing replacement ('replacement_exists'), even for another amount.
+ * Before sending, the device queue is read again: if another tab already handled this entry, nothing is sent.
+ * If the server can't be reached, nothing changes here and pressing Replace again is safe.
  */
 export async function replaceHeldSheetEntry(
   item: LedgerQueueItem,
   formValues: Record<string, unknown>,
   options: SheetSendOptions
 ): Promise<SheetReplaceResult> {
+  if (!sheetEntryStillQueued(options.storage, options.userId, item.clientRequestId)) return { kind: 'gone' };
   const hotelId = item.hotelId || options.hotelId;
-  let status = 0;
+  const entry = buildLedgerPayload(formValues, { outletId: options.outletId, hotelId, clientRequestId: '_' });
+  delete entry.client_request_id;
   let json: Record<string, unknown> = {};
   try {
     const answer = await fetchJsonWithTimeout('/api/ledger', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'retire', hotel_id: hotelId, client_request_id: item.clientRequestId })
+      body: JSON.stringify({ action: 'replace', hotel_id: hotelId, client_request_id: item.clientRequestId, entry })
     }, { timeoutMs: options.timeoutMs ?? LEDGER_SAVE_TIMEOUT_MS, fetchImpl: options.fetchImpl });
-    status = answer.response.status;
     json = answer.json && typeof answer.json === 'object' ? answer.json as Record<string, unknown> : {};
     if (!answer.response.ok) {
-      const error = typeof json.error === 'string' ? json.error : 'Could not check the earlier entry.';
-      return { kind: status === 409 ? 'busy' : 'error', error };
+      const error = typeof json.error === 'string' ? json.error : 'Could not replace the earlier entry.';
+      return { kind: answer.response.status === 409 && !isLockedDayLedgerError(error) ? 'busy' : 'error', error };
     }
   } catch (error) {
     return { kind: isNetworkError(error) ? 'offline' : 'error', error: ledgerSaveFailureMessage(error) };
   }
 
-  if (json.status === 'already_saved') {
-    removeLedgerQueueItem(options.storage, options.userId, item.clientRequestId);
-    return { kind: 'already_saved', amount: Number(item.payload.amount || 0) };
+  const status = json.status;
+  if (status !== 'already_saved' && status !== 'replaced' && status !== 'replacement_exists') {
+    return { kind: 'error', error: 'Could not replace the earlier entry.' };
   }
-  if (json.status !== 'retired') return { kind: 'error', error: 'Could not check the earlier entry.' };
-
   removeLedgerQueueItem(options.storage, options.userId, item.clientRequestId);
-  const result = await saveSheetEntryWithQueue(
-    { values: formValues, previousPayload: null },
-    { ...options, hotelId }
-  );
-  return { kind: 'sent', result };
+  const saved = json.entry && typeof json.entry === 'object' ? json.entry as { amount?: unknown } : {};
+  const amount = status === 'already_saved' ? Number(item.payload.amount || 0) : Number(saved.amount ?? formValues.amount ?? 0);
+  return { kind: status, amount };
 }
 
 /** Fill {old} and {new} in a translated sentence with the real amounts. */

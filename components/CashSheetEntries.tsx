@@ -9,6 +9,8 @@ import {
   sendHeldSheetEntry,
   sheetEntryPayload,
   sheetHeldEntry,
+  sheetEntryStillQueued,
+  sheetFormStillSent,
   sheetRetrySource,
   sheetWaitingCount,
   syncSheetQueue,
@@ -45,6 +47,8 @@ export type CashSheetChoiceCopy = {
   send: string;
   replace: string;
   alreadySaved: string;
+  replacementExists: string;
+  gone: string;
   saved: string;
 };
 
@@ -57,13 +61,13 @@ function readSheetForm(formElement: HTMLFormElement | null, context: { hotelId: 
   );
 }
 
-function findHeldEntry(formValues: Record<string, unknown>, context: { userId: string; hotelId: string; outletId: string | null; preferId?: string | null }) {
+function findHeldEntry(formValues: Record<string, unknown>, context: { userId: string; hotelId: string; outletId: string | null; sourceId?: string | null }) {
   return sheetHeldEntry({
     formValues,
     queued: retryableLedgerEntries(window.localStorage, context.userId),
     hotelId: context.hotelId,
     outletId: context.outletId,
-    preferId: context.preferId
+    sourceId: context.sourceId
   });
 }
 
@@ -109,6 +113,9 @@ export function CashSheetEntries({
   const busyRef = useRef(false);
   const autoSendRef = useRef<ReturnType<typeof startSheetAutoSend> | null>(null);
   const [formAmount, setFormAmount] = useState('');
+  // The one entry the form came from: the last save from this form that failed and is still queued.
+  // Only it can be held. Emptying the amount, a save, Send or Replace ends the link.
+  const sourceRef = useRef<string | null>(null);
 
   function readForm(formElement: HTMLFormElement | null) {
     return readSheetForm(formElement, { hotelId, businessDate, outletId });
@@ -120,25 +127,41 @@ export function CashSheetEntries({
   }
 
   function findHeld(formValues: Record<string, unknown>) {
-    return findHeldEntry(formValues, { userId, hotelId, outletId, preferId: pendingRef.current?.clientRequestId });
+    return findHeldEntry(formValues, { userId, hotelId, outletId, sourceId: sourceRef.current });
+  }
+
+  /** Clear the form only if it still shows these values; an edit typed meanwhile is kept. */
+  function resetFormIfStill(values: Record<string, unknown>) {
+    if (!sheetFormStillSent(readForm(formRef.current), values, { outletId, hotelId })) return;
+    formRef.current?.reset();
+    setFormAmount('');
   }
 
   function money(value: unknown) {
     return currency(Number(value || 0), currencyCode);
   }
 
-  function finishSaved(text: string) {
+  function finishChoice(text: string, formAtClick: Record<string, unknown>, refresh = true) {
     setHeld(null);
     clearPending();
-    formRef.current?.reset();
-    setFormAmount('');
+    sourceRef.current = null;
+    resetFormIfStill(formAtClick);
     setMessage(text);
-    router.refresh();
+    if (refresh) router.refresh();
   }
 
   function onFormInput() {
     const values = readForm(formRef.current);
     setFormAmount(String(values.amount ?? ''));
+    if (!String(values.amount ?? '').trim()) {
+      // An empty amount ends the link to the earlier entry: what is typed next is a new entry.
+      sourceRef.current = null;
+      if (held) {
+        setHeld(null);
+        autoSendRef.current?.soon();
+      }
+      return;
+    }
     if (!held) return;
     const stillHeld = findHeld(values);
     setHeld(stillHeld);
@@ -173,13 +196,15 @@ export function CashSheetEntries({
       const result = await saveSheetEntryWithQueue(source, { userId, hotelId, outletId, storage: window.localStorage });
       if (result.ok) {
         clearPending();
-        formRef.current?.reset();
+        sourceRef.current = null;
+        resetFormIfStill(source.values);
         setMessage(result.duplicate ? 'Entry already saved.' : 'Entry saved.');
         router.refresh();
         return;
       }
       const keep = result.retryable || Boolean(result.needsAttention);
       pendingRef.current = keep ? { clientRequestId: result.clientRequestId, payload: source.values } : null;
+      sourceRef.current = result.retryable ? result.clientRequestId : null;
       setCanRetry(keep);
       setMessage(queuedLedgerHint(result.error, result.retryable, Boolean(result.needsAttention)));
     } catch (error) {
@@ -195,16 +220,25 @@ export function CashSheetEntries({
   async function chooseSend() {
     const item = held;
     if (!item) return;
+    const formAtClick = readForm(formRef.current);
+    // Another tab may have sent or replaced it already: then send nothing.
+    if (!sheetEntryStillQueued(window.localStorage, userId, item.clientRequestId)) {
+      finishChoice(choiceCopy.gone, formAtClick);
+      return;
+    }
     busyRef.current = true;
     setSaving(true);
     setMessage('');
     try {
       const result = await sendHeldSheetEntry(item, { userId, hotelId, outletId, storage: window.localStorage });
       if (result.ok) {
-        finishSaved(fillSheetCopy(choiceCopy.saved, { amount: money(item.payload.amount) }));
+        finishChoice(fillSheetCopy(choiceCopy.saved, { amount: money(item.payload.amount) }), formAtClick);
         return;
       }
-      if (!result.retryable && !result.needsAttention) setHeld(null);
+      if (!result.retryable && !result.needsAttention) {
+        setHeld(null);
+        sourceRef.current = null;
+      }
       setMessage(queuedLedgerHint(result.error, result.retryable, Boolean(result.needsAttention)));
     } finally {
       busyRef.current = false;
@@ -223,23 +257,17 @@ export function CashSheetEntries({
     try {
       const outcome = await replaceHeldSheetEntry(item, formValues, { userId, hotelId, outletId, storage: window.localStorage });
       if (outcome.kind === 'already_saved') {
-        finishSaved(fillSheetCopy(choiceCopy.alreadySaved, { old: money(outcome.amount) }));
-        return;
-      }
-      if (outcome.kind !== 'sent') {
+        finishChoice(fillSheetCopy(choiceCopy.alreadySaved, { old: money(outcome.amount) }), formValues);
+      } else if (outcome.kind === 'replacement_exists') {
+        finishChoice(fillSheetCopy(choiceCopy.replacementExists, { amount: money(outcome.amount) }), formValues);
+      } else if (outcome.kind === 'replaced') {
+        finishChoice(fillSheetCopy(choiceCopy.saved, { amount: money(outcome.amount) }), formValues);
+      } else if (outcome.kind === 'gone') {
+        finishChoice(choiceCopy.gone, formValues);
+      } else if ('error' in outcome) {
+        // Busy, offline or refused: nothing changed; the choice stays and pressing Replace again is safe.
         setMessage(outcome.error);
-        return;
       }
-      setHeld(null);
-      const result = outcome.result;
-      if (result.ok) {
-        finishSaved(fillSheetCopy(choiceCopy.saved, { amount: money(formValues.amount) }));
-        return;
-      }
-      const keep = result.retryable || Boolean(result.needsAttention);
-      pendingRef.current = keep ? { clientRequestId: result.clientRequestId, payload: formValues } : null;
-      setCanRetry(keep);
-      setMessage(queuedLedgerHint(result.error, result.retryable, Boolean(result.needsAttention)));
     } finally {
       busyRef.current = false;
       setSaving(false);
@@ -270,15 +298,14 @@ export function CashSheetEntries({
       if (reason === 'load') resetStaleSyncingLedgerEntries(storage, userId);
       showAttention();
       const formValues = readSheetForm(formRef.current, { hotelId, businessDate, outletId });
-      const waiting = findHeldEntry(formValues, { userId, hotelId, outletId, preferId: pendingRef.current?.clientRequestId });
+      const waiting = findHeldEntry(formValues, { userId, hotelId, outletId, sourceId: sourceRef.current });
       if (waiting) {
         // The form differs from what is queued: ask, do not send.
         setHeld(waiting);
         setFormAmount(String(formValues.amount ?? ''));
       }
-      const skipIds = waiting
-        ? retryableLedgerEntries(storage, userId).filter((item) => item.hotelId === hotelId).map((item) => item.clientRequestId)
-        : [];
+      // Hold only the one conflicting entry; everything else queued auto-sends.
+      const skipIds = waiting ? [waiting.clientRequestId] : [];
       const toSend = pendingLedgerEntries(storage, userId).filter((item) => !skipIds.includes(item.clientRequestId));
       if (!toSend.length) return { remaining: sheetWaitingCount(readLedgerQueue(storage, userId), skipIds) };
       const formMatch = String(formValues.amount ?? '').trim()
@@ -290,10 +317,15 @@ export function CashSheetEntries({
         const result = await syncSheetQueue({ storage, userId, skipIds, resetStale: false });
         if (cancelled) return { remaining: 0 };
         if (result.synced.length > 0) {
-          clearPending();
+          if (pendingRef.current && result.synced.includes(pendingRef.current.clientRequestId)) clearPending();
+          if (sourceRef.current && result.synced.includes(sourceRef.current)) sourceRef.current = null;
           if (formMatch && result.synced.includes(formMatch.clientRequestId)) {
-            formRef.current?.reset();
-            setFormAmount('');
+            // Only if the form still shows what was sent: an edit typed during the send is kept.
+            const current = readSheetForm(formRef.current, { hotelId, businessDate, outletId });
+            if (sheetFormStillSent(current, formMatch.payload, { outletId, hotelId })) {
+              formRef.current?.reset();
+              setFormAmount('');
+            }
           }
           setMessage(result.synced.length === 1 ? 'Entry saved.' : `${result.synced.length} entries saved.`);
           router.refresh();

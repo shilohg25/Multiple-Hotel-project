@@ -428,3 +428,51 @@ export async function retireLedgerRequest(input: {
   if (await input.store.markRetired({ clientRequestId: scopedId, createdBy: input.userId, olderThan })) return { status: 'retired' };
   return { status: 'busy' };
 }
+
+/** The one replacement id for a retired request. Derived on the server, so every tab and retry lands on the same row. */
+export function replacementClientRequestId(retiredClientRequestId: string) {
+  return `${retiredClientRequestId}:replace`;
+}
+
+export type ReplaceLedgerResult =
+  | { status: 'already_saved'; entry: LedgerEntryRecord }
+  | { status: 'replaced'; entry: LedgerEntryRecord }
+  | { status: 'replacement_exists'; entry: LedgerEntryRecord }
+  | { status: 'busy' }
+  | { status: 'denied' }
+  | { status: 'error'; error: string; httpStatus: number };
+
+/**
+ * "Replace with the corrected entry", one row per entry, enforced here:
+ * 1. Retire the earlier id (or find it already saved: then insert nothing).
+ * 2. Insert the correction under replacementClientRequestId(earlier id) through createLedgerEntryOnce,
+ *    i.e. #33's scoped, unique reservation in offline_sync_requests. A second tab, a retry, or a
+ *    different amount gets the existing replacement back ('replacement_exists'), never a second row.
+ */
+export async function replaceLedgerEntryOnce(input: {
+  userId: string;
+  hotelId: string;
+  clientRequestId: string;
+  store: LedgerIdempotencyStore;
+  createEntry: (id?: string) => Promise<LedgerEntryRecord>;
+  getEntry: (id: string) => Promise<LedgerEntryRecord | null>;
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => Date;
+  staleMs?: number;
+}): Promise<ReplaceLedgerResult> {
+  const retired = await retireLedgerRequest(input);
+  if (retired.status !== 'retired') return retired;
+  const created = await createLedgerEntryOnce({
+    userId: input.userId,
+    hotelId: input.hotelId,
+    clientRequestId: replacementClientRequestId(input.clientRequestId),
+    store: input.store,
+    createEntry: input.createEntry,
+    getEntry: input.getEntry,
+    sleep: input.sleep,
+    now: input.now,
+    staleMs: input.staleMs
+  });
+  if (!created.ok) return { status: 'error', error: created.error, httpStatus: created.status };
+  return { status: created.duplicate ? 'replacement_exists' : 'replaced', entry: created.entry };
+}

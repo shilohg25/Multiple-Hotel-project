@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { replaceHeldSheetEntry, sendHeldSheetEntry, sheetEntryPayload, sheetHeldEntry, sheetWaitingCount, syncSheetQueue, saveSheetEntryWithQueue, fillSheetCopy } from './cash-sheet.ts';
+import { replaceHeldSheetEntry, sendHeldSheetEntry, sheetEntryPayload, sheetEntryStillQueued, sheetFormStillSent, sheetHeldEntry, sheetWaitingCount, syncSheetQueue, saveSheetEntryWithQueue, fillSheetCopy } from './cash-sheet.ts';
 import { startSheetAutoSend } from './sheet-auto-send.ts';
+import { parseLedgerPatchBody } from './ledger-patch.ts';
 import { createMemoryStorage, readLedgerQueue, retryableLedgerEntries } from './ledger-entry-queue.ts';
 import {
   createLedgerEntryOnce,
   createMemoryLedgerIdempotencyStore,
+  replaceLedgerEntryOnce,
+  replacementClientRequestId,
   retireLedgerRequest,
   LEDGER_REPLACED_ERROR,
   scopedLedgerRequestId,
@@ -13,39 +16,52 @@ import {
 } from './ledger-idempotency.ts';
 
 const USER = 'user-1';
-const HOTEL = 'h1';
+const HOTEL = 'd0000000-0000-4000-8000-000000000001';
 const ctx = { hotelId: HOTEL, businessDate: '2026-11-26', outletId: null };
 const form = (amount: string) => sheetEntryPayload({ category: 'other', description: 'walk-in', amount, payment_method: 'cash' }, ctx);
 
 /**
- * A fake /api/ledger: POST runs #33's createLedgerEntryOnce, PATCH runs retireLedgerRequest,
+ * A fake /api/ledger: POST runs #33's createLedgerEntryOnce, PATCH parses like the route and runs replaceLedgerEntryOnce,
  * both on one memory dedupe store and one ledger table. `mode` decides what the network does.
  */
 function fakeServer() {
   const store = createMemoryLedgerIdempotencyStore();
   const rows: LedgerEntryRecord[] = [];
   let seq = 0;
-  const state = { mode: 'up' as 'up' | 'down' | 'stores-then-times-out', posts: 0 };
+  const state = { mode: 'up' as 'up' | 'down' | 'stores-then-times-out', posts: 0, patches: 0 };
   const getEntry = async (id: string) => rows.find((row) => row.id === id) ?? null;
+
+  const creator = (hotelId: string, entry: Record<string, unknown>, tag: unknown) => async (id?: string) => {
+    const row = { id: id || `row-${++seq}`, hotel_id: hotelId, created_by: USER, amount: Number(entry.amount), client_request_id: tag };
+    rows.push(row);
+    return row;
+  };
 
   async function handle(method: string, body: Record<string, unknown>) {
     if (method === 'PATCH') {
-      const result = await retireLedgerRequest({ userId: USER, hotelId: String(body.hotel_id), clientRequestId: String(body.client_request_id), store, getEntry });
+      const parsed = parseLedgerPatchBody(JSON.stringify(body));
+      if (!parsed.ok) return { status: 400, json: { error: parsed.error } };
+      const { hotelId, clientRequestId, entry } = parsed.body;
+      const result = await replaceLedgerEntryOnce({
+        userId: USER,
+        hotelId,
+        clientRequestId,
+        store,
+        createEntry: creator(hotelId, entry, replacementClientRequestId(clientRequestId)),
+        getEntry,
+        sleep: async () => {}
+      });
       if (result.status === 'busy') return { status: 409, json: { error: 'busy' } };
       if (result.status === 'denied') return { status: 403, json: { error: 'denied' } };
-      if (result.status === 'already_saved') return { status: 200, json: { status: 'already_saved', entry: { id: result.entry.id, amount: result.entry.amount } } };
-      return { status: 200, json: { status: 'retired' } };
+      if (result.status === 'error') return { status: result.httpStatus, json: { error: result.error } };
+      return { status: 200, json: { status: result.status, entry: { id: result.entry.id, amount: result.entry.amount } } };
     }
     const result = await createLedgerEntryOnce({
       userId: USER,
       hotelId: String(body.hotel_id),
       clientRequestId: String(body.client_request_id || '') || null,
       store,
-      createEntry: async (id) => {
-        const row = { id: id || `row-${++seq}`, hotel_id: String(body.hotel_id), created_by: USER, amount: Number(body.amount), client_request_id: body.client_request_id };
-        rows.push(row);
-        return row;
-      },
+      createEntry: creator(String(body.hotel_id), body, body.client_request_id),
       getEntry,
       sleep: async () => {}
     });
@@ -56,6 +72,7 @@ function fakeServer() {
   const fetchImpl = (async (_url: string, init?: RequestInit) => {
     if (state.mode === 'down') throw new TypeError('Failed to fetch');
     if (init?.method === 'POST') state.posts += 1;
+    if (init?.method === 'PATCH') state.patches += 1;
     const answer = await handle(String(init?.method || 'GET'), JSON.parse(String(init?.body || '{}')));
     if (state.mode === 'stores-then-times-out') {
       // The server did the work; the answer never reaches the phone.
@@ -88,10 +105,12 @@ describe('option (a): an earlier entry did not save and the form now differs', (
     const storage = createMemoryStorage();
     const item = await queue650(server, storage, 'down');
     const queued = retryableLedgerEntries(storage, USER);
-    assert.equal(sheetHeldEntry({ formValues: form('560'), queued, hotelId: HOTEL, outletId: null })?.clientRequestId, item.clientRequestId);
-    assert.equal(sheetHeldEntry({ formValues: form('650'), queued, hotelId: HOTEL, outletId: null }), null);
-    assert.equal(sheetHeldEntry({ formValues: { amount: '' }, queued, hotelId: HOTEL, outletId: null }), null);
-    assert.equal(sheetHeldEntry({ formValues: form('560'), queued, hotelId: 'other-hotel', outletId: null }), null);
+    const sourceId = item.clientRequestId;
+    assert.equal(sheetHeldEntry({ formValues: form('560'), queued, hotelId: HOTEL, outletId: null, sourceId })?.clientRequestId, item.clientRequestId);
+    assert.equal(sheetHeldEntry({ formValues: form('650'), queued, hotelId: HOTEL, outletId: null, sourceId }), null);
+    assert.equal(sheetHeldEntry({ formValues: { amount: '' }, queued, hotelId: HOTEL, outletId: null, sourceId }), null);
+    assert.equal(sheetHeldEntry({ formValues: form('560'), queued, hotelId: 'other-hotel', outletId: null, sourceId }), null);
+    assert.equal(sheetHeldEntry({ formValues: form('560'), queued, hotelId: HOTEL, outletId: null, sourceId: null }), null, 'a form that did not come from a queued entry is a new entry');
   });
 
   it('does not auto-send the held entry on load or online while they differ', async () => {
@@ -118,11 +137,9 @@ describe('option (a): an earlier entry did not save and the form now differs', (
     const storage = createMemoryStorage();
     const item = await queue650(server, storage, 'down');
     const outcome = await replaceHeldSheetEntry(item, form('560'), options(storage, server.fetchImpl));
-    assert.equal(outcome.kind, 'sent');
-    if (outcome.kind !== 'sent') return;
-    assert.equal(outcome.result.ok, true);
-    assert.notEqual(outcome.result.clientRequestId, item.clientRequestId, 'the 560 has a new id');
-    assert.deepEqual(server.rows.map((row) => row.amount), [560]);
+    assert.deepEqual(outcome, { kind: 'replaced', amount: 560 });
+    assert.deepEqual(server.rows.map((row) => [row.amount, row.client_request_id]), [[560, `${item.clientRequestId}:replace`]], 'the server picked the replacement id');
+    assert.equal(server.state.posts, 0, 'one PATCH, no separate POST');
     assert.equal(readLedgerQueue(storage, USER).length, 0);
   });
 
@@ -159,7 +176,7 @@ describe('option (a): an earlier entry did not save and the form now differs', (
     const storage = createMemoryStorage();
     const item = await queue650(server, storage, 'down');
     const outcome = await replaceHeldSheetEntry(item, form('560'), options(storage, server.fetchImpl));
-    assert.equal(outcome.kind, 'sent');
+    assert.equal(outcome.kind, 'replaced');
     // The old request arrives late (another tab, a slow proxy): refused, not stored.
     const late = await server.handle('POST', item.payload);
     assert.equal(late.status, 410);
@@ -170,8 +187,8 @@ describe('option (a): an earlier entry did not save and the form now differs', (
     assert.equal(lateResult.ok, false);
     if (!lateResult.ok) assert.equal(lateResult.retryable, false);
     assert.equal(readLedgerQueue(lateStorage, USER).length, 0);
-    const again = await server.handle('PATCH', { hotel_id: HOTEL, client_request_id: item.clientRequestId });
-    assert.deepEqual(again.json, { status: 'retired' });
+    const again = await server.handle('PATCH', { action: 'replace', hotel_id: HOTEL, client_request_id: item.clientRequestId, entry: { amount: 560 } });
+    assert.equal((again.json as { status: string }).status, 'replacement_exists');
     assert.deepEqual(server.rows.map((row) => row.amount), [560]);
   });
 
@@ -225,8 +242,9 @@ describe('auto-send after reconnecting (Tester: an unchanged queued entry only s
     const timers: Array<() => void> = [];
     const run = async () => {
       const formValues = formAmount ? form(formAmount) : { amount: '' };
-      const held = sheetHeldEntry({ formValues, queued: retryableLedgerEntries(storage, USER), hotelId: HOTEL, outletId: null });
-      const skipIds = held ? retryableLedgerEntries(storage, USER).map((item) => item.clientRequestId) : [];
+      const queued = retryableLedgerEntries(storage, USER);
+      const held = sheetHeldEntry({ formValues, queued, hotelId: HOTEL, outletId: null, sourceId: queued[0]?.clientRequestId });
+      const skipIds = held ? [held.clientRequestId] : [];
       await syncSheetQueue({ storage, userId: USER, skipIds, fetchImpl: server.fetchImpl, timeoutMs: 20, resetStale: false });
       return { remaining: sheetWaitingCount(readLedgerQueue(storage, USER), skipIds) };
     };
@@ -319,5 +337,99 @@ describe('auto-send after reconnecting (Tester: an unchanged queued entry only s
     p.win.dispatchEvent(new Event('online'));
     await settle();
     assert.equal(server.state.posts, 0);
+  });
+});
+
+describe('PR #35 82551cb follow-ups', () => {
+  it('item 1: Replace in two tabs, same amount, different amount, and at the same time: exactly 1 row', async () => {
+    for (const second of ['560', '570']) {
+      const server = fakeServer();
+      const tabA = createMemoryStorage();
+      const item = await queue650(server, tabA, 'down');
+      // Tab B has its own copy of the queued entry (worst case: the client-side check cannot help).
+      const tabB = createMemoryStorage({ [`hotel_ops_ledger_entry_queue:${USER}`]: tabA.getItem(`hotel_ops_ledger_entry_queue:${USER}`)! });
+      const first = await replaceHeldSheetEntry(item, form('560'), options(tabA, server.fetchImpl));
+      const other = await replaceHeldSheetEntry(item, form(second), options(tabB, server.fetchImpl));
+      assert.deepEqual(first, { kind: 'replaced', amount: 560 }, second);
+      assert.deepEqual(other, { kind: 'replacement_exists', amount: 560 }, `second tab typed ${second}: gets the existing 560 back`);
+      assert.deepEqual(server.rows.map((row) => row.amount), [560], second);
+    }
+    assert.equal(
+      fillSheetCopy('{amount} was already saved as the replacement. Correct it with an adjustment.', { amount: '₱560.00' }),
+      '₱560.00 was already saved as the replacement. Correct it with an adjustment.'
+    );
+
+    const server = fakeServer();
+    const tabA = createMemoryStorage();
+    const item = await queue650(server, tabA, 'down');
+    const tabB = createMemoryStorage({ [`hotel_ops_ledger_entry_queue:${USER}`]: tabA.getItem(`hotel_ops_ledger_entry_queue:${USER}`)! });
+    const both = await Promise.all([
+      replaceHeldSheetEntry(item, form('560'), options(tabA, server.fetchImpl)),
+      replaceHeldSheetEntry(item, form('570'), options(tabB, server.fetchImpl))
+    ]);
+    assert.equal(server.rows.length, 1, `at the same time: ${JSON.stringify(both)}`);
+  });
+
+  it('item 1: the client reads the device queue again and sends nothing when the entry is gone', async () => {
+    const server = fakeServer();
+    const storage = createMemoryStorage();
+    const item = await queue650(server, storage, 'down');
+    assert.equal((await replaceHeldSheetEntry(item, form('560'), options(storage, server.fetchImpl))).kind, 'replaced');
+    assert.equal(sheetEntryStillQueued(storage, USER, item.clientRequestId), false);
+    const patches = server.state.patches;
+    assert.deepEqual(await replaceHeldSheetEntry(item, form('570'), options(storage, server.fetchImpl)), { kind: 'gone' });
+    assert.equal(server.state.patches, patches, 'no request');
+    assert.deepEqual(server.rows.map((row) => row.amount), [560]);
+  });
+
+  it('item 2: only the entry the form came from is held; other queued entries auto-send and a new entry saves', async () => {
+    const server = fakeServer();
+    const storage = createMemoryStorage();
+    server.state.mode = 'down';
+    const other = await saveSheetEntryWithQueue({ values: sheetEntryPayload({ category: 'expense', description: 'ice', amount: '120', payment_method: 'cash' }, ctx), previousPayload: null }, options(storage, server.fetchImpl));
+    const source = await saveSheetEntryWithQueue({ values: form('650'), previousPayload: null }, options(storage, server.fetchImpl));
+    server.state.mode = 'up';
+    const queued = retryableLedgerEntries(storage, USER);
+    const held = sheetHeldEntry({ formValues: form('560'), queued, hotelId: HOTEL, outletId: null, sourceId: source.clientRequestId });
+    assert.equal(held?.clientRequestId, source.clientRequestId, 'the form came from the 650');
+    const synced = await syncSheetQueue({ storage, userId: USER, skipIds: [held!.clientRequestId], fetchImpl: server.fetchImpl, timeoutMs: 20 });
+    assert.deepEqual(synced.synced, [other.clientRequestId], 'the other queued entry was not blocked');
+    // A new, different entry (no source link) is not held and saves while the 650 still waits.
+    assert.equal(sheetHeldEntry({ formValues: form('75'), queued: retryableLedgerEntries(storage, USER), hotelId: HOTEL, outletId: null, sourceId: null }), null);
+    const fresh = await saveSheetEntryWithQueue({ values: form('75'), previousPayload: null }, options(storage, server.fetchImpl));
+    assert.equal(fresh.ok, true);
+    assert.deepEqual(server.rows.map((row) => row.amount).sort((a, b) => Number(a) - Number(b)), [75, 120]);
+    assert.deepEqual(readLedgerQueue(storage, USER).map((item) => item.clientRequestId), [source.clientRequestId], 'only the 650 waits for the choice');
+  });
+
+  it('item 3: an edit typed while a matching entry auto-sends is kept', async () => {
+    const server = fakeServer();
+    const storage = createMemoryStorage();
+    const item = await queue650(server, storage, 'down');
+    let onScreen = form('650');
+    const slow = (async (url: string, init?: RequestInit) => {
+      onScreen = form('655'); // staff type while the send is in flight
+      return server.fetchImpl(url, init);
+    }) as typeof fetch;
+    const synced = await syncSheetQueue({ storage, userId: USER, fetchImpl: slow, timeoutMs: 50 });
+    assert.deepEqual(synced.synced, [item.clientRequestId]);
+    assert.equal(sheetFormStillSent(onScreen, item.payload, { outletId: null, hotelId: HOTEL }), false, 'the 655 edit is not cleared');
+    assert.equal(sheetFormStillSent(form('650'), item.payload, { outletId: null, hotelId: HOTEL }), true, 'an untouched form is cleared');
+  });
+
+  it('item 4: PATCH body is validated before the hotel check: bad JSON or a missing/invalid hotel_id is 400', () => {
+    const bad = ['{not json', '', 'null', '[]', JSON.stringify({ action: 'replace', client_request_id: 'c', entry: {} }),
+      JSON.stringify({ action: 'replace', hotel_id: 'h1', client_request_id: 'c', entry: {} }),
+      JSON.stringify({ action: 'replace', hotel_id: 42, client_request_id: 'c', entry: {} }),
+      JSON.stringify({ action: 'retire', hotel_id: HOTEL, client_request_id: 'c', entry: {} }),
+      JSON.stringify({ action: 'replace', hotel_id: HOTEL, entry: {} }),
+      JSON.stringify({ action: 'replace', hotel_id: HOTEL, client_request_id: 'c' })];
+    for (const text of bad) {
+      const parsed = parseLedgerPatchBody(text);
+      assert.equal(parsed.ok, false, text);
+      if (!parsed.ok) assert.equal(parsed.status, 400, text);
+    }
+    const good = parseLedgerPatchBody(JSON.stringify({ action: 'replace', hotel_id: HOTEL, client_request_id: 'c1', entry: { amount: 560 } }));
+    assert.equal(good.ok, true);
   });
 });
