@@ -163,6 +163,8 @@ export default async function DailyCashSheetPage({ searchParams }: { searchParam
           inFlightStuck: label(locale, 'close.heldInFlightStuck'),
           sentElsewhere: label(locale, 'close.sentElsewhere'),
           sentElsewhereEdited: label(locale, 'close.sentElsewhereEdited'),
+          sentHere: label(locale, 'close.sentHere'),
+          sentHereEdited: label(locale, 'close.sentHereEdited'),
           saveAsNew: label(locale, 'close.saveAsNew'),
           clearForm: label(locale, 'close.clearForm'),
           saved: label(locale, 'close.entrySaved')

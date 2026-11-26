@@ -260,7 +260,13 @@ export function sheetEntryStillQueued(storage: StorageLike, userId: string, clie
  * The link from the form to the queued entry it came from, kept in sessionStorage per user and hotel so a
  * reload or back/forward keeps it (the browser may refill the form). Values are a snapshot of what was sent.
  */
-export type SheetFormLink = { clientRequestId: string; values: Record<string, unknown> };
+export type SheetFormLink = {
+  clientRequestId: string;
+  /** What was sent (the queued entry). */
+  values: Record<string, unknown>;
+  /** The edit staff typed while the choice was pending; restored after a reload or back/forward. */
+  draft?: Record<string, unknown> | null;
+};
 
 export function sheetLinkKey(userId: string, hotelId: string) {
   return `hotel_ops_sheet_form_link:${userId}:${hotelId}`;
@@ -298,7 +304,8 @@ export function restoreSheetLinkState(
     const raw = session.getItem(sheetLinkKey(userId, hotelId));
     const parsed = raw ? JSON.parse(raw) as Partial<SheetFormLink> : null;
     if (parsed && typeof parsed.clientRequestId === 'string' && parsed.values && typeof parsed.values === 'object') {
-      link = { clientRequestId: parsed.clientRequestId, values: parsed.values as Record<string, unknown> };
+      const draft = parsed.draft && typeof parsed.draft === 'object' ? parsed.draft as Record<string, unknown> : null;
+      link = { clientRequestId: parsed.clientRequestId, values: parsed.values as Record<string, unknown>, draft };
     }
   } catch {
     link = null;
@@ -320,7 +327,7 @@ export function restoreSheetLinkState(
  * - 'gate': the form showed an edit; Save is blocked until "Save as a new entry" or "Clear form".
  * - 'armed': the form was empty or unchanged; if a refilled amount is saved without typing, the gate shows.
  */
-export type SheetSentElsewhere = { mode: 'gate' | 'armed'; oldAmount: number; values: Record<string, unknown> };
+export type SheetSentElsewhere = { mode: 'gate' | 'armed'; oldAmount: number; values: Record<string, unknown>; byThisTab?: boolean };
 
 export function sheetSentElsewhereKey(userId: string, hotelId: string) {
   return `hotel_ops_sheet_sent_elsewhere:${userId}:${hotelId}`;
@@ -340,7 +347,7 @@ export function readSheetSentElsewhere(session: StorageLike, userId: string, hot
     const raw = session.getItem(sheetSentElsewhereKey(userId, hotelId));
     const parsed = raw ? JSON.parse(raw) as Partial<SheetSentElsewhere> : null;
     if (!parsed || (parsed.mode !== 'gate' && parsed.mode !== 'armed')) return null;
-    return { mode: parsed.mode, oldAmount: Number(parsed.oldAmount || 0), values: parsed.values && typeof parsed.values === 'object' ? parsed.values : {} };
+    return { mode: parsed.mode, oldAmount: Number(parsed.oldAmount || 0), values: parsed.values && typeof parsed.values === 'object' ? parsed.values : {}, byThisTab: parsed.byThisTab === true };
   } catch {
     return null;
   }
@@ -389,6 +396,8 @@ export async function syncSheetQueue(options: {
   isOnline?: () => boolean;
   /** Turn 'syncing' left over from a closed page back into 'pending'. Only on load: mid-session a 'syncing' entry is in flight. */
   resetStale?: boolean;
+  /** Called just before an entry is sent, so the page can record "this tab sent it". */
+  onSend?: (clientRequestId: string) => void;
 }): Promise<{ synced: string[]; failed: number; lastError: string | null }> {
   const result = { synced: [] as string[], failed: 0, lastError: null as string | null };
   if (options.isOnline && !options.isOnline()) return { ...result, lastError: LEDGER_NETWORK_ERROR };
@@ -396,6 +405,7 @@ export async function syncSheetQueue(options: {
   const skip = new Set(options.skipIds || []);
   for (const item of pendingLedgerEntries(options.storage, options.userId)) {
     if (skip.has(item.clientRequestId)) continue;
+    options.onSend?.(item.clientRequestId);
     const saved = await saveLedgerEntryWithQueue(item.payload, {
       clientRequestId: item.clientRequestId,
       userId: options.userId,
@@ -494,7 +504,7 @@ export function sheetWaitingCount(queued: LedgerQueueItem[], skipIds: string[] =
   return queued.filter((item) => (item.status === 'pending' || item.status === 'failed' || item.status === 'syncing') && !skip.has(item.clientRequestId)).length;
 }
 
-export type SheetSourceGone = { kind: 'unchanged' | 'edited'; oldAmount: number; newAmount: string };
+export type SheetSourceGone = { kind: 'unchanged' | 'edited'; oldAmount: number; newAmount: string; byThisTab?: boolean };
 
 /**
  * The entry this form came from left the device queue without this tab doing it (another tab sent it).
@@ -508,10 +518,143 @@ export function sheetSourceGone(input: {
   outletId?: string | null;
   link: SheetFormLink | null;
   formValues: Record<string, unknown>;
+  /** This tab's sessionStorage: did this tab (any page of it) send the entry? */
+  session?: StorageLike;
 }): SheetSourceGone | null {
   if (!input.link) return null;
   if (sheetQueueState(input.storage, input.userId, input.link.clientRequestId) !== 'gone') return null;
-  const newAmount = String(input.formValues.amount ?? '').trim();
-  const unchanged = !newAmount || sameLedgerRetryPayload(input.link.values, input.formValues, { outletId: input.outletId, hotelId: input.hotelId });
-  return { kind: unchanged ? 'unchanged' : 'edited', oldAmount: Number(input.link.values.amount || 0), newAmount };
+  // An empty form after a reload or back/forward: compare the kept draft instead.
+  const typed = String(input.formValues.amount ?? '').trim();
+  const values = !typed && input.link.draft ? input.link.draft : input.formValues;
+  const newAmount = String(values.amount ?? '').trim();
+  const unchanged = !newAmount || sameLedgerRetryPayload(input.link.values, values, { outletId: input.outletId, hotelId: input.hotelId });
+  const byThisTab = input.session ? wasSentByThisTab(input.session, input.userId, input.link.clientRequestId) : false;
+  return { kind: unchanged ? 'unchanged' : 'edited', oldAmount: Number(input.link.values.amount || 0), newAmount, byThisTab };
+}
+
+/** One id per browser tab, in sessionStorage: survives navigation and reload in the same tab, not shared. */
+export function sheetTabId(session: StorageLike, createId: () => string = () => Math.random().toString(36).slice(2) + Date.now().toString(36)) {
+  const key = 'hotel_ops_tab_id';
+  try {
+    const existing = session.getItem(key);
+    if (existing) return existing;
+    const id = createId();
+    session.setItem(key, id);
+    return id;
+  } catch {
+    return 'tab';
+  }
+}
+
+function sentHereKey(userId: string) {
+  return `hotel_ops_sheet_sent_here:${userId}`;
+}
+
+/** Record that this tab is sending (or sent) the entry, before the request goes out. */
+export function markSentByThisTab(session: StorageLike, userId: string, clientRequestId: string) {
+  try {
+    const raw = session.getItem(sentHereKey(userId));
+    const ids = raw ? (JSON.parse(raw) as unknown[]).filter((id): id is string => typeof id === 'string') : [];
+    if (!ids.includes(clientRequestId)) ids.push(clientRequestId);
+    session.setItem(sentHereKey(userId), JSON.stringify(ids.slice(-50)));
+  } catch {
+    // Nothing to record into: the note then says "another tab", the safe direction.
+  }
+}
+
+export function wasSentByThisTab(session: StorageLike, userId: string, clientRequestId: string) {
+  try {
+    const raw = session.getItem(sentHereKey(userId));
+    return raw ? (JSON.parse(raw) as unknown[]).includes(clientRequestId) : false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * "A choice is pending on this entry in tab X": in localStorage so every tab's auto-send skips it.
+ * The holding tab refreshes it; it expires (ttl) if that tab closed.
+ */
+export const SHEET_HELD_MARK_TTL_MS = 90_000;
+
+function heldMarkKey(userId: string) {
+  return `hotel_ops_sheet_held:${userId}`;
+}
+
+type HeldMarks = Record<string, { tabId: string; at: number }>;
+
+function readHeldMarks(storage: StorageLike, userId: string): HeldMarks {
+  try {
+    const raw = storage.getItem(heldMarkKey(userId));
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as HeldMarks : {};
+  } catch {
+    return {};
+  }
+}
+
+export function writeSheetHeldMark(storage: StorageLike, userId: string, clientRequestId: string, tabId: string, now = Date.now()) {
+  const marks = readHeldMarks(storage, userId);
+  marks[clientRequestId] = { tabId, at: now };
+  try { storage.setItem(heldMarkKey(userId), JSON.stringify(marks)); } catch { /* best effort */ }
+}
+
+export function clearSheetHeldMarks(storage: StorageLike, userId: string, tabId: string) {
+  const marks = readHeldMarks(storage, userId);
+  let changed = false;
+  for (const [id, mark] of Object.entries(marks)) {
+    if (mark.tabId === tabId) {
+      delete marks[id];
+      changed = true;
+    }
+  }
+  if (changed) {
+    try { storage.setItem(heldMarkKey(userId), JSON.stringify(marks)); } catch { /* best effort */ }
+  }
+}
+
+/** Entries some other live tab is holding for a choice: auto-send must skip them. */
+export function sheetHeldElsewhere(storage: StorageLike, userId: string, tabId: string, now = Date.now(), ttlMs = SHEET_HELD_MARK_TTL_MS) {
+  return Object.entries(readHeldMarks(storage, userId))
+    .filter(([, mark]) => mark.tabId !== tabId && now - Number(mark.at || 0) < ttlMs)
+    .map(([id]) => id);
+}
+
+/** Entries to keep out of an auto-send pass: the one held here (form or kept draft differs) and those held in other tabs. */
+export function sheetAutoSendSkips(input: {
+  storage: StorageLike;
+  userId: string;
+  hotelId: string;
+  outletId?: string | null;
+  tabId: string;
+  link: SheetFormLink | null;
+  formValues: Record<string, unknown>;
+  now?: number;
+}) {
+  const skips = new Set(sheetHeldElsewhere(input.storage, input.userId, input.tabId, input.now));
+  const link = input.link;
+  if (link) {
+    const typed = String(input.formValues.amount ?? '').trim();
+    const values = typed ? input.formValues : link.draft;
+    if (values && String(values.amount ?? '').trim() && !sameLedgerRetryPayload(link.values, values, { outletId: input.outletId, hotelId: input.hotelId })) {
+      skips.add(link.clientRequestId);
+    }
+  }
+  return [...skips];
+}
+
+/** Run one send with the busy gate and the Saving state, and always end both, whatever happens. */
+export async function withSheetSaving<T>(
+  gate: { start(): void; end(): void },
+  setSaving: (value: boolean) => void,
+  work: () => Promise<T>
+): Promise<T> {
+  gate.start();
+  setSaving(true);
+  try {
+    return await work();
+  } finally {
+    gate.end();
+    setSaving(false);
+  }
 }

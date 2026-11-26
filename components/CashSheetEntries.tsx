@@ -10,6 +10,13 @@ import {
   sheetEntryPayload,
   sheetHeldEntry,
   readSheetSentElsewhere,
+  clearSheetHeldMarks,
+  markSentByThisTab,
+  sheetAutoSendSkips,
+  sheetTabId,
+  wasSentByThisTab,
+  withSheetSaving,
+  writeSheetHeldMark,
   restoreSheetLinkState,
   sheetInFlightOutcome,
   sheetRetryAvailable,
@@ -66,6 +73,8 @@ export type CashSheetChoiceCopy = {
   inFlightStuck: string;
   sentElsewhere: string;
   sentElsewhereEdited: string;
+  sentHere: string;
+  sentHereEdited: string;
   saveAsNew: string;
   clearForm: string;
   saved: string;
@@ -139,14 +148,33 @@ export function CashSheetEntries({
   const watchRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Another tab sent the entry this form came from, and staff had edited it: the edit was not saved.
   // Save is blocked until they confirm "Save as a new entry" or clear the form.
-  const [sentElsewhere, setSentElsewhere] = useState<{ oldAmount: number } | null>(null);
-  const actionsRef = useRef<{ checkSource: () => void; restoreOnLoad: () => void } | null>(null);
+  const [sentElsewhere, setSentElsewhere] = useState<{ oldAmount: number; byThisTab: boolean } | null>(null);
+  const actionsRef = useRef<{ checkSource: () => void; restoreOnLoad: () => void; persistDraft: (values: Record<string, unknown> | null) => void } | null>(null);
 
   /** Set or clear the link; it is also kept in sessionStorage so a reload or back/forward keeps it. */
   function setSource(link: SheetFormLink | null) {
     sourceRef.current = link?.clientRequestId ?? null;
     linkRef.current = link;
     writeSheetLink(window.sessionStorage, userId, hotelId, link);
+  }
+
+  /** Keep (or drop) the edit typed while the choice is pending, so a reload or back/forward restores it. */
+  function persistDraft(values: Record<string, unknown> | null) {
+    const link = linkRef.current;
+    if (!link) return;
+    setSource({ ...link, draft: values && String(values.amount ?? '').trim() ? values : null });
+  }
+
+  /** Put values back into the (uncontrolled) form fields, e.g. a kept draft after navigation. */
+  function fillForm(values: Record<string, unknown>) {
+    const form = formRef.current;
+    if (!form) return;
+    for (const name of ['category', 'amount', 'payment_method', 'description']) {
+      const field = form.elements.namedItem(name);
+      const value = values[name];
+      if ((field instanceof HTMLInputElement || field instanceof HTMLSelectElement) && value !== undefined && value !== null) field.value = String(value);
+    }
+    setFormAmount(String(values.amount ?? ''));
   }
 
   function writeNote(note: SheetSentElsewhere | null) {
@@ -163,21 +191,24 @@ export function CashSheetEntries({
    * Unchanged or empty form: clear it and say so. Edited form: keep the edit, say it was NOT saved,
    * and block Save until "Save as a new entry" or "Clear form". Kept in sessionStorage across reloads.
    */
-  function applyGone(gone: SheetSourceGone, values: Record<string, unknown>) {
+  function applyGone(gone: SheetSourceGone, values: Record<string, unknown>, draft?: Record<string, unknown> | null) {
     stopWatching();
     setSource(null);
     clearPending();
     setHeld(null);
+    const byThisTab = Boolean(gone.byThisTab);
     if (gone.kind === 'unchanged') {
       formRef.current?.reset();
       setFormAmount('');
       setSentElsewhere(null);
-      writeNote({ mode: 'armed', oldAmount: gone.oldAmount, values });
-      setMessage(fillSheetCopy(choiceCopy.sentElsewhere, { old: money(gone.oldAmount) }));
+      writeNote({ mode: 'armed', oldAmount: gone.oldAmount, values, byThisTab });
+      setMessage(fillSheetCopy(byThisTab ? choiceCopy.sentHere : choiceCopy.sentElsewhere, { old: money(gone.oldAmount) }));
     } else {
+      // Keep the edit on screen (restore the kept draft if navigation emptied the form).
+      if (!String(readForm(formRef.current).amount ?? '').trim() && draft) fillForm(draft);
       setFormAmount(gone.newAmount);
-      setSentElsewhere({ oldAmount: gone.oldAmount });
-      writeNote({ mode: 'gate', oldAmount: gone.oldAmount, values });
+      setSentElsewhere({ oldAmount: gone.oldAmount, byThisTab });
+      writeNote({ mode: 'gate', oldAmount: gone.oldAmount, values, byThisTab });
       setMessage('');
     }
     router.refresh();
@@ -196,8 +227,8 @@ export function CashSheetEntries({
       return;
     }
     const link = linkRef.current;
-    const gone = sheetSourceGone({ storage: window.localStorage, userId, hotelId, outletId, link, formValues: readForm(formRef.current) });
-    if (gone && link) applyGone(gone, link.values);
+    const gone = sheetSourceGone({ storage: window.localStorage, session: window.sessionStorage, userId, hotelId, outletId, link, formValues: readForm(formRef.current) });
+    if (gone && link) applyGone(gone, link.values, link.draft);
   }
 
   /** On load (reload, back/forward, remount): a link whose entry left the queue meanwhile, and a kept note. */
@@ -207,18 +238,20 @@ export function CashSheetEntries({
       sourceRef.current = state.link.clientRequestId;
       linkRef.current = state.link;
     }
+    // A pending choice kept across the reload/navigation: put the typed draft back (the choice then shows).
+    if (state.link?.draft && !String(readForm(formRef.current).amount ?? '').trim()) fillForm(state.link.draft);
     const formValues = readForm(formRef.current);
     if (state.goneLink) {
-      const gone = sheetSourceGone({ storage: window.localStorage, userId, hotelId, outletId, link: state.goneLink, formValues });
+      const gone = sheetSourceGone({ storage: window.localStorage, session: window.sessionStorage, userId, hotelId, outletId, link: state.goneLink, formValues });
       if (gone) {
-        applyGone(gone, state.goneLink.values);
+        applyGone(gone, state.goneLink.values, state.goneLink.draft);
         return;
       }
     }
     const note = readSheetSentElsewhere(window.sessionStorage, userId, hotelId);
     if (note?.mode === 'gate' && String(formValues.amount ?? '').trim()) {
       setFormAmount(String(formValues.amount));
-      setSentElsewhere({ oldAmount: note.oldAmount });
+      setSentElsewhere({ oldAmount: note.oldAmount, byThisTab: Boolean(note.byThisTab) });
     } else if (note?.mode === 'gate') {
       writeNote({ ...note, mode: 'armed' });
     }
@@ -228,12 +261,13 @@ export function CashSheetEntries({
   function goneFromChoice(item: LedgerQueueItem, origin: 'send' | 'replace', formAtClick: Record<string, unknown>) {
     if (origin === 'send') {
       // Staff chose the earlier amount; it was sent elsewhere: their edit is intentionally dropped.
-      finishChoice(fillSheetCopy(choiceCopy.sentElsewhere, { old: money(item.payload.amount) }), formAtClick);
+      const here = wasSentByThisTab(window.sessionStorage, userId, item.clientRequestId);
+      finishChoice(fillSheetCopy(here ? choiceCopy.sentHere : choiceCopy.sentElsewhere, { old: money(item.payload.amount) }), formAtClick);
       return;
     }
     const link = { clientRequestId: item.clientRequestId, values: item.payload };
-    const gone = sheetSourceGone({ storage: window.localStorage, userId, hotelId, outletId, link, formValues: readForm(formRef.current) });
-    if (gone) applyGone(gone, item.payload);
+    const gone = sheetSourceGone({ storage: window.localStorage, session: window.sessionStorage, userId, hotelId, outletId, link, formValues: readForm(formRef.current) });
+    if (gone) applyGone(gone, item.payload, formAtClick);
     else finishChoice(choiceCopy.gone, formAtClick);
   }
 
@@ -328,6 +362,7 @@ export function CashSheetEntries({
     if (!held) return;
     const stillHeld = findHeld(values);
     setHeld(stillHeld);
+    persistDraft(stillHeld ? values : null);
     // The form matches the queued entry again (or is empty): back to normal auto-send.
     if (!stillHeld) autoSendRef.current?.soon();
   }
@@ -340,7 +375,7 @@ export function CashSheetEntries({
     if (sheetSaveBlocked(note, formValues, confirmedNew) && note) {
       writeNote({ ...note, mode: 'gate' });
       setFormAmount(String(formValues.amount ?? ''));
-      setSentElsewhere({ oldAmount: note.oldAmount });
+      setSentElsewhere({ oldAmount: note.oldAmount, byThisTab: Boolean(note.byThisTab) });
       setMessage('');
       return;
     }
@@ -349,6 +384,7 @@ export function CashSheetEntries({
     if (waiting) {
       setHeld(waiting);
       setFormAmount(String(formValues.amount ?? ''));
+      persistDraft(formValues);
       setMessage('');
       return;
     }
@@ -409,6 +445,7 @@ export function CashSheetEntries({
     setSaving(true);
     setMessage('');
     try {
+      markSentByThisTab(window.sessionStorage, userId, item.clientRequestId);
       const result = await sendHeldSheetEntry(item, { userId, hotelId, outletId, storage: window.localStorage });
       if (result.ok) {
         finishChoice(fillSheetCopy(choiceCopy.saved, { amount: money(item.payload.amount) }), formAtClick);
@@ -463,7 +500,24 @@ export function CashSheetEntries({
 
   // Keep the latest handlers for listeners registered once per user and hotel.
   useEffect(() => {
-    actionsRef.current = { checkSource, restoreOnLoad };
+    actionsRef.current = { checkSource, restoreOnLoad, persistDraft };
+  });
+
+  // While a choice is pending here, mark the entry held in localStorage so every tab's auto-send skips it.
+  // Refreshed every 30 s; it expires if this tab closes.
+  useEffect(() => {
+    if (!held) return;
+    const id = sheetTabId(window.sessionStorage);
+    const mark = () => writeSheetHeldMark(window.localStorage, userId, held.clientRequestId, id);
+    mark();
+    const timer = setInterval(mark, 30_000);
+    return () => {
+      clearInterval(timer);
+      clearSheetHeldMarks(window.localStorage, userId, id);
+    };
+  }, [held, userId]);
+
+  useEffect(() => {
   });
 
   useEffect(() => {
@@ -503,22 +557,32 @@ export function CashSheetEntries({
       const formValues = readSheetForm(formRef.current, { hotelId, businessDate, outletId });
       const waiting = findHeldEntry(formValues, { userId, hotelId, outletId, sourceId: sourceRef.current });
       if (waiting) {
-        // The form differs from what is queued: ask, do not send.
+        // The form differs from what is queued: ask, do not send. Keep the typed draft for reloads.
         setHeld(waiting);
         setFormAmount(String(formValues.amount ?? ''));
+        actionsRef.current?.persistDraft(formValues);
       }
-      // Hold only the one conflicting entry; everything else queued auto-sends.
-      const skipIds = waiting ? [waiting.clientRequestId] : [];
+      // Hold only the one conflicting entry (also when only its kept draft differs), and entries
+      // another tab is holding for a choice; everything else queued auto-sends.
+      const skipIds = [...new Set([
+        ...(waiting ? [waiting.clientRequestId] : []),
+        ...sheetAutoSendSkips({ storage, userId, hotelId, outletId, tabId: sheetTabId(window.sessionStorage), link: linkRef.current, formValues })
+      ])];
       const toSend = pendingLedgerEntries(storage, userId).filter((item) => !skipIds.includes(item.clientRequestId));
       if (!toSend.length) return { remaining: sheetWaitingCount(readLedgerQueue(storage, userId), skipIds) };
       const formMatch = String(formValues.amount ?? '').trim()
         ? toSend.find((item) => item.hotelId === hotelId && sameLedgerRetryPayload(item.payload, formValues, { outletId, hotelId }))
         : undefined;
-      busy.start();
-      setSaving(true);
-      try {
-        const result = await syncSheetQueue({ storage, userId, skipIds, resetStale: false });
-        if (cancelled) return { remaining: 0 };
+      // Saving always ends, even if this effect was torn down meanwhile (StrictMode remount, navigation):
+      // the results are still applied, so this tab's own send is never mistaken for another tab's.
+      await withSheetSaving(busy, setSaving, async () => {
+        const result = await syncSheetQueue({
+          storage,
+          userId,
+          skipIds,
+          resetStale: false,
+          onSend: (id) => markSentByThisTab(window.sessionStorage, userId, id)
+        });
         if (result.synced.length > 0) {
           if (pendingRef.current && result.synced.includes(pendingRef.current.clientRequestId)) clearPending();
           if (sourceRef.current && result.synced.includes(sourceRef.current)) {
@@ -541,11 +605,8 @@ export function CashSheetEntries({
           setCanRetry(Boolean(pendingRef.current) && sheetRetryAvailable({ storage, userId, pendingId: pendingRef.current?.clientRequestId, held: false, gate: false }));
           setMessage(queuedLedgerHint(result.lastError, true));
         }
-        showAttention();
-      } finally {
-        busy.end();
-        if (!cancelled) setSaving(false);
-      }
+        if (!cancelled) showAttention();
+      });
       return { remaining: sheetWaitingCount(readLedgerQueue(storage, userId), skipIds) };
     }
     const sender = startSheetAutoSend({ win: window, doc: document, run: flush, isOnline: () => navigator.onLine });
@@ -599,7 +660,7 @@ export function CashSheetEntries({
             {message ? <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm" role="status">{message}</p> : null}
             {sentElsewhere ? (
               <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3 text-sm" role="alert">
-                <p className="font-semibold">{fillSheetCopy(choiceCopy.sentElsewhereEdited, { old: money(sentElsewhere.oldAmount), new: money(formAmount) })}</p>
+                <p className="font-semibold">{fillSheetCopy(sentElsewhere.byThisTab ? choiceCopy.sentHereEdited : choiceCopy.sentElsewhereEdited, { old: money(sentElsewhere.oldAmount), new: money(formAmount) })}</p>
                 <div className="grid grid-cols-2 gap-2">
                   <button className="btn-secondary" type="button" disabled={saving} onClick={clearAfterSentElsewhere}>{choiceCopy.clearForm}</button>
                   <button className="btn-primary" type="button" disabled={saving || !formAmount.trim()} onClick={saveAsNewEntry}>

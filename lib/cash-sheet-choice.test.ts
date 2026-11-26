@@ -1,6 +1,7 @@
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { replaceHeldSheetEntry, restoreSheetLink, sendHeldSheetEntry, sheetEntryPayload, sheetEntryStillQueued, sheetLinkKey, sheetQueueState, sheetSourceGone, writeSheetLink, restoreSheetLinkState, readSheetSentElsewhere, writeSheetSentElsewhere, sheetSentElsewhereKey, sheetSaveBlocked, sheetRetryAvailable, sheetInFlightOutcome, sheetFormStillSent, sheetHeldEntry, sheetWaitingCount, syncSheetQueue, saveSheetEntryWithQueue, fillSheetCopy } from './cash-sheet.ts';
+import { replaceHeldSheetEntry, restoreSheetLink, sendHeldSheetEntry, sheetEntryPayload, sheetEntryStillQueued, sheetLinkKey, sheetQueueState, sheetSourceGone, writeSheetLink, restoreSheetLinkState, readSheetSentElsewhere, writeSheetSentElsewhere, sheetSentElsewhereKey, sheetSaveBlocked, sheetRetryAvailable, sheetInFlightOutcome, sheetTabId, markSentByThisTab, wasSentByThisTab, sheetAutoSendSkips, writeSheetHeldMark, clearSheetHeldMarks, sheetHeldElsewhere, withSheetSaving, SHEET_HELD_MARK_TTL_MS, sheetFormStillSent, sheetHeldEntry, sheetWaitingCount, syncSheetQueue, saveSheetEntryWithQueue, fillSheetCopy } from './cash-sheet.ts';
 import { createSheetBusyGate, startSheetAutoSend, watchSheetSource } from './sheet-auto-send.ts';
 import { parseLedgerPatchBody } from './ledger-patch.ts';
 import { createMemoryStorage, ledgerQueueStorageKey, readLedgerQueue, retryableLedgerEntries, upsertLedgerQueueItem } from './ledger-entry-queue.ts';
@@ -559,7 +560,7 @@ describe('Tester case D: another tab sends the entry this form came from', () =>
     assert.equal(notes.length, 0, 'unrelated keys are ignored');
     win1.dispatchEvent(storageEvent(ledgerQueueStorageKey(USER)));
 
-    assert.deepEqual(notes, [{ kind: 'edited', oldAmount: 850, newAmount: '860' }]);
+    assert.deepEqual(notes, [{ kind: 'edited', oldAmount: 850, newAmount: '860', byThisTab: false }]);
     assert.equal(
       fillSheetCopy('{old} was already sent from another tab. Your edit {new} was not saved. Correct it with an adjustment if needed.', { old: '₱850.00', new: '₱860.00' }),
       '₱850.00 was already sent from another tab. Your edit ₱860.00 was not saved. Correct it with an adjustment if needed.'
@@ -584,7 +585,7 @@ describe('Tester case D: another tab sends the entry this form came from', () =>
   it('an unchanged form is reported as sent elsewhere; online, focus, visibility and a cleared storage re-check', () => {
     const shared = createMemoryStorage();
     const link = { clientRequestId: 'gone-id', values: form('850') };
-    assert.deepEqual(sheetSourceGone({ storage: shared, userId: USER, hotelId: HOTEL, link, formValues: form('850') }), { kind: 'unchanged', oldAmount: 850, newAmount: '850' });
+    assert.deepEqual(sheetSourceGone({ storage: shared, userId: USER, hotelId: HOTEL, link, formValues: form('850') }), { kind: 'unchanged', oldAmount: 850, newAmount: '850', byThisTab: false });
     assert.deepEqual(sheetSourceGone({ storage: shared, userId: USER, hotelId: HOTEL, link, formValues: { amount: '' } })?.kind, 'unchanged');
     assert.equal(sheetSourceGone({ storage: shared, userId: USER, hotelId: HOTEL, link: null, formValues: form('860') }), null);
 
@@ -624,7 +625,7 @@ describe('PR #35 0b9e48f NO-GO fixes', () => {
     assert.equal(Number(state.goneLink?.values.amount), 850, 'the stale link is returned for the comparison, not dropped silently');
     assert.equal(session1.getItem(sheetLinkKey(USER, HOTEL)), null);
     const gone = sheetSourceGone({ storage: shared, userId: USER, hotelId: HOTEL, link: state.goneLink, formValues: form('860') });
-    assert.deepEqual(gone, { kind: 'edited', oldAmount: 850, newAmount: '860' });
+    assert.deepEqual(gone, { kind: 'edited', oldAmount: 850, newAmount: '860', byThisTab: false });
     writeSheetSentElsewhere(session1, USER, HOTEL, { mode: 'gate', oldAmount: 850, values: state.goneLink!.values });
     // The note survives another reload until dismissed.
     const note = readSheetSentElsewhere(session1, USER, HOTEL);
@@ -671,7 +672,7 @@ describe('PR #35 0b9e48f NO-GO fixes', () => {
     await syncSheetQueue({ storage: shared, userId: USER, fetchImpl: server.fetchImpl, timeoutMs: 20 }); // other tab
     assert.deepEqual(await replaceHeldSheetEntry(item, form('560'), options(shared, server.fetchImpl)), { kind: 'gone' });
     const gone = sheetSourceGone({ storage: shared, userId: USER, hotelId: HOTEL, link: { clientRequestId: item.clientRequestId, values: item.payload }, formValues: form('560') });
-    assert.deepEqual(gone, { kind: 'edited', oldAmount: 650, newAmount: '560' }, 'same gate as a live gone: keep 560, offer "Save as a new entry"');
+    assert.deepEqual(gone, { kind: 'edited', oldAmount: 650, newAmount: '560', byThisTab: false }, 'same gate as a live gone: keep 560, offer "Save as a new entry"');
     assert.deepEqual(server.rows.map((row) => row.amount), [650]);
   });
 
@@ -694,5 +695,98 @@ describe('PR #35 0b9e48f NO-GO fixes', () => {
     assert.equal(sheetInFlightOutcome('sending', 40), 'stuck');
     assert.equal(sheetInFlightOutcome('queued', 3), 'queued');
     assert.equal(sheetInFlightOutcome('gone', 3), 'gone');
+  });
+});
+
+describe('PR #35 b2c104f NO-GO fixes (one tab, back/forward and reload)', () => {
+  it('own-tab send is not called "another tab"; the tab id survives navigation in the same tab only', async () => {
+    const session = createMemoryStorage();
+    const id = sheetTabId(session, () => 'tab-a');
+    assert.equal(sheetTabId(session, () => 'tab-b'), id, 'same tab, same id after navigation/reload');
+    assert.notEqual(sheetTabId(createMemoryStorage(), () => 'tab-b'), id, 'another tab gets its own');
+
+    const server = fakeServer();
+    const queue = createMemoryStorage();
+    const item = await queue650(server, queue, 'down');
+    const link = { clientRequestId: item.clientRequestId, values: item.payload };
+    // This tab's own auto-send (e.g. the pass left running when the page was left) sends it.
+    await syncSheetQueue({ storage: queue, userId: USER, fetchImpl: server.fetchImpl, timeoutMs: 20, onSend: (sent) => markSentByThisTab(session, USER, sent) });
+    assert.equal(wasSentByThisTab(session, USER, item.clientRequestId), true);
+    const gone = sheetSourceGone({ storage: queue, session, userId: USER, hotelId: HOTEL, link, formValues: form('660') });
+    assert.deepEqual(gone, { kind: 'edited', oldAmount: 650, newAmount: '660', byThisTab: true });
+    assert.equal(
+      fillSheetCopy('{old} was sent. Your edit {new} was not saved. Correct it with an adjustment if needed.', { old: '₱650.00', new: '₱660.00' }),
+      '₱650.00 was sent. Your edit ₱660.00 was not saved. Correct it with an adjustment if needed.'
+    );
+    // A different tab's session has no record: that one does say "another tab".
+    assert.equal(sheetSourceGone({ storage: queue, session: createMemoryStorage(), userId: USER, hotelId: HOTEL, link, formValues: form('660') })?.byThisTab, false);
+  });
+
+  it('a held entry is skipped by every auto-send while its choice is pending, even with an empty form', async () => {
+    const server = fakeServer();
+    const queue = createMemoryStorage();
+    const item = await queue650(server, queue, 'down');
+    const link = { clientRequestId: item.clientRequestId, values: item.payload, draft: form('560') };
+    // This tab after back/forward: the form is empty but the kept draft differs: skip.
+    const skips = sheetAutoSendSkips({ storage: queue, userId: USER, hotelId: HOTEL, outletId: null, tabId: 'tab-a', link, formValues: { amount: '' } });
+    assert.deepEqual(skips, [item.clientRequestId]);
+    assert.deepEqual((await syncSheetQueue({ storage: queue, userId: USER, skipIds: skips, fetchImpl: server.fetchImpl, timeoutMs: 20 })).synced, []);
+    // A draft equal to what was queued is not a pending choice: no skip.
+    assert.deepEqual(sheetAutoSendSkips({ storage: queue, userId: USER, hotelId: HOTEL, tabId: 'tab-a', link: { ...link, draft: item.payload }, formValues: { amount: '' } }), []);
+
+    // Another tab's auto-send skips it too, through the held mark, until the mark expires.
+    const now = 1_000_000;
+    writeSheetHeldMark(queue, USER, item.clientRequestId, 'tab-a', now);
+    assert.deepEqual(sheetHeldElsewhere(queue, USER, 'tab-b', now + 1000), [item.clientRequestId]);
+    assert.deepEqual(sheetHeldElsewhere(queue, USER, 'tab-a', now + 1000), [], 'not skipped by its own tab through the mark');
+    const otherTabSkips = sheetAutoSendSkips({ storage: queue, userId: USER, hotelId: HOTEL, tabId: 'tab-b', link: null, formValues: { amount: '' }, now: now + 1000 });
+    assert.deepEqual((await syncSheetQueue({ storage: queue, userId: USER, skipIds: otherTabSkips, fetchImpl: server.fetchImpl, timeoutMs: 20 })).synced, []);
+    assert.deepEqual(sheetHeldElsewhere(queue, USER, 'tab-b', now + SHEET_HELD_MARK_TTL_MS + 1), [], 'a closed tab does not block it forever');
+    clearSheetHeldMarks(queue, USER, 'tab-a');
+    assert.deepEqual(sheetHeldElsewhere(queue, USER, 'tab-b', now + 1000), []);
+    assert.equal(server.rows.length, 0);
+
+    // The in-app Offline Queue page syncs the IndexedDB queue (reservations, payments, charges,
+    // cash counts) and never touches the ledger queue, so it cannot send a held entry.
+    const offlineSync = readFileSync(new URL('./offline/sync.ts', import.meta.url), 'utf8');
+    assert.equal(offlineSync.includes('hotel_ops_ledger_entry_queue'), false);
+    assert.equal(offlineSync.includes('/api/ledger'), false);
+  });
+
+  it('a reload restores the draft and the choice; if the entry is gone anyway, the edit is reported unsaved', async () => {
+    const server = fakeServer();
+    const queue = createMemoryStorage();
+    const session = createMemoryStorage();
+    server.state.mode = 'down';
+    const saved = await saveSheetEntryWithQueue({ values: form('500'), previousPayload: null }, options(queue, server.fetchImpl));
+    server.state.mode = 'up';
+    writeSheetLink(session, USER, HOTEL, { clientRequestId: saved.clientRequestId, values: form('500'), draft: form('510') });
+
+    // Reload: the form is empty (autoComplete off). The link comes back with the draft.
+    const state = restoreSheetLinkState(session, queue, USER, HOTEL);
+    assert.equal(Number(state.link?.draft?.amount), 510);
+    // The page fills the draft back in: the choice shows again, nothing is auto-sent.
+    const held = sheetHeldEntry({ formValues: state.link!.draft!, queued: retryableLedgerEntries(queue, USER), hotelId: HOTEL, outletId: null, sourceId: state.link!.clientRequestId });
+    assert.equal(held?.clientRequestId, saved.clientRequestId);
+    assert.equal(Number(held?.payload.amount), 500);
+    const skips = sheetAutoSendSkips({ storage: queue, userId: USER, hotelId: HOTEL, tabId: 'tab-a', link: state.link, formValues: { amount: '' } });
+    assert.deepEqual((await syncSheetQueue({ storage: queue, userId: USER, skipIds: skips, fetchImpl: server.fetchImpl, timeoutMs: 20 })).synced, []);
+    assert.equal(server.rows.length, 0);
+
+    // If it was sent anyway (another device-wide pass before the mark), the 510 is reported, not dropped.
+    await syncSheetQueue({ storage: queue, userId: USER, fetchImpl: server.fetchImpl, timeoutMs: 20 });
+    const later = restoreSheetLinkState(session, queue, USER, HOTEL);
+    assert.equal(later.link, null);
+    const gone = sheetSourceGone({ storage: queue, session, userId: USER, hotelId: HOTEL, link: later.goneLink, formValues: { amount: '' } });
+    assert.deepEqual(gone, { kind: 'edited', oldAmount: 500, newAmount: '510', byThisTab: false });
+  });
+
+  it('the Saving state always ends, also when the send throws', async () => {
+    const gate = createSheetBusyGate();
+    const states: boolean[] = [];
+    assert.equal(await withSheetSaving(gate, (v) => states.push(v), async () => 'ok'), 'ok');
+    await assert.rejects(withSheetSaving(gate, (v) => states.push(v), async () => { throw new Error('network'); }));
+    assert.deepEqual(states, [true, false, true, false]);
+    assert.equal(gate.busy, false);
   });
 });
