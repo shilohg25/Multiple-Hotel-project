@@ -420,3 +420,25 @@ export function sheetWaitingCount(queued: LedgerQueueItem[], skipIds: string[] =
   const skip = new Set(skipIds);
   return queued.filter((item) => (item.status === 'pending' || item.status === 'failed' || item.status === 'syncing') && !skip.has(item.clientRequestId)).length;
 }
+
+export type SheetSourceGone = { kind: 'unchanged' | 'edited'; oldAmount: number; newAmount: string };
+
+/**
+ * The entry this form came from left the device queue without this tab doing it (another tab sent it).
+ * Returns null while it is still queued or being sent (the in-flight path handles that).
+ * 'unchanged': the form still shows what was sent. 'edited': staff changed it; that edit was NOT saved.
+ */
+export function sheetSourceGone(input: {
+  storage: StorageLike;
+  userId: string;
+  hotelId: string;
+  outletId?: string | null;
+  link: SheetFormLink | null;
+  formValues: Record<string, unknown>;
+}): SheetSourceGone | null {
+  if (!input.link) return null;
+  if (sheetQueueState(input.storage, input.userId, input.link.clientRequestId) !== 'gone') return null;
+  const newAmount = String(input.formValues.amount ?? '').trim();
+  const unchanged = !newAmount || sameLedgerRetryPayload(input.link.values, input.formValues, { outletId: input.outletId, hotelId: input.hotelId });
+  return { kind: unchanged ? 'unchanged' : 'edited', oldAmount: Number(input.link.values.amount || 0), newAmount };
+}

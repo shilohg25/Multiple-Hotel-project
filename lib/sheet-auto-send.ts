@@ -17,8 +17,8 @@ export const SHEET_AUTO_SEND_DELAYS_MS = [3_000, 6_000, 12_000, 24_000, 30_000];
 export type SheetAutoSendReason = 'load' | 'online' | 'visible' | 'timer';
 
 type Listenable = {
-  addEventListener(type: string, listener: () => void): void;
-  removeEventListener(type: string, listener: () => void): void;
+  addEventListener(type: string, listener: (event: Event) => void): void;
+  removeEventListener(type: string, listener: (event: Event) => void): void;
 };
 
 export function startSheetAutoSend(options: {
@@ -118,5 +118,40 @@ export function startSheetAutoSend(options: {
       options.win.removeEventListener('online', onOnline);
       options.doc?.removeEventListener('visibilitychange', onVisibility);
     }
+  };
+}
+
+/**
+ * Tell this tab when another tab changed the shared device queue (or this tab's form link), so a
+ * held or source entry that another tab sent is noticed without a reload. 'storage' only fires in
+ * OTHER tabs; 'online', 'focus' and visibilitychange are the backup re-checks.
+ */
+export function watchSheetSource(options: {
+  win: Listenable;
+  doc?: Listenable & { visibilityState?: string };
+  /** Storage keys that matter: the ledger queue key and the form link key. */
+  keys: string[];
+  check: (reason: 'storage' | 'online' | 'focus' | 'visible') => void;
+}) {
+  const onStorage = (event: Event) => {
+    const key = (event as Event & { key?: string | null }).key;
+    // key null means the whole storage was cleared.
+    if (key == null || options.keys.includes(key)) options.check('storage');
+  };
+  const onOnline = () => options.check('online');
+  const onFocus = () => options.check('focus');
+  const onVisibility = () => {
+    if (options.doc?.visibilityState && options.doc.visibilityState !== 'visible') return;
+    options.check('visible');
+  };
+  options.win.addEventListener('storage', onStorage);
+  options.win.addEventListener('online', onOnline);
+  options.win.addEventListener('focus', onFocus);
+  options.doc?.addEventListener('visibilitychange', onVisibility);
+  return () => {
+    options.win.removeEventListener('storage', onStorage);
+    options.win.removeEventListener('online', onOnline);
+    options.win.removeEventListener('focus', onFocus);
+    options.doc?.removeEventListener('visibilitychange', onVisibility);
   };
 }

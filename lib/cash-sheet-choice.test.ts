@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { replaceHeldSheetEntry, restoreSheetLink, sendHeldSheetEntry, sheetEntryPayload, sheetEntryStillQueued, sheetLinkKey, sheetQueueState, writeSheetLink, sheetFormStillSent, sheetHeldEntry, sheetWaitingCount, syncSheetQueue, saveSheetEntryWithQueue, fillSheetCopy } from './cash-sheet.ts';
-import { startSheetAutoSend } from './sheet-auto-send.ts';
+import { replaceHeldSheetEntry, restoreSheetLink, sendHeldSheetEntry, sheetEntryPayload, sheetEntryStillQueued, sheetLinkKey, sheetQueueState, sheetSourceGone, writeSheetLink, sheetFormStillSent, sheetHeldEntry, sheetWaitingCount, syncSheetQueue, saveSheetEntryWithQueue, fillSheetCopy } from './cash-sheet.ts';
+import { startSheetAutoSend, watchSheetSource } from './sheet-auto-send.ts';
 import { parseLedgerPatchBody } from './ledger-patch.ts';
-import { createMemoryStorage, readLedgerQueue, retryableLedgerEntries, upsertLedgerQueueItem } from './ledger-entry-queue.ts';
+import { createMemoryStorage, ledgerQueueStorageKey, readLedgerQueue, retryableLedgerEntries, upsertLedgerQueueItem } from './ledger-entry-queue.ts';
 import {
   createLedgerEntryOnce,
   createMemoryLedgerIdempotencyStore,
@@ -512,5 +512,93 @@ describe('PR #35 8ee58b4 follow-ups', () => {
     assert.equal(sheetQueueState(queue2, USER, item2.clientRequestId), 'gone');
     assert.deepEqual(await replaceHeldSheetEntry(item2, form('560'), options(queue2, server2.fetchImpl)), { kind: 'gone' });
     assert.deepEqual(server2.rows.map((row) => row.amount), [650]);
+  });
+});
+
+describe('Tester case D: another tab sends the entry this form came from', () => {
+  const storageEvent = (key: string | null) => Object.assign(new Event('storage'), { key });
+
+  it('tab 1 learns from the storage event: note, link dropped, no automatic second row', async () => {
+    const server = fakeServer();
+    const shared = createMemoryStorage(); // localStorage: both tabs
+    const session1 = createMemoryStorage(); // tab 1 sessionStorage
+    // Tab 1 saves 850 offline (queued) and links its form to it, then edits the form to 860.
+    server.state.mode = 'down';
+    const saved = await saveSheetEntryWithQueue({ values: form('850'), previousPayload: null }, options(shared, server.fetchImpl));
+    server.state.mode = 'up';
+    const link = { clientRequestId: saved.clientRequestId, values: form('850') };
+    writeSheetLink(session1, USER, HOTEL, link);
+    const tab1Form = form('860');
+
+    // Tab 1 listens like CashSheetEntries does.
+    const win1 = new EventTarget();
+    const notes: Array<ReturnType<typeof sheetSourceGone>> = [];
+    let tab1Link: typeof link | null = link;
+    const stop = watchSheetSource({
+      win: win1,
+      keys: [ledgerQueueStorageKey(USER), sheetLinkKey(USER, HOTEL)],
+      check: () => {
+        const gone = sheetSourceGone({ storage: shared, userId: USER, hotelId: HOTEL, outletId: null, link: tab1Link, formValues: tab1Form });
+        if (!gone) return;
+        notes.push(gone);
+        tab1Link = null;
+        writeSheetLink(session1, USER, HOTEL, null);
+      }
+    });
+
+    // Tab 2 (empty form, nothing held) marks it syncing: tab 1 hears it, but it is not gone yet.
+    upsertLedgerQueueItem(shared, USER, { ...readLedgerQueue(shared, USER)[0], status: 'syncing' });
+    win1.dispatchEvent(storageEvent(ledgerQueueStorageKey(USER)));
+    assert.equal(notes.length, 0, 'mid-send: the in-flight path applies, no note yet');
+    upsertLedgerQueueItem(shared, USER, { ...readLedgerQueue(shared, USER)[0], status: 'pending' });
+
+    // Tab 2 auto-sends the 850.
+    const tab2 = await syncSheetQueue({ storage: shared, userId: USER, fetchImpl: server.fetchImpl, timeoutMs: 20 });
+    assert.deepEqual(tab2.synced, [saved.clientRequestId]);
+    win1.dispatchEvent(storageEvent('some-other-key'));
+    assert.equal(notes.length, 0, 'unrelated keys are ignored');
+    win1.dispatchEvent(storageEvent(ledgerQueueStorageKey(USER)));
+
+    assert.deepEqual(notes, [{ kind: 'edited', oldAmount: 850, newAmount: '860' }]);
+    assert.equal(
+      fillSheetCopy('{old} was already sent from another tab. Your edit {new} was not saved. Correct it with an adjustment if needed.', { old: '₱850.00', new: '₱860.00' }),
+      '₱850.00 was already sent from another tab. Your edit ₱860.00 was not saved. Correct it with an adjustment if needed.'
+    );
+    assert.equal(session1.getItem(sheetLinkKey(USER, HOTEL)), null, 'link dropped');
+    assert.equal(restoreSheetLink(session1, shared, USER, HOTEL), null);
+
+    // Nothing in tab 1 creates a second row by itself: no hold, nothing queued, an auto pass sends nothing.
+    assert.equal(sheetHeldEntry({ formValues: tab1Form, queued: retryableLedgerEntries(shared, USER), hotelId: HOTEL, outletId: null, sourceId: tab1Link?.clientRequestId ?? null }), null);
+    const tab1Pass = await syncSheetQueue({ storage: shared, userId: USER, fetchImpl: server.fetchImpl, timeoutMs: 20 });
+    assert.deepEqual(tab1Pass.synced, []);
+    assert.deepEqual(server.rows.map((row) => row.amount), [850]);
+
+    // Only an explicit "Save ₱860.00 as a new entry" makes a second row, with a new id.
+    const confirmed = await saveSheetEntryWithQueue({ values: tab1Form, previousPayload: null }, options(shared, server.fetchImpl));
+    assert.equal(confirmed.ok, true);
+    assert.notEqual(confirmed.clientRequestId, saved.clientRequestId);
+    assert.deepEqual(server.rows.map((row) => row.amount), [850, 860]);
+    stop();
+  });
+
+  it('an unchanged form is reported as sent elsewhere; online, focus, visibility and a cleared storage re-check', () => {
+    const shared = createMemoryStorage();
+    const link = { clientRequestId: 'gone-id', values: form('850') };
+    assert.deepEqual(sheetSourceGone({ storage: shared, userId: USER, hotelId: HOTEL, link, formValues: form('850') }), { kind: 'unchanged', oldAmount: 850, newAmount: '850' });
+    assert.deepEqual(sheetSourceGone({ storage: shared, userId: USER, hotelId: HOTEL, link, formValues: { amount: '' } })?.kind, 'unchanged');
+    assert.equal(sheetSourceGone({ storage: shared, userId: USER, hotelId: HOTEL, link: null, formValues: form('860') }), null);
+
+    const win = new EventTarget();
+    const doc = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+    const reasons: string[] = [];
+    const stop = watchSheetSource({ win, doc, keys: [ledgerQueueStorageKey(USER)], check: (reason) => reasons.push(reason) });
+    win.dispatchEvent(new Event('online'));
+    win.dispatchEvent(new Event('focus'));
+    doc.dispatchEvent(new Event('visibilitychange'));
+    win.dispatchEvent(storageEvent(null));
+    assert.deepEqual(reasons, ['online', 'focus', 'visible', 'storage']);
+    stop();
+    win.dispatchEvent(new Event('online'));
+    assert.equal(reasons.length, 4, 'stop() removes the listeners');
   });
 });

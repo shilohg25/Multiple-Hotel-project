@@ -160,6 +160,10 @@ export default async function DailyCashSheetPage({ searchParams }: { searchParam
           replacementExists: label(locale, 'close.heldReplacementExists'),
           gone: label(locale, 'close.heldGone'),
           inFlight: label(locale, 'close.heldInFlight'),
+          sentElsewhere: label(locale, 'close.sentElsewhere'),
+          sentElsewhereEdited: label(locale, 'close.sentElsewhereEdited'),
+          saveAsNew: label(locale, 'close.saveAsNew'),
+          clearForm: label(locale, 'close.clearForm'),
           saved: label(locale, 'close.entrySaved')
         }}
       />

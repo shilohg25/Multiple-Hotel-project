@@ -10,6 +10,8 @@ import {
   sheetEntryPayload,
   sheetHeldEntry,
   restoreSheetLink,
+  sheetLinkKey,
+  sheetSourceGone,
   sheetQueueState,
   writeSheetLink,
   type SheetFormLink,
@@ -27,13 +29,14 @@ import {
   pendingLedgerEntries,
   queuedLedgerHint,
   resetStaleSyncingLedgerEntries,
+  ledgerQueueStorageKey,
   readLedgerQueue,
   retryableLedgerEntries,
   sameLedgerRetryPayload,
   type LedgerQueueItem
 } from '@/lib/ledger-entry-queue';
 import { currency } from '@/lib/money';
-import { startSheetAutoSend, type SheetAutoSendReason } from '@/lib/sheet-auto-send';
+import { startSheetAutoSend, watchSheetSource, type SheetAutoSendReason } from '@/lib/sheet-auto-send';
 
 type Row = {
   id?: string;
@@ -53,6 +56,10 @@ export type CashSheetChoiceCopy = {
   replacementExists: string;
   gone: string;
   inFlight: string;
+  sentElsewhere: string;
+  sentElsewhereEdited: string;
+  saveAsNew: string;
+  clearForm: string;
   saved: string;
 };
 
@@ -120,12 +127,62 @@ export function CashSheetEntries({
   // The one entry the form came from: the last save from this form that failed and is still queued.
   // Only it can be held. Emptying the amount, a save, Send or Replace ends the link.
   const sourceRef = useRef<string | null>(null);
+  const linkRef = useRef<SheetFormLink | null>(null);
   const watchRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Another tab sent the entry this form came from, and staff had edited it: the edit was not saved.
+  // Save is blocked until they confirm "Save as a new entry" or clear the form.
+  const [sentElsewhere, setSentElsewhere] = useState<{ oldAmount: number } | null>(null);
+  const checkSourceRef = useRef<(() => void) | null>(null);
 
   /** Set or clear the link; it is also kept in sessionStorage so a reload or back/forward keeps it. */
   function setSource(link: SheetFormLink | null) {
     sourceRef.current = link?.clientRequestId ?? null;
+    linkRef.current = link;
     writeSheetLink(window.sessionStorage, userId, hotelId, link);
+  }
+
+  /**
+   * Did another tab send the entry this form came from? Runs on 'storage' (queue or link changed in
+   * another tab), 'online', 'focus' and visibilitychange, and before each auto-send pass.
+   */
+  function checkSource() {
+    if (busyRef.current) return; // this tab is sending; it handles its own result
+    const gone = sheetSourceGone({
+      storage: window.localStorage,
+      userId,
+      hotelId,
+      outletId,
+      link: linkRef.current,
+      formValues: readForm(formRef.current)
+    });
+    if (!gone) return;
+    stopWatching();
+    setSource(null);
+    clearPending();
+    setHeld(null);
+    const old = money(gone.oldAmount);
+    if (gone.kind === 'unchanged') {
+      formRef.current?.reset();
+      setFormAmount('');
+      setSentElsewhere(null);
+      setMessage(fillSheetCopy(choiceCopy.sentElsewhere, { old }));
+    } else {
+      setSentElsewhere({ oldAmount: gone.oldAmount });
+      setMessage('');
+    }
+    router.refresh();
+  }
+
+  function saveAsNewEntry() {
+    setSentElsewhere(null);
+    void submit(true);
+  }
+
+  function clearAfterSentElsewhere() {
+    setSentElsewhere(null);
+    formRef.current?.reset();
+    setFormAmount('');
+    setMessage('');
   }
 
   function stopWatching() {
@@ -190,6 +247,7 @@ export function CashSheetEntries({
     if (!String(values.amount ?? '').trim()) {
       // An empty amount ends the link to the earlier entry: what is typed next is a new entry.
       setSource(null);
+      setSentElsewhere(null);
       if (held) {
         setHeld(null);
         autoSendRef.current?.soon();
@@ -203,7 +261,8 @@ export function CashSheetEntries({
     if (!stillHeld) autoSendRef.current?.soon();
   }
 
-  async function submit() {
+  async function submit(confirmedNew = false) {
+    if (sentElsewhere && !confirmedNew) return; // staff must confirm "Save as a new entry" first
     const formValues = readForm(formRef.current);
     const waiting = findHeld(formValues);
     if (waiting) {
@@ -321,6 +380,21 @@ export function CashSheetEntries({
     await submit();
   }
 
+  // Keep the latest checkSource for listeners registered once per user and hotel.
+  useEffect(() => {
+    checkSourceRef.current = checkSource;
+  });
+
+  useEffect(() => {
+    const stop = watchSheetSource({
+      win: window,
+      doc: document,
+      keys: [ledgerQueueStorageKey(userId), sheetLinkKey(userId, hotelId)],
+      check: () => checkSourceRef.current?.()
+    });
+    return stop;
+  }, [userId, hotelId]);
+
   // Same auto-send as #33: on load and when the device comes back online, send queued entries.
   useEffect(() => {
     let cancelled = false;
@@ -340,9 +414,13 @@ export function CashSheetEntries({
         resetStaleSyncingLedgerEntries(storage, userId);
         // After a reload or back/forward: the link to the entry this form came from.
         const link = restoreSheetLink(window.sessionStorage, storage, userId, hotelId);
-        if (link && !sourceRef.current) sourceRef.current = link.clientRequestId;
+        if (link && !sourceRef.current) {
+          sourceRef.current = link.clientRequestId;
+          linkRef.current = link;
+        }
       }
       showAttention();
+      checkSourceRef.current?.();
       const formValues = readSheetForm(formRef.current, { hotelId, businessDate, outletId });
       const waiting = findHeldEntry(formValues, { userId, hotelId, outletId, sourceId: sourceRef.current });
       if (waiting) {
@@ -366,6 +444,7 @@ export function CashSheetEntries({
           if (pendingRef.current && result.synced.includes(pendingRef.current.clientRequestId)) clearPending();
           if (sourceRef.current && result.synced.includes(sourceRef.current)) {
             sourceRef.current = null;
+            linkRef.current = null;
             writeSheetLink(window.sessionStorage, userId, hotelId, null);
           }
           if (formMatch && result.synced.includes(formMatch.clientRequestId)) {
@@ -439,6 +518,17 @@ export function CashSheetEntries({
         ) : (
           <form ref={formRef} onSubmit={addEntry} onInput={onFormInput} autoComplete="off" className="space-y-3">
             {message ? <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm" role="status">{message}</p> : null}
+            {sentElsewhere ? (
+              <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3 text-sm" role="alert">
+                <p className="font-semibold">{fillSheetCopy(choiceCopy.sentElsewhereEdited, { old: money(sentElsewhere.oldAmount), new: money(formAmount) })}</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button className="btn-secondary" type="button" disabled={saving} onClick={clearAfterSentElsewhere}>{choiceCopy.clearForm}</button>
+                  <button className="btn-primary" type="button" disabled={saving || !formAmount.trim()} onClick={saveAsNewEntry}>
+                    {fillSheetCopy(choiceCopy.saveAsNew, { new: money(formAmount) })}
+                  </button>
+                </div>
+              </div>
+            ) : null}
             {held ? (
               <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3 text-sm" role="alert">
                 <p className="font-semibold">{fillSheetCopy(choiceCopy.question, { old: money(held.payload.amount), new: money(formAmount) })}</p>
@@ -470,7 +560,7 @@ export function CashSheetEntries({
             <label className="block space-y-1">Note (optional)
               <input name="description" className="w-full" autoComplete="off" />
             </label>
-            <button className="btn-primary w-full" type="submit" disabled={saving || Boolean(held)}>{saving ? 'Saving…' : 'Save entry'}</button>
+            <button className="btn-primary w-full" type="submit" disabled={saving || Boolean(held) || Boolean(sentElsewhere)}>{saving ? 'Saving…' : 'Save entry'}</button>
             {canRetry && !saving && !held ? (
               <button className="btn-secondary w-full" type="button" onClick={() => void submit()}>Retry</button>
             ) : null}
