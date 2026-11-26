@@ -155,3 +155,31 @@ export function watchSheetSource(options: {
     options.doc?.removeEventListener('visibilitychange', onVisibility);
   };
 }
+
+/**
+ * "This tab is sending" plus re-checks that arrived meanwhile. A check requested while busy runs once
+ * when the send ends, so a storage event during this tab's own send is not lost.
+ */
+export function createSheetBusyGate() {
+  let busy = false;
+  const waiting = new Set<() => void>();
+  return {
+    get busy() {
+      return busy;
+    },
+    start() {
+      busy = true;
+    },
+    end() {
+      busy = false;
+      const callbacks = [...waiting];
+      waiting.clear();
+      for (const callback of callbacks) callback();
+    },
+    /** Run now when idle; otherwise once when the current send ends. */
+    whenIdle(callback: () => void) {
+      if (!busy) callback();
+      else waiting.add(callback);
+    }
+  };
+}

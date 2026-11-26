@@ -40,6 +40,7 @@ export const en: MessageCatalog = {
     'close.sentElsewhereEdited': '{old} was already sent from another tab. Your edit {new} was not saved. Correct it with an adjustment if needed.',
     'close.saveAsNew': 'Save {new} as a new entry',
     'close.clearForm': 'Clear form',
+    'close.heldInFlightStuck': "The other tab hasn't finished sending this entry. If that tab was closed, reload this page.",
     'close.heldGone': 'This entry was already sent or replaced in another tab. Nothing more was saved.',
     'close.entrySaved': '{amount} saved.',
     'help.title': 'How to',

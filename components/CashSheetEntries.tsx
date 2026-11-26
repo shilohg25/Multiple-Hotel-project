@@ -9,7 +9,14 @@ import {
   sendHeldSheetEntry,
   sheetEntryPayload,
   sheetHeldEntry,
-  restoreSheetLink,
+  readSheetSentElsewhere,
+  restoreSheetLinkState,
+  sheetInFlightOutcome,
+  sheetRetryAvailable,
+  sheetSaveBlocked,
+  writeSheetSentElsewhere,
+  type SheetSentElsewhere,
+  type SheetSourceGone,
   sheetLinkKey,
   sheetSourceGone,
   sheetQueueState,
@@ -36,7 +43,7 @@ import {
   type LedgerQueueItem
 } from '@/lib/ledger-entry-queue';
 import { currency } from '@/lib/money';
-import { startSheetAutoSend, watchSheetSource, type SheetAutoSendReason } from '@/lib/sheet-auto-send';
+import { createSheetBusyGate, startSheetAutoSend, watchSheetSource, type SheetAutoSendReason } from '@/lib/sheet-auto-send';
 
 type Row = {
   id?: string;
@@ -56,6 +63,7 @@ export type CashSheetChoiceCopy = {
   replacementExists: string;
   gone: string;
   inFlight: string;
+  inFlightStuck: string;
   sentElsewhere: string;
   sentElsewhereEdited: string;
   saveAsNew: string;
@@ -121,7 +129,7 @@ export function CashSheetEntries({
   // Option (a): an earlier entry is queued and the form now says something else. Nothing is sent by itself.
   const [held, setHeld] = useState<LedgerQueueItem | null>(null);
   // A save staff started is running; auto-send waits. autoSendRef re-arms the retry timer after a failure.
-  const busyRef = useRef(false);
+  const [busy] = useState(() => createSheetBusyGate());
   const autoSendRef = useRef<ReturnType<typeof startSheetAutoSend> | null>(null);
   const [formAmount, setFormAmount] = useState('');
   // The one entry the form came from: the last save from this form that failed and is still queued.
@@ -132,7 +140,7 @@ export function CashSheetEntries({
   // Another tab sent the entry this form came from, and staff had edited it: the edit was not saved.
   // Save is blocked until they confirm "Save as a new entry" or clear the form.
   const [sentElsewhere, setSentElsewhere] = useState<{ oldAmount: number } | null>(null);
-  const checkSourceRef = useRef<(() => void) | null>(null);
+  const actionsRef = useRef<{ checkSource: () => void; restoreOnLoad: () => void } | null>(null);
 
   /** Set or clear the link; it is also kept in sessionStorage so a reload or back/forward keeps it. */
   function setSource(link: SheetFormLink | null) {
@@ -141,45 +149,103 @@ export function CashSheetEntries({
     writeSheetLink(window.sessionStorage, userId, hotelId, link);
   }
 
+  function writeNote(note: SheetSentElsewhere | null) {
+    writeSheetSentElsewhere(window.sessionStorage, userId, hotelId, note);
+  }
+
+  /** Recompute whether Retry has something to send: its entry still queued, no gate, no choice. */
+  function retryAvailable() {
+    return sheetRetryAvailable({ storage: window.localStorage, userId, pendingId: pendingRef.current?.clientRequestId, held: false, gate: false });
+  }
+
   /**
-   * Did another tab send the entry this form came from? Runs on 'storage' (queue or link changed in
-   * another tab), 'online', 'focus' and visibilitychange, and before each auto-send pass.
+   * The entry this form came from left the queue without this tab (another tab sent it).
+   * Unchanged or empty form: clear it and say so. Edited form: keep the edit, say it was NOT saved,
+   * and block Save until "Save as a new entry" or "Clear form". Kept in sessionStorage across reloads.
    */
-  function checkSource() {
-    if (busyRef.current) return; // this tab is sending; it handles its own result
-    const gone = sheetSourceGone({
-      storage: window.localStorage,
-      userId,
-      hotelId,
-      outletId,
-      link: linkRef.current,
-      formValues: readForm(formRef.current)
-    });
-    if (!gone) return;
+  function applyGone(gone: SheetSourceGone, values: Record<string, unknown>) {
     stopWatching();
     setSource(null);
     clearPending();
     setHeld(null);
-    const old = money(gone.oldAmount);
     if (gone.kind === 'unchanged') {
       formRef.current?.reset();
       setFormAmount('');
       setSentElsewhere(null);
-      setMessage(fillSheetCopy(choiceCopy.sentElsewhere, { old }));
+      writeNote({ mode: 'armed', oldAmount: gone.oldAmount, values });
+      setMessage(fillSheetCopy(choiceCopy.sentElsewhere, { old: money(gone.oldAmount) }));
     } else {
+      setFormAmount(gone.newAmount);
       setSentElsewhere({ oldAmount: gone.oldAmount });
+      writeNote({ mode: 'gate', oldAmount: gone.oldAmount, values });
       setMessage('');
     }
     router.refresh();
   }
 
+  const recheckWhenIdle = () => actionsRef.current?.checkSource();
+
+  /**
+   * Did another tab send the entry this form came from? Runs on 'storage' (queue or link changed in
+   * another tab), 'online', 'focus' and visibilitychange, before each auto-send pass, and once more
+   * when this tab's own send ends (a storage event during it is not lost).
+   */
+  function checkSource() {
+    if (busy.busy) {
+      busy.whenIdle(recheckWhenIdle);
+      return;
+    }
+    const link = linkRef.current;
+    const gone = sheetSourceGone({ storage: window.localStorage, userId, hotelId, outletId, link, formValues: readForm(formRef.current) });
+    if (gone && link) applyGone(gone, link.values);
+  }
+
+  /** On load (reload, back/forward, remount): a link whose entry left the queue meanwhile, and a kept note. */
+  function restoreOnLoad() {
+    const state = restoreSheetLinkState(window.sessionStorage, window.localStorage, userId, hotelId);
+    if (state.link && !sourceRef.current) {
+      sourceRef.current = state.link.clientRequestId;
+      linkRef.current = state.link;
+    }
+    const formValues = readForm(formRef.current);
+    if (state.goneLink) {
+      const gone = sheetSourceGone({ storage: window.localStorage, userId, hotelId, outletId, link: state.goneLink, formValues });
+      if (gone) {
+        applyGone(gone, state.goneLink.values);
+        return;
+      }
+    }
+    const note = readSheetSentElsewhere(window.sessionStorage, userId, hotelId);
+    if (note?.mode === 'gate' && String(formValues.amount ?? '').trim()) {
+      setFormAmount(String(formValues.amount));
+      setSentElsewhere({ oldAmount: note.oldAmount });
+    } else if (note?.mode === 'gate') {
+      writeNote({ ...note, mode: 'armed' });
+    }
+  }
+
+  /** Held entry gone after Send/Replace was pressed (another tab handled it): same handling as above. */
+  function goneFromChoice(item: LedgerQueueItem, origin: 'send' | 'replace', formAtClick: Record<string, unknown>) {
+    if (origin === 'send') {
+      // Staff chose the earlier amount; it was sent elsewhere: their edit is intentionally dropped.
+      finishChoice(fillSheetCopy(choiceCopy.sentElsewhere, { old: money(item.payload.amount) }), formAtClick);
+      return;
+    }
+    const link = { clientRequestId: item.clientRequestId, values: item.payload };
+    const gone = sheetSourceGone({ storage: window.localStorage, userId, hotelId, outletId, link, formValues: readForm(formRef.current) });
+    if (gone) applyGone(gone, item.payload);
+    else finishChoice(choiceCopy.gone, formAtClick);
+  }
+
   function saveAsNewEntry() {
     setSentElsewhere(null);
+    writeNote(null);
     void submit(true);
   }
 
   function clearAfterSentElsewhere() {
     setSentElsewhere(null);
+    writeNote(null);
     formRef.current?.reset();
     setFormAmount('');
     setMessage('');
@@ -192,18 +258,20 @@ export function CashSheetEntries({
 
   /**
    * Another tab is sending the held entry. Keep the choice and the typed amount, and look at the
-   * shared device queue until that send is final: back in the queue -> choose again; gone -> resolved.
+   * shared device queue until that send is final: back in the queue -> choose again; gone -> resolved;
+   * still sending after ~60 s -> the other tab may have closed mid-send: suggest a reload.
    */
-  function watchOtherTab(item: LedgerQueueItem, formAtClick: Record<string, unknown>) {
+  function watchOtherTab(item: LedgerQueueItem, formAtClick: Record<string, unknown>, origin: 'send' | 'replace') {
     stopWatching();
     setMessage(choiceCopy.inFlight);
     let checks = 0;
     watchRef.current = setInterval(() => {
       checks += 1;
-      const where = sheetQueueState(window.localStorage, userId, item.clientRequestId);
-      if (where === 'sending' && checks < 40) return;
+      const outcome = sheetInFlightOutcome(sheetQueueState(window.localStorage, userId, item.clientRequestId), checks);
+      if (outcome === 'wait') return;
       stopWatching();
-      if (where === 'gone') finishChoice(choiceCopy.gone, formAtClick);
+      if (outcome === 'gone') goneFromChoice(item, origin, formAtClick);
+      else if (outcome === 'stuck') setMessage(choiceCopy.inFlightStuck);
       else setMessage('');
     }, 1500);
   }
@@ -248,12 +316,15 @@ export function CashSheetEntries({
       // An empty amount ends the link to the earlier entry: what is typed next is a new entry.
       setSource(null);
       setSentElsewhere(null);
+      writeNote(null);
       if (held) {
         setHeld(null);
         autoSendRef.current?.soon();
       }
       return;
     }
+    // Staff are typing a new entry (not a browser refill): a kept, unshown note no longer applies.
+    if (!sentElsewhere && readSheetSentElsewhere(window.sessionStorage, userId, hotelId)?.mode === 'armed') writeNote(null);
     if (!held) return;
     const stillHeld = findHeld(values);
     setHeld(stillHeld);
@@ -264,6 +335,16 @@ export function CashSheetEntries({
   async function submit(confirmedNew = false) {
     if (sentElsewhere && !confirmedNew) return; // staff must confirm "Save as a new entry" first
     const formValues = readForm(formRef.current);
+    // A refilled amount after "already sent from another tab" (even across a reload): show the gate, don't post.
+    const note = readSheetSentElsewhere(window.sessionStorage, userId, hotelId);
+    if (sheetSaveBlocked(note, formValues, confirmedNew) && note) {
+      writeNote({ ...note, mode: 'gate' });
+      setFormAmount(String(formValues.amount ?? ''));
+      setSentElsewhere({ oldAmount: note.oldAmount });
+      setMessage('');
+      return;
+    }
+    if (confirmedNew) writeNote(null);
     const waiting = findHeld(formValues);
     if (waiting) {
       setHeld(waiting);
@@ -282,7 +363,7 @@ export function CashSheetEntries({
       queued
     });
     if (!source) return;
-    busyRef.current = true;
+    busy.start();
     setSaving(true);
     setMessage('');
     try {
@@ -298,13 +379,13 @@ export function CashSheetEntries({
       const keep = result.retryable || Boolean(result.needsAttention);
       pendingRef.current = keep ? { clientRequestId: result.clientRequestId, payload: source.values } : null;
       setSource(result.retryable ? { clientRequestId: result.clientRequestId, values: source.values } : null);
-      setCanRetry(keep);
+      setCanRetry(keep && retryAvailable());
       setMessage(queuedLedgerHint(result.error, result.retryable, Boolean(result.needsAttention)));
     } catch (error) {
-      setCanRetry(true);
+      setCanRetry(retryAvailable());
       setMessage(queuedLedgerHint(error instanceof Error ? error.message : "Couldn't save this entry. Check your connection and try again.", true));
     } finally {
-      busyRef.current = false;
+      busy.end();
       setSaving(false);
       autoSendRef.current?.soon();
     }
@@ -317,14 +398,14 @@ export function CashSheetEntries({
     // Another tab may be sending it, or have sent or replaced it already: then send nothing.
     const where = sheetQueueState(window.localStorage, userId, item.clientRequestId);
     if (where === 'sending') {
-      watchOtherTab(item, formAtClick);
+      watchOtherTab(item, formAtClick, 'send');
       return;
     }
     if (where === 'gone') {
-      finishChoice(choiceCopy.gone, formAtClick);
+      goneFromChoice(item, 'send', formAtClick);
       return;
     }
-    busyRef.current = true;
+    busy.start();
     setSaving(true);
     setMessage('');
     try {
@@ -339,7 +420,7 @@ export function CashSheetEntries({
       }
       setMessage(queuedLedgerHint(result.error, result.retryable, Boolean(result.needsAttention)));
     } finally {
-      busyRef.current = false;
+      busy.end();
       setSaving(false);
       autoSendRef.current?.soon();
     }
@@ -349,7 +430,7 @@ export function CashSheetEntries({
     const item = held;
     if (!item) return;
     const formValues = readForm(formRef.current);
-    busyRef.current = true;
+    busy.start();
     setSaving(true);
     setMessage('');
     try {
@@ -361,15 +442,15 @@ export function CashSheetEntries({
       } else if (outcome.kind === 'replaced') {
         finishChoice(fillSheetCopy(choiceCopy.saved, { amount: money(outcome.amount) }), formValues);
       } else if (outcome.kind === 'gone') {
-        finishChoice(choiceCopy.gone, formValues);
+        goneFromChoice(item, 'replace', formValues);
       } else if (outcome.kind === 'in_flight') {
-        watchOtherTab(item, formValues);
+        watchOtherTab(item, formValues, 'replace');
       } else if ('error' in outcome) {
         // Busy, offline or refused: nothing changed; the choice stays and pressing Replace again is safe.
         setMessage(outcome.error);
       }
     } finally {
-      busyRef.current = false;
+      busy.end();
       setSaving(false);
       autoSendRef.current?.soon();
     }
@@ -380,9 +461,9 @@ export function CashSheetEntries({
     await submit();
   }
 
-  // Keep the latest checkSource for listeners registered once per user and hotel.
+  // Keep the latest handlers for listeners registered once per user and hotel.
   useEffect(() => {
-    checkSourceRef.current = checkSource;
+    actionsRef.current = { checkSource, restoreOnLoad };
   });
 
   useEffect(() => {
@@ -390,7 +471,7 @@ export function CashSheetEntries({
       win: window,
       doc: document,
       keys: [ledgerQueueStorageKey(userId), sheetLinkKey(userId, hotelId)],
-      check: () => checkSourceRef.current?.()
+      check: () => actionsRef.current?.checkSource()
     });
     return stop;
   }, [userId, hotelId]);
@@ -399,28 +480,26 @@ export function CashSheetEntries({
   useEffect(() => {
     let cancelled = false;
     function showAttention() {
-      const attention = needsAttentionLedgerEntries(window.localStorage, userId);
+      const attention = needsAttentionLedgerEntries(window.localStorage, userId).filter((item) => item.hotelId === hotelId);
       if (!attention.length) return;
+      if (readSheetSentElsewhere(window.sessionStorage, userId, hotelId)?.mode === 'gate') return;
       pendingRef.current = { clientRequestId: attention[0].clientRequestId, payload: attention[0].payload };
-      setCanRetry(true);
+      setCanRetry(sheetRetryAvailable({ storage: window.localStorage, userId, pendingId: attention[0].clientRequestId, held: false, gate: false }));
       setMessage(queuedLedgerHint(attention[0].error || LEDGER_NEEDS_ATTENTION_ERROR, false, true));
     }
     async function flush(reason: SheetAutoSendReason): Promise<{ remaining: number }> {
       if (!userId) return { remaining: 0 };
       const storage = window.localStorage;
       // A save staff started is still running: leave its entry alone and look again shortly.
-      if (busyRef.current) return { remaining: sheetWaitingCount(readLedgerQueue(storage, userId)) };
+      if (busy.busy) return { remaining: sheetWaitingCount(readLedgerQueue(storage, userId)) };
       if (reason === 'load') {
         resetStaleSyncingLedgerEntries(storage, userId);
-        // After a reload or back/forward: the link to the entry this form came from.
-        const link = restoreSheetLink(window.sessionStorage, storage, userId, hotelId);
-        if (link && !sourceRef.current) {
-          sourceRef.current = link.clientRequestId;
-          linkRef.current = link;
-        }
+        // After a reload or back/forward: the link to the entry this form came from, and, if another
+        // tab sent that entry meanwhile, the same note or gate as when it happens live.
+        actionsRef.current?.restoreOnLoad();
       }
       showAttention();
-      checkSourceRef.current?.();
+      actionsRef.current?.checkSource();
       const formValues = readSheetForm(formRef.current, { hotelId, businessDate, outletId });
       const waiting = findHeldEntry(formValues, { userId, hotelId, outletId, sourceId: sourceRef.current });
       if (waiting) {
@@ -435,7 +514,7 @@ export function CashSheetEntries({
       const formMatch = String(formValues.amount ?? '').trim()
         ? toSend.find((item) => item.hotelId === hotelId && sameLedgerRetryPayload(item.payload, formValues, { outletId, hotelId }))
         : undefined;
-      busyRef.current = true;
+      busy.start();
       setSaving(true);
       try {
         const result = await syncSheetQueue({ storage, userId, skipIds, resetStale: false });
@@ -459,12 +538,12 @@ export function CashSheetEntries({
           router.refresh();
         }
         if (result.failed > 0 && result.lastError) {
-          setCanRetry(true);
+          setCanRetry(Boolean(pendingRef.current) && sheetRetryAvailable({ storage, userId, pendingId: pendingRef.current?.clientRequestId, held: false, gate: false }));
           setMessage(queuedLedgerHint(result.lastError, true));
         }
         showAttention();
       } finally {
-        busyRef.current = false;
+        busy.end();
         if (!cancelled) setSaving(false);
       }
       return { remaining: sheetWaitingCount(readLedgerQueue(storage, userId), skipIds) };
@@ -478,7 +557,7 @@ export function CashSheetEntries({
       watchRef.current = null;
       if (autoSendRef.current === sender) autoSendRef.current = null;
     };
-  }, [router, userId, hotelId, outletId, businessDate]);
+  }, [router, userId, hotelId, outletId, businessDate, busy]);
 
   return (
     <section className="card p-5">
@@ -561,7 +640,7 @@ export function CashSheetEntries({
               <input name="description" className="w-full" autoComplete="off" />
             </label>
             <button className="btn-primary w-full" type="submit" disabled={saving || Boolean(held) || Boolean(sentElsewhere)}>{saving ? 'Saving…' : 'Save entry'}</button>
-            {canRetry && !saving && !held ? (
+            {canRetry && !saving && !held && !sentElsewhere ? (
               <button className="btn-secondary w-full" type="button" onClick={() => void submit()}>Retry</button>
             ) : null}
           </form>

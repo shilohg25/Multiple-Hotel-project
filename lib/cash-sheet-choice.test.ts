@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { replaceHeldSheetEntry, restoreSheetLink, sendHeldSheetEntry, sheetEntryPayload, sheetEntryStillQueued, sheetLinkKey, sheetQueueState, sheetSourceGone, writeSheetLink, sheetFormStillSent, sheetHeldEntry, sheetWaitingCount, syncSheetQueue, saveSheetEntryWithQueue, fillSheetCopy } from './cash-sheet.ts';
-import { startSheetAutoSend, watchSheetSource } from './sheet-auto-send.ts';
+import { replaceHeldSheetEntry, restoreSheetLink, sendHeldSheetEntry, sheetEntryPayload, sheetEntryStillQueued, sheetLinkKey, sheetQueueState, sheetSourceGone, writeSheetLink, restoreSheetLinkState, readSheetSentElsewhere, writeSheetSentElsewhere, sheetSentElsewhereKey, sheetSaveBlocked, sheetRetryAvailable, sheetInFlightOutcome, sheetFormStillSent, sheetHeldEntry, sheetWaitingCount, syncSheetQueue, saveSheetEntryWithQueue, fillSheetCopy } from './cash-sheet.ts';
+import { createSheetBusyGate, startSheetAutoSend, watchSheetSource } from './sheet-auto-send.ts';
 import { parseLedgerPatchBody } from './ledger-patch.ts';
 import { createMemoryStorage, ledgerQueueStorageKey, readLedgerQueue, retryableLedgerEntries, upsertLedgerQueueItem } from './ledger-entry-queue.ts';
 import {
@@ -600,5 +600,99 @@ describe('Tester case D: another tab sends the entry this form came from', () =>
     stop();
     win.dispatchEvent(new Event('online'));
     assert.equal(reasons.length, 4, 'stop() removes the listeners');
+  });
+});
+
+describe('PR #35 0b9e48f NO-GO fixes', () => {
+  async function sentByOtherTab() {
+    const server = fakeServer();
+    const shared = createMemoryStorage();
+    const session1 = createMemoryStorage();
+    server.state.mode = 'down';
+    const saved = await saveSheetEntryWithQueue({ values: form('850'), previousPayload: null }, options(shared, server.fetchImpl));
+    server.state.mode = 'up';
+    writeSheetLink(session1, USER, HOTEL, { clientRequestId: saved.clientRequestId, values: form('850') });
+    await syncSheetQueue({ storage: shared, userId: USER, fetchImpl: server.fetchImpl, timeoutMs: 20 }); // tab 2 sends it
+    return { server, shared, session1, saved };
+  }
+
+  it('1. remount with a stale link and a refilled 860: the gate shows and a plain Save is blocked', async () => {
+    const { server, shared, session1 } = await sentByOtherTab();
+    // Tab 1 reloads (memory gone). The browser refills 860.
+    const state = restoreSheetLinkState(session1, shared, USER, HOTEL);
+    assert.equal(state.link, null);
+    assert.equal(Number(state.goneLink?.values.amount), 850, 'the stale link is returned for the comparison, not dropped silently');
+    assert.equal(session1.getItem(sheetLinkKey(USER, HOTEL)), null);
+    const gone = sheetSourceGone({ storage: shared, userId: USER, hotelId: HOTEL, link: state.goneLink, formValues: form('860') });
+    assert.deepEqual(gone, { kind: 'edited', oldAmount: 850, newAmount: '860' });
+    writeSheetSentElsewhere(session1, USER, HOTEL, { mode: 'gate', oldAmount: 850, values: state.goneLink!.values });
+    // The note survives another reload until dismissed.
+    const note = readSheetSentElsewhere(session1, USER, HOTEL);
+    assert.equal(note?.mode, 'gate');
+    assert.equal(sheetSaveBlocked(note, form('860'), false), true, 'plain Save shows the gate');
+    assert.equal(sheetSaveBlocked(note, form('860'), true), false, '"Save as a new entry" is allowed');
+    assert.deepEqual(server.rows.map((row) => row.amount), [850], 'no silent second row');
+    writeSheetSentElsewhere(session1, USER, HOTEL, null);
+    assert.equal(session1.getItem(sheetSentElsewhereKey(USER, HOTEL)), null, 'dismissed');
+  });
+
+  it('1. remount with an empty form: "already sent" note, and a later refill + Save still gets the gate', async () => {
+    const { shared, session1 } = await sentByOtherTab();
+    const state = restoreSheetLinkState(session1, shared, USER, HOTEL);
+    const gone = sheetSourceGone({ storage: shared, userId: USER, hotelId: HOTEL, link: state.goneLink, formValues: { amount: '' } });
+    assert.equal(gone?.kind, 'unchanged');
+    writeSheetSentElsewhere(session1, USER, HOTEL, { mode: 'armed', oldAmount: 850, values: state.goneLink!.values });
+    const note = readSheetSentElsewhere(session1, USER, HOTEL);
+    assert.equal(sheetSaveBlocked(note, { amount: '' }, false), false);
+    assert.equal(sheetSaveBlocked(note, form('860'), false), true, 'refilled without typing: gate');
+    assert.equal(sheetSaveBlocked(null, form('860'), false), false, 'after staff type (note cleared) it is a normal new entry');
+  });
+
+  it('2. a re-check asked for during this tab\'s own send runs once when the send ends', () => {
+    const gate = createSheetBusyGate();
+    let checks = 0;
+    const check = () => { checks += 1; };
+    gate.whenIdle(check);
+    assert.equal(checks, 1, 'idle: runs at once');
+    gate.start();
+    gate.whenIdle(check);
+    gate.whenIdle(check);
+    assert.equal(checks, 1, 'busy: waits');
+    gate.end();
+    assert.equal(checks, 2, 'once when the send ends');
+    gate.end();
+    assert.equal(checks, 2);
+  });
+
+  it('3. Replace finds the held entry gone (another tab sent it): treated as an edited gone, not cleared', async () => {
+    const server = fakeServer();
+    const shared = createMemoryStorage();
+    const item = await queue650(server, shared, 'down');
+    await syncSheetQueue({ storage: shared, userId: USER, fetchImpl: server.fetchImpl, timeoutMs: 20 }); // other tab
+    assert.deepEqual(await replaceHeldSheetEntry(item, form('560'), options(shared, server.fetchImpl)), { kind: 'gone' });
+    const gone = sheetSourceGone({ storage: shared, userId: USER, hotelId: HOTEL, link: { clientRequestId: item.clientRequestId, values: item.payload }, formValues: form('560') });
+    assert.deepEqual(gone, { kind: 'edited', oldAmount: 650, newAmount: '560' }, 'same gate as a live gone: keep 560, offer "Save as a new entry"');
+    assert.deepEqual(server.rows.map((row) => row.amount), [650]);
+  });
+
+  it('4. Retry is shown only while its entry is still queued and no gate or choice is up', async () => {
+    const server = fakeServer();
+    const shared = createMemoryStorage();
+    const item = await queue650(server, shared, 'down');
+    const base = { storage: shared, userId: USER, pendingId: item.clientRequestId, held: false, gate: false };
+    assert.equal(sheetRetryAvailable(base), true);
+    assert.equal(sheetRetryAvailable({ ...base, held: true }), false);
+    assert.equal(sheetRetryAvailable({ ...base, gate: true }), false);
+    assert.equal(sheetRetryAvailable({ ...base, pendingId: null }), false);
+    await syncSheetQueue({ storage: shared, userId: USER, fetchImpl: server.fetchImpl, timeoutMs: 20 });
+    assert.equal(sheetRetryAvailable(base), false, 'sent elsewhere: nothing to retry');
+  });
+
+  it('5. after ~60 s of "being sent from another tab", show the reload hint', () => {
+    assert.equal(sheetInFlightOutcome('sending', 1), 'wait');
+    assert.equal(sheetInFlightOutcome('sending', 39), 'wait');
+    assert.equal(sheetInFlightOutcome('sending', 40), 'stuck');
+    assert.equal(sheetInFlightOutcome('queued', 3), 'queued');
+    assert.equal(sheetInFlightOutcome('gone', 3), 'gone');
   });
 });

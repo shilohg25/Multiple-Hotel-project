@@ -277,6 +277,22 @@ export function writeSheetLink(session: StorageLike, userId: string, hotelId: st
 
 /** The saved link, only while its entry is still in the device queue; a stale link is removed. */
 export function restoreSheetLink(session: StorageLike, queue: StorageLike, userId: string, hotelId: string): SheetFormLink | null {
+  return restoreSheetLinkState(session, queue, userId, hotelId).link;
+}
+
+/**
+ * On load: the saved link, split into
+ * - link: its entry is still queued (or being sent), keep holding it;
+ * - goneLink: its entry left the queue while this page was away (another tab sent it). The link is
+ *   removed from storage, but returned so the caller can compare the (maybe refilled) form with what
+ *   was sent and show the "already sent from another tab" note or gate instead of dropping it silently.
+ */
+export function restoreSheetLinkState(
+  session: StorageLike,
+  queue: StorageLike,
+  userId: string,
+  hotelId: string
+): { link: SheetFormLink | null; goneLink: SheetFormLink | null } {
   let link: SheetFormLink | null = null;
   try {
     const raw = session.getItem(sheetLinkKey(userId, hotelId));
@@ -287,11 +303,68 @@ export function restoreSheetLink(session: StorageLike, queue: StorageLike, userI
   } catch {
     link = null;
   }
-  if (!link || sheetQueueState(queue, userId, link.clientRequestId) === 'gone') {
+  if (!link) {
     writeSheetLink(session, userId, hotelId, null);
+    return { link: null, goneLink: null };
+  }
+  if (sheetQueueState(queue, userId, link.clientRequestId) === 'gone') {
+    writeSheetLink(session, userId, hotelId, null);
+    return { link: null, goneLink: link };
+  }
+  return { link, goneLink: null };
+}
+
+/**
+ * "Already sent from another tab" kept in sessionStorage until staff dismiss it, so a reload or
+ * back/forward cannot turn a refilled edit into a silent second row.
+ * - 'gate': the form showed an edit; Save is blocked until "Save as a new entry" or "Clear form".
+ * - 'armed': the form was empty or unchanged; if a refilled amount is saved without typing, the gate shows.
+ */
+export type SheetSentElsewhere = { mode: 'gate' | 'armed'; oldAmount: number; values: Record<string, unknown> };
+
+export function sheetSentElsewhereKey(userId: string, hotelId: string) {
+  return `hotel_ops_sheet_sent_elsewhere:${userId}:${hotelId}`;
+}
+
+export function writeSheetSentElsewhere(session: StorageLike, userId: string, hotelId: string, note: SheetSentElsewhere | null) {
+  try {
+    if (note) session.setItem(sheetSentElsewhereKey(userId, hotelId), JSON.stringify(note));
+    else session.removeItem(sheetSentElsewhereKey(userId, hotelId));
+  } catch {
+    // Private mode or a full store: the in-memory gate still works for this page.
+  }
+}
+
+export function readSheetSentElsewhere(session: StorageLike, userId: string, hotelId: string): SheetSentElsewhere | null {
+  try {
+    const raw = session.getItem(sheetSentElsewhereKey(userId, hotelId));
+    const parsed = raw ? JSON.parse(raw) as Partial<SheetSentElsewhere> : null;
+    if (!parsed || (parsed.mode !== 'gate' && parsed.mode !== 'armed')) return null;
+    return { mode: parsed.mode, oldAmount: Number(parsed.oldAmount || 0), values: parsed.values && typeof parsed.values === 'object' ? parsed.values : {} };
+  } catch {
     return null;
   }
-  return link;
+}
+
+/** A plain Save (not "Save as a new entry") must show the gate instead of posting. */
+export function sheetSaveBlocked(note: SheetSentElsewhere | null, formValues: Record<string, unknown>, confirmedNew: boolean) {
+  if (confirmedNew || !note) return false;
+  return Boolean(String(formValues.amount ?? '').trim());
+}
+
+/** Retry only makes sense while its entry is still in the device queue and no gate or choice is showing. */
+export function sheetRetryAvailable(input: { storage: StorageLike; userId: string; pendingId: string | null | undefined; held: boolean; gate: boolean }) {
+  if (!input.pendingId || input.held || input.gate) return false;
+  return sheetQueueState(input.storage, input.userId, input.pendingId) !== 'gone';
+}
+
+/** Max checks (x 1.5 s) while another tab sends the held entry; after that its sending mark may be stuck. */
+export const SHEET_IN_FLIGHT_MAX_CHECKS = 40;
+
+/** One check of another tab's send: keep waiting, stuck (show a reload hint), back in the queue, or gone. */
+export function sheetInFlightOutcome(where: 'queued' | 'sending' | 'gone', checks: number, maxChecks = SHEET_IN_FLIGHT_MAX_CHECKS) {
+  if (where === 'sending') return checks < maxChecks ? 'wait' as const : 'stuck' as const;
+  return where;
 }
 
 /**
