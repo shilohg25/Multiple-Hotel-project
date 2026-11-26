@@ -1,10 +1,16 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { CashCount, Hotel, LedgerEntry, PaymentMethod } from '@/types/app';
 import { currency } from '@/lib/money';
 import { queueOfflineItem } from '@/lib/offline/db';
+import {
+  pendingLedgerEntries,
+  queuedLedgerHint,
+  saveLedgerEntryWithQueue,
+  syncPendingLedgerEntries
+} from '@/lib/ledger-entry-queue';
 
 const denominations = [1000, 500, 200, 100, 50, 20, 10, 5, 1, 0.25];
 const paymentMethods: PaymentMethod[] = ['cash', 'gcash', 'bank_transfer', 'card', 'online_gateway', 'booking_dot_com', 'trip_dot_com', 'other'];
@@ -34,9 +40,13 @@ export function SalesCashManager({
   };
 }) {
   const router = useRouter();
+  const ledgerFormRef = useRef<HTMLFormElement>(null);
+  const pendingLedgerIdRef = useRef<string | null>(null);
   const [message, setMessage] = useState('');
   const [offlineCashDraft, setOfflineCashDraft] = useState<Record<string, unknown> | null>(null);
   const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerError, setLedgerError] = useState('');
+  const [ledgerCanRetry, setLedgerCanRetry] = useState(false);
   const [cashLoading, setCashLoading] = useState(false);
 
   const cashCountMap = useMemo(() => {
@@ -61,30 +71,102 @@ export function SalesCashManager({
     router.push(`/sales?hotel=${hotelId}&date=${date}`);
   }
 
+  function readLedgerForm(form: HTMLFormElement) {
+    return Object.fromEntries(new FormData(form).entries()) as Record<string, string>;
+  }
+
+  function clearLedgerPending() {
+    pendingLedgerIdRef.current = null;
+    setLedgerError('');
+    setLedgerCanRetry(false);
+  }
+
+  async function submitLedgerEntry(formValues: Record<string, unknown>, clientRequestId?: string) {
+    setMessage('');
+    setLedgerError('');
+    setLedgerLoading(true);
+    try {
+      const result = await saveLedgerEntryWithQueue(formValues, {
+        clientRequestId: clientRequestId || pendingLedgerIdRef.current || undefined,
+        outletId,
+        storage: window.localStorage
+      });
+      pendingLedgerIdRef.current = result.clientRequestId;
+      if (result.ok) {
+        clearLedgerPending();
+        ledgerFormRef.current?.reset();
+        setMessage(result.duplicate ? 'Ledger entry already saved.' : 'Ledger entry saved.');
+        router.refresh();
+        return;
+      }
+      setLedgerCanRetry(result.retryable);
+      setLedgerError(queuedLedgerHint(result.error, result.retryable));
+      if (!result.retryable) pendingLedgerIdRef.current = null;
+    } catch (error) {
+      setLedgerCanRetry(true);
+      setLedgerError(queuedLedgerHint(error instanceof Error ? error.message : "Couldn't save this entry. Check your connection and try again.", true));
+    } finally {
+      setLedgerLoading(false);
+    }
+  }
+
   async function addLedgerEntry(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const formElement = event.currentTarget;
-    setMessage('');
-    setLedgerLoading(true);
-    const form = new FormData(formElement);
-    const body = Object.fromEntries(form.entries()) as Record<string, FormDataEntryValue>;
-    if (body.category === 'collectible') body.is_collectible = 'true';
-    if (outletId) body.outlet_id = outletId;
-    const response = await fetch('/api/ledger', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    setLedgerLoading(false);
-    const json = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setMessage(json.error || 'Unable to save ledger entry.');
+    await submitLedgerEntry(readLedgerForm(event.currentTarget));
+  }
+
+  async function retryLedgerEntry() {
+    const queued = pendingLedgerEntries(window.localStorage);
+    const item = queued.find((entry) => entry.clientRequestId === pendingLedgerIdRef.current) || queued[0];
+    if (item) {
+      await submitLedgerEntry(item.payload, item.clientRequestId);
       return;
     }
-    formElement.reset();
-    setMessage('Ledger entry saved.');
-    router.refresh();
+    if (ledgerFormRef.current) await submitLedgerEntry(readLedgerForm(ledgerFormRef.current));
   }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function flushQueuedLedgerEntries() {
+      if (typeof window === 'undefined' || (typeof navigator !== 'undefined' && !navigator.onLine)) return;
+      const queued = pendingLedgerEntries(window.localStorage);
+      if (!queued.length) return;
+      setLedgerLoading(true);
+      try {
+        const result = await syncPendingLedgerEntries({
+          storage: window.localStorage,
+          isOnline: () => navigator.onLine
+        });
+        if (cancelled) return;
+        if (result.synced > 0) {
+          clearLedgerPending();
+          ledgerFormRef.current?.reset();
+          setMessage(result.synced === 1 ? 'Ledger entry saved.' : `${result.synced} ledger entries saved.`);
+          router.refresh();
+        }
+        if (result.failed > 0 && result.lastError) {
+          setLedgerCanRetry(true);
+          setLedgerError(queuedLedgerHint(result.lastError, true));
+        }
+      } catch {
+        // Keep the form as-is if a queued retry cannot run yet.
+      } finally {
+        if (!cancelled) setLedgerLoading(false);
+      }
+    }
+
+    function onOnline() {
+      void flushQueuedLedgerEntries();
+    }
+
+    void flushQueuedLedgerEntries();
+    window.addEventListener('online', onOnline);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('online', onOnline);
+    };
+  }, [router]);
 
   async function saveCashCount(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -203,7 +285,7 @@ export function SalesCashManager({
 
         <section className="card p-5">
           <h2 className="text-lg font-bold">Add ledger entry</h2>
-          <form onSubmit={addLedgerEntry} className="mt-4 space-y-4">
+          <form ref={ledgerFormRef} onSubmit={addLedgerEntry} className="mt-4 space-y-4">
             <input type="hidden" name="hotel_id" value={selectedHotel.id} />
             <input type="hidden" name="entry_date" value={selectedDate} />
             <div className="space-y-2">
@@ -239,6 +321,16 @@ export function SalesCashManager({
               Mark as collectible / unpaid
             </label>
             <button className="btn-primary w-full" disabled={ledgerLoading} type="submit">{ledgerLoading ? 'Saving...' : 'Save entry'}</button>
+            {ledgerError ? (
+              <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-900">
+                <p>{ledgerError}</p>
+                {ledgerCanRetry ? (
+                  <button className="btn-secondary mt-2" disabled={ledgerLoading} type="button" onClick={() => void retryLedgerEntry()}>
+                    Retry
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </form>
         </section>
       </div>
