@@ -4,6 +4,7 @@ import { canAccessHotel, type StaffContext } from './auth';
 import { businessMonth, businessTimeZone, businessToday, localDayBounds, localMonthBounds, timestampInRange } from './date';
 import { AUTO_BREAKFAST_REMOVED_ACTION } from './breakfast-toggle';
 import { expectedCashFromLedger } from './expected-cash';
+import { reportEndingCash, type EndingCashSource, type ReportCloseRow } from './report-cash';
 import { stayFolioView } from './stay-total';
 import { supabaseAdmin } from './supabase-admin';
 import { outstandingToBeBilled, toBeBilledForCheckIns, type ToBeBilledRow } from './to-be-billed';
@@ -46,6 +47,8 @@ export type DailyReportData = {
     bankOnlineReceived: number;
     expectedCash: number;
     actualEndingCash: number;
+    /** Where Actual ending cash came from: the Daily cash sheet, the older cash count, or nothing yet. */
+    endingCashSource: EndingCashSource;
     variance: number;
     remittanceDue: number;
     remittancePaid: number;
@@ -142,7 +145,7 @@ export async function getDailyReportData(staff: StaffContext, input: { hotelId?:
 
   const date = input.date || businessToday(hotel.timezone);
   const { start, end } = dayBounds(date, hotel.timezone);
-  const [{ data: reservationsRaw }, { data: paymentsRaw }, { data: pendingPaymentsRaw }, { data: chargesRaw }, { data: ledgerRaw }, { data: cashRaw }, { data: dayToursRaw }, { data: remittancesRaw }, toBeBilled] = await Promise.all([
+  const [{ data: reservationsRaw }, { data: paymentsRaw }, { data: pendingPaymentsRaw }, { data: chargesRaw }, { data: ledgerRaw }, { data: cashRaw }, { data: closesRaw }, { data: dayToursRaw }, { data: remittancesRaw }, toBeBilled] = await Promise.all([
     supabaseAdmin
       .from('reservations')
       .select('*, guests(full_name,email,phone), rooms(name,room_type_name)')
@@ -178,6 +181,12 @@ export async function getDailyReportData(staff: StaffContext, input: { hotelId?:
       .select('*')
       .eq('hotel_id', hotel.id)
       .eq('count_date', date),
+    // Saved Daily cash sheets for the date (hotel close and any outlet closes). Read only.
+    supabaseAdmin
+      .from('day_closes')
+      .select('outlet_id, drawer_counted, bank_deposit')
+      .eq('hotel_id', hotel.id)
+      .eq('business_date', date),
     supabaseAdmin
       .from('day_tour_bookings')
       .select('total_amount')
@@ -206,8 +215,8 @@ export async function getDailyReportData(staff: StaffContext, input: { hotelId?:
   const dayTourSales = (dayToursRaw || []).reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
   const cashReceived = expectedCashFromLedger(ledgerEntries);
   const bankOnlineReceived = ledgerEntries.filter((item) => item.payment_method !== 'cash' && !item.is_collectible).reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const actualEndingCash = cashCounts.reduce((sum, item) => sum + Number(item.denomination || 0) * Number(item.quantity || 0), 0);
   const expectedCash = cashReceived;
+  const endingCash = reportEndingCash({ closes: (closesRaw || []) as ReportCloseRow[], cashCounts, expectedCash });
   const remittanceDue = remittances.reduce((sum, item) => sum + Number(item.amount_due || 0), 0);
   const remittancePaid = remittances.reduce((sum, item) => sum + Number(item.amount_paid || 0), 0);
 
@@ -236,8 +245,9 @@ export async function getDailyReportData(staff: StaffContext, input: { hotelId?:
         cashReceived,
         bankOnlineReceived,
         expectedCash,
-        actualEndingCash,
-        variance: actualEndingCash - expectedCash,
+        actualEndingCash: endingCash.actualEndingCash,
+        endingCashSource: endingCash.source,
+        variance: endingCash.variance,
         remittanceDue,
         remittancePaid,
         toBeBilled: toBeBilled.reduce((sum, row) => sum + row.amountOwed, 0)
