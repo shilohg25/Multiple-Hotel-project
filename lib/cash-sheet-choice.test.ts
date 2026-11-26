@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { createSheetTabIdentity, type SheetTabChannel } from './sheet-tab-id.ts';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { replaceHeldSheetEntry, restoreSheetLink, sendHeldSheetEntry, sheetEntryPayload, sheetEntryStillQueued, sheetLinkKey, sheetQueueState, sheetSourceGone, writeSheetLink, restoreSheetLinkState, readSheetSentElsewhere, writeSheetSentElsewhere, sheetSentElsewhereKey, sheetSaveBlocked, sheetRetryAvailable, sheetInFlightOutcome, markSentByThisTab, nextSheetHeldExpiry, watchSheetHeldMarks, sheetHeldMarkKey, wasSentByThisTab, sheetAutoSendSkips, writeSheetHeldMark, clearSheetHeldMarks, sheetHeldElsewhere, withSheetSaving, SHEET_HELD_MARK_TTL_MS, sheetFormStillSent, sheetHeldEntry, sheetWaitingCount, syncSheetQueue, saveSheetEntryWithQueue, fillSheetCopy } from './cash-sheet.ts';
+import { replaceHeldSheetEntry, restoreSheetLink, sendHeldSheetEntry, sheetEntryPayload, sheetEntryStillQueued, sheetLinkKey, sheetQueueState, sheetSourceGone, writeSheetLink, restoreSheetLinkState, readSheetSentElsewhere, writeSheetSentElsewhere, sheetSentElsewhereKey, sheetSaveBlocked, sheetRetryAvailable, sheetInFlightOutcome, markSentByThisTab, nextSheetHeldExpiry, holdSheetEntryOnLoad, rekeySheetHeldMark, sheetPendingChoiceId, SHEET_HELD_RELEASE_DEBOUNCE_MS, watchSheetHeldMarks, sheetHeldMarkKey, wasSentByThisTab, sheetAutoSendSkips, writeSheetHeldMark, clearSheetHeldMarks, sheetHeldElsewhere, withSheetSaving, SHEET_HELD_MARK_TTL_MS, sheetFormStillSent, sheetHeldEntry, sheetWaitingCount, syncSheetQueue, saveSheetEntryWithQueue, fillSheetCopy } from './cash-sheet.ts';
 import { createSheetBusyGate, startSheetAutoSend, watchSheetSource } from './sheet-auto-send.ts';
 import { parseLedgerPatchBody } from './ledger-patch.ts';
 import { createMemoryStorage, ledgerQueueStorageKey, readLedgerQueue, retryableLedgerEntries, upsertLedgerQueueItem } from './ledger-entry-queue.ts';
@@ -827,14 +827,16 @@ function fakeTimers() {
     setTimer(callback: () => void, ms: number) { const handle = next++; timers.push({ at: now + ms, callback, handle }); return handle; },
     clearTimer(handle: unknown) { const i = timers.findIndex((t) => t.handle === handle); if (i >= 0) timers.splice(i, 1); },
     advance(ms: number) {
-      now += ms;
+      const end = now + ms;
       for (;;) {
         timers.sort((a, b) => a.at - b.at);
         const due = timers[0];
-        if (!due || due.at > now) break;
+        if (!due || due.at > end) break;
         timers.shift();
+        now = Math.max(now, due.at);
         due.callback();
       }
+      now = end;
     },
     pending: () => timers.length
   };
@@ -927,9 +929,11 @@ describe('PR #35 e577c4b NO-GO fixes (Duplicate tab, held-mark release)', () => 
     fire('unrelated');
     assert.equal(releases, 0);
 
-    // Tab 1 clears it (choice made or tab closed cleanly): the storage event starts a flush.
+    // Tab 1 clears it (its choice ended): the storage event starts a flush, after the 1 s debounce.
     clearSheetHeldMarks(queue, USER, 'tab-1', ['entry-400']);
     fire(sheetHeldMarkKey(USER));
+    assert.equal(releases, 0, 'debounced');
+    timers.advance(1_000);
     assert.equal(releases, 1);
 
     // Tab 1 holds again, then dies without cleanup: the flush starts at the expiry time, no event needed.
@@ -938,8 +942,8 @@ describe('PR #35 e577c4b NO-GO fixes (Duplicate tab, held-mark release)', () => 
     assert.equal(releases, 1);
     timers.advance(SHEET_HELD_MARK_TTL_MS - 1_000);
     assert.equal(releases, 1, 'not before it expires');
-    timers.advance(2_000);
-    assert.equal(releases, 2, 'flush at expiry');
+    timers.advance(2_100);
+    assert.equal(releases, 2, 'flush at expiry (plus the debounce)');
     assert.equal(timers.pending(), 0, 'nothing left to wait for');
 
     // And the pass it starts sends the 400: with no hold, the skips are empty.
@@ -961,5 +965,123 @@ describe('PR #35 e577c4b NO-GO fixes (Duplicate tab, held-mark release)', () => 
     await sender.kick('released');
     assert.deepEqual(runs, ['load', 'released']);
     sender.stop();
+  });
+});
+
+function storageWindow() {
+  const listeners: ((event: Event) => void)[] = [];
+  return {
+    win: {
+      addEventListener(type: string, listener: (event: Event) => void) { if (type === 'storage') listeners.push(listener); },
+      removeEventListener(_type: string, listener: (event: Event) => void) { const i = listeners.indexOf(listener); if (i >= 0) listeners.splice(i, 1); }
+    },
+    fire(key: string | null) { for (const l of [...listeners]) l({ key } as unknown as Event); }
+  };
+}
+
+describe('PR #35 dcf0a4f regression: a holder reload must not release its hold', () => {
+  it('reload with a second sheet tab open: the choice comes back and nothing is auto-sent', async () => {
+    const server = fakeServer();
+    const queue = createMemoryStorage();
+    const timers = fakeTimers();
+    const item = await queue650(server, queue, 'down');
+    // Tab 1 holds 650 with 560 typed; its link (with the draft) is in its sessionStorage.
+    const session1 = createMemoryStorage();
+    writeSheetLink(session1, USER, HOTEL, { clientRequestId: item.clientRequestId, values: item.payload, draft: form('560') });
+    writeSheetHeldMark(queue, USER, item.clientRequestId, 'tab-1', timers.now());
+
+    // Tab 2: on the sheet, empty form, watching the holds.
+    const tab2 = storageWindow();
+    let releases = 0;
+    const watch = watchSheetHeldMarks({ win: tab2.win, storage: queue, userId: USER, tabId: () => 'tab-2', onRelease: () => { releases += 1; }, now: timers.now, setTimer: timers.setTimer, clearTimer: timers.clearTimer });
+
+    // Tab 1 reloads: unmount/pagehide no longer clears the mark. On load it re-stamps at once, before the probe.
+    timers.advance(200);
+    assert.equal(sheetPendingChoiceId({ session: session1, storage: queue, userId: USER, hotelId: HOTEL }), item.clientRequestId);
+    const previousAt = holdSheetEntryOnLoad(queue, USER, item.clientRequestId, 'tab-1', timers.now());
+    assert.equal(typeof previousAt, 'number', 'its own stamp from before the reload was still there');
+    tab2.fire(sheetHeldMarkKey(USER));
+    timers.advance(SHEET_HELD_RELEASE_DEBOUNCE_MS * 3);
+    assert.equal(releases, 0, 'no release seen by tab 2');
+
+    // Tab 2's pass (any trigger) skips it; nothing is sent during tab 1's probe or after.
+    const skips = sheetAutoSendSkips({ storage: queue, userId: USER, hotelId: HOTEL, tabId: 'tab-2', link: null, formValues: { amount: '' }, now: timers.now() });
+    assert.deepEqual((await syncSheetQueue({ storage: queue, userId: USER, skipIds: skips, fetchImpl: server.fetchImpl, timeoutMs: 20 })).synced, []);
+    assert.equal(server.rows.length, 0);
+
+    // Tab 1 gets its Send/Replace choice back, not the "not saved" gate.
+    const state = restoreSheetLinkState(session1, queue, USER, HOTEL);
+    assert.equal(state.goneLink, null);
+    const held = sheetHeldEntry({ formValues: state.link!.draft!, queued: retryableLedgerEntries(queue, USER), hotelId: HOTEL, outletId: null, sourceId: state.link!.clientRequestId });
+    assert.equal(held?.clientRequestId, item.clientRequestId);
+    watch.stop();
+  });
+
+  it('a duplicate that re-stamped under the copied id moves it to its new id and restores the original\'s stamp', () => {
+    const queue = createMemoryStorage();
+    writeSheetHeldMark(queue, USER, 'entry', 'tab-1', 1_000);
+    const previousAt = holdSheetEntryOnLoad(queue, USER, 'entry', 'tab-1', 2_000);
+    assert.equal(previousAt, 1_000);
+    rekeySheetHeldMark(queue, USER, 'entry', 'tab-1', 'tab-copy', previousAt, 2_200);
+    assert.deepEqual(JSON.parse(queue.getItem(sheetHeldMarkKey(USER)) ?? '{}'), { entry: { 'tab-1': 1_000, 'tab-copy': 2_200 } });
+    // No earlier stamp: the copied-id stamp is removed.
+    const fresh = createMemoryStorage();
+    rekeySheetHeldMark(fresh, USER, 'entry', 'tab-1', 'tab-copy', holdSheetEntryOnLoad(fresh, USER, 'entry', 'tab-1', 2_000), 2_200);
+    assert.deepEqual(JSON.parse(fresh.getItem(sheetHeldMarkKey(USER)) ?? '{}'), { entry: { 'tab-copy': 2_200 } });
+  });
+
+  it('a holder tab that closed releases only after its mark expires, then the entry is sent', async () => {
+    const server = fakeServer();
+    const queue = createMemoryStorage();
+    const timers = fakeTimers();
+    const item = await queue650(server, queue, 'down');
+    writeSheetHeldMark(queue, USER, item.clientRequestId, 'tab-1', timers.now());
+    const tab2 = storageWindow();
+    let releases = 0;
+    const watch = watchSheetHeldMarks({ win: tab2.win, storage: queue, userId: USER, tabId: () => 'tab-2', onRelease: () => { releases += 1; }, now: timers.now, setTimer: timers.setTimer, clearTimer: timers.clearTimer });
+    // Tab 1 closes: nothing is written, no event.
+    timers.advance(SHEET_HELD_MARK_TTL_MS - 1);
+    assert.equal(releases, 0);
+    const before = sheetAutoSendSkips({ storage: queue, userId: USER, hotelId: HOTEL, tabId: 'tab-2', link: null, formValues: { amount: '' }, now: timers.now() });
+    assert.deepEqual(before, [item.clientRequestId]);
+    timers.advance(SHEET_HELD_RELEASE_DEBOUNCE_MS + 100);
+    assert.equal(releases, 1);
+    const after = sheetAutoSendSkips({ storage: queue, userId: USER, hotelId: HOTEL, tabId: 'tab-2', link: null, formValues: { amount: '' }, now: timers.now() });
+    assert.deepEqual(after, []);
+    assert.deepEqual((await syncSheetQueue({ storage: queue, userId: USER, skipIds: after, fetchImpl: server.fetchImpl, timeoutMs: 20 })).synced, [item.clientRequestId]);
+    assert.equal(server.rows.length, 1);
+    watch.stop();
+  });
+
+  it('release is debounced about 1 s and re-checked: a re-mark within it cancels the send; bursts send once', () => {
+    const queue = createMemoryStorage();
+    const timers = fakeTimers();
+    const tab2 = storageWindow();
+    let releases = 0;
+    writeSheetHeldMark(queue, USER, 'entry', 'tab-1', timers.now());
+    const watch = watchSheetHeldMarks({ win: tab2.win, storage: queue, userId: USER, tabId: () => 'tab-2', onRelease: () => { releases += 1; }, now: timers.now, setTimer: timers.setTimer, clearTimer: timers.clearTimer });
+    assert.equal(SHEET_HELD_RELEASE_DEBOUNCE_MS, 1_000);
+
+    // Cleared and re-marked within the window (e.g. an older build's reload): no send.
+    clearSheetHeldMarks(queue, USER, 'tab-1', ['entry']);
+    tab2.fire(sheetHeldMarkKey(USER));
+    timers.advance(300);
+    writeSheetHeldMark(queue, USER, 'entry', 'tab-1', timers.now());
+    tab2.fire(sheetHeldMarkKey(USER));
+    timers.advance(2_000);
+    assert.equal(releases, 0);
+
+    // Cleared for real, several events in a burst: one send, after the window.
+    clearSheetHeldMarks(queue, USER, 'tab-1', ['entry']);
+    tab2.fire(sheetHeldMarkKey(USER));
+    timers.advance(400);
+    tab2.fire(sheetHeldMarkKey(USER));
+    tab2.fire(null);
+    assert.equal(releases, 0);
+    timers.advance(600);
+    assert.equal(releases, 1);
+    timers.advance(5_000);
+    assert.equal(releases, 1);
+    watch.stop();
   });
 });

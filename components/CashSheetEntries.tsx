@@ -14,6 +14,9 @@ import {
   markSentByThisTab,
   sheetAutoSendSkips,
   watchSheetHeldMarks,
+  holdSheetEntryOnLoad,
+  rekeySheetHeldMark,
+  sheetPendingChoiceId,
   wasSentByThisTab,
   withSheetSaving,
   writeSheetHeldMark,
@@ -507,9 +510,39 @@ export function CashSheetEntries({
     actionsRef.current = { checkSource, restoreOnLoad, persistDraft };
   });
 
+  // On load (reload, back/forward, coming back to the page): if a choice was pending, re-stamp its hold at
+  // once under the stored tab id, before the duplicate-tab probe settles, so no other tab sends it.
+  useEffect(() => {
+    if (!userId) return;
+    const pending = sheetPendingChoiceId({ session: window.sessionStorage, storage: window.localStorage, userId, hotelId, outletId });
+    if (!pending) return;
+    const identity = sheetTabIdentity();
+    const loadId = identity.id;
+    const previousAt = holdSheetEntryOnLoad(window.localStorage, userId, pending, loadId);
+    heldMarksThisLoad.add(pending);
+    if (!identity.settled) {
+      void identity.ready.then((id) => {
+        if (id !== loadId) rekeySheetHeldMark(window.localStorage, userId, pending, loadId, id, previousAt);
+      });
+    }
+  }, [userId, hotelId, outletId]);
+
+  // The hold ends only when the choice ends here (Send, Replace, Clear, amount emptied, Save as new):
+  // held goes from an entry to null (or another entry). Leaving the page (reload, navigation, closing
+  // the tab) does NOT clear it: it stays until it expires (90 s) or this tab resolves the choice.
+  const heldIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const previous = heldIdRef.current;
+    const current = held?.clientRequestId ?? null;
+    heldIdRef.current = current;
+    if (previous && previous !== current) {
+      clearSheetHeldMarks(window.localStorage, userId, sheetTabIdentity().id, [previous]);
+      heldMarksThisLoad.delete(previous);
+    }
+  }, [held, userId]);
+
   // While a choice is pending here, mark the entry held in localStorage so every tab's auto-send skips it.
-  // Refreshed every 30 s; it expires if this tab closes.
-  // Only the stamps this page load wrote are cleared (heldMarksThisLoad), never another tab's.
+  // Refreshed every 30 s; it expires if this tab closes. Unmount only stops the refresh.
   useEffect(() => {
     if (!held) return;
     let stopped = false;
@@ -531,8 +564,6 @@ export function CashSheetEntries({
     return () => {
       stopped = true;
       if (timer) clearInterval(timer);
-      clearSheetHeldMarks(window.localStorage, userId, identity.id, heldMarksThisLoad);
-      heldMarksThisLoad.clear();
     };
   }, [held, userId]);
 

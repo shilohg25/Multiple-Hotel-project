@@ -281,6 +281,33 @@ export function writeSheetLink(session: StorageLike, userId: string, hotelId: st
   }
 }
 
+/** The saved link as stored (no clean-up, no queue check). */
+export function readSheetLink(session: StorageLike, userId: string, hotelId: string): SheetFormLink | null {
+  try {
+    const raw = session.getItem(sheetLinkKey(userId, hotelId));
+    const parsed = raw ? JSON.parse(raw) as Partial<SheetFormLink> : null;
+    if (parsed && typeof parsed.clientRequestId === 'string' && parsed.values && typeof parsed.values === 'object') {
+      const draft = parsed.draft && typeof parsed.draft === 'object' ? parsed.draft as Record<string, unknown> : null;
+      return { clientRequestId: parsed.clientRequestId, values: parsed.values as Record<string, unknown>, draft };
+    }
+  } catch {
+    // Unreadable: no link.
+  }
+  return null;
+}
+
+/**
+ * On load: the entry whose Send/Replace choice was pending when this tab left the page (its kept draft
+ * differs from what is still queued), or null. Read-only, so the normal restore still sees the link.
+ */
+export function sheetPendingChoiceId(input: { session: StorageLike; storage: StorageLike; userId: string; hotelId: string; outletId?: string | null }) {
+  const link = readSheetLink(input.session, input.userId, input.hotelId);
+  if (!link?.draft || !String(link.draft.amount ?? '').trim()) return null;
+  if (sheetQueueState(input.storage, input.userId, link.clientRequestId) === 'gone') return null;
+  if (sameLedgerRetryPayload(link.values, link.draft, { outletId: input.outletId, hotelId: input.hotelId })) return null;
+  return link.clientRequestId;
+}
+
 /** The saved link, only while its entry is still in the device queue; a stale link is removed. */
 export function restoreSheetLink(session: StorageLike, queue: StorageLike, userId: string, hotelId: string): SheetFormLink | null {
   return restoreSheetLinkState(session, queue, userId, hotelId).link;
@@ -299,17 +326,7 @@ export function restoreSheetLinkState(
   userId: string,
   hotelId: string
 ): { link: SheetFormLink | null; goneLink: SheetFormLink | null } {
-  let link: SheetFormLink | null = null;
-  try {
-    const raw = session.getItem(sheetLinkKey(userId, hotelId));
-    const parsed = raw ? JSON.parse(raw) as Partial<SheetFormLink> : null;
-    if (parsed && typeof parsed.clientRequestId === 'string' && parsed.values && typeof parsed.values === 'object') {
-      const draft = parsed.draft && typeof parsed.draft === 'object' ? parsed.draft as Record<string, unknown> : null;
-      link = { clientRequestId: parsed.clientRequestId, values: parsed.values as Record<string, unknown>, draft };
-    }
-  } catch {
-    link = null;
-  }
+  const link = readSheetLink(session, userId, hotelId);
   if (!link) {
     writeSheetLink(session, userId, hotelId, null);
     return { link: null, goneLink: null };
@@ -575,6 +592,8 @@ export function wasSentByThisTab(session: StorageLike, userId: string, clientReq
  * overwrite the original's). The holder refreshes it; it expires (ttl) if that tab closed.
  */
 export const SHEET_HELD_MARK_TTL_MS = 90_000;
+/** A released hold is re-checked after this long before other tabs auto-send (a reload re-marks within it). */
+export const SHEET_HELD_RELEASE_DEBOUNCE_MS = 1_000;
 
 export function sheetHeldMarkKey(userId: string) {
   return `hotel_ops_sheet_held:${userId}`;
@@ -629,6 +648,31 @@ export function writeSheetHeldMark(storage: StorageLike, userId: string, clientR
 }
 
 /**
+ * On load, before the duplicate-tab probe: re-stamp the pending choice's entry under the stored tab id
+ * at once. Returns that stamp's earlier time (null if there was none) for rekeySheetHeldMark.
+ */
+export function holdSheetEntryOnLoad(storage: StorageLike, userId: string, clientRequestId: string, tabId: string, now = Date.now()) {
+  const before = readHeldMarks(storage, userId)[clientRequestId]?.[tabId];
+  writeSheetHeldMark(storage, userId, clientRequestId, tabId, now);
+  return typeof before === 'number' ? before : null;
+}
+
+/**
+ * The probe gave this tab a new id (it was a duplicate): move the load-time stamp to the new id, and put
+ * the old id's stamp back as it was (it belongs to the original tab, which keeps refreshing it).
+ */
+export function rekeySheetHeldMark(storage: StorageLike, userId: string, clientRequestId: string, fromTab: string, toTab: string, previousAt: number | null, now = Date.now()) {
+  if (fromTab === toTab) return;
+  const marks = readHeldMarks(storage, userId);
+  const holders = { ...(marks[clientRequestId] ?? {}) };
+  if (previousAt === null) delete holders[fromTab];
+  else holders[fromTab] = previousAt;
+  holders[toTab] = now;
+  marks[clientRequestId] = holders;
+  writeHeldMarks(storage, userId, pruneHeldMarks(marks, now, SHEET_HELD_MARK_TTL_MS));
+}
+
+/**
  * Drop this tab's stamps on the entries it marked in THIS page load (tracked in memory by the caller),
  * never other tabs' stamps, even if they share the id.
  */
@@ -678,16 +722,22 @@ export function watchSheetHeldMarks(options: {
   onRelease: () => void;
   now?: () => number;
   ttlMs?: number;
+  /** Wait this long after a release, then re-check the marks, before starting a send. */
+  debounceMs?: number;
   setTimer?: (callback: () => void, ms: number) => unknown;
   clearTimer?: (handle: unknown) => void;
 }) {
+  const debounceMs = options.debounceMs ?? SHEET_HELD_RELEASE_DEBOUNCE_MS;
   const now = options.now ?? (() => Date.now());
   const ttlMs = options.ttlMs ?? SHEET_HELD_MARK_TTL_MS;
   const setTimer = options.setTimer ?? ((callback, ms) => setTimeout(callback, ms));
   const clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
   const key = sheetHeldMarkKey(options.userId);
   let timer: unknown = null;
+  let debounce: unknown = null;
   let stopped = false;
+  /** Entries seen released, waiting for the debounce re-check. */
+  const released = new Set<string>();
   const heldNow = () => new Set(sheetHeldElsewhere(options.storage, options.userId, options.tabId(), now(), ttlMs));
   let last = heldNow();
 
@@ -703,13 +753,26 @@ export function watchSheetHeldMarks(options: {
     }, Math.max(0, next - now()) + 50);
   }
 
+  function settle() {
+    debounce = null;
+    if (stopped) return;
+    // Re-check: a holder that reloaded (or re-marked) in the meantime holds it again: no send.
+    const current = heldNow();
+    last = current;
+    schedule();
+    const stillReleased = [...released].some((id) => !current.has(id));
+    released.clear();
+    if (stillReleased) options.onRelease();
+  }
+
   function check() {
     if (stopped) return;
     const current = heldNow();
-    const released = [...last].some((id) => !current.has(id));
+    for (const id of last) if (!current.has(id)) released.add(id);
+    for (const id of current) released.delete(id);
     last = current;
     schedule();
-    if (released) options.onRelease();
+    if (released.size && debounce === null) debounce = setTimer(settle, debounceMs);
   }
 
   const onStorage = (event: Event) => {
@@ -724,7 +787,9 @@ export function watchSheetHeldMarks(options: {
     stop() {
       stopped = true;
       if (timer !== null) clearTimer(timer);
+      if (debounce !== null) clearTimer(debounce);
       timer = null;
+      debounce = null;
       options.win.removeEventListener('storage', onStorage);
     }
   };
