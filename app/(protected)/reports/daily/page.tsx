@@ -64,6 +64,7 @@ export default async function DailyReportPage({ searchParams }: { searchParams?:
         <Card label="Cash variance" value={currency(report.totals.variance, report.hotel.default_currency)} />
         <Card label="To be billed still owed" value={currency(report.totals.toBeBilled, report.hotel.default_currency)} />
       </section>
+      <p className="text-sm text-slate-600 print-hidden">Cash variance above uses the older separate cash count. The day&apos;s one cash count, and its short or over, are on the <Link className="font-semibold underline" href={`/today/close?hotel=${report.hotel.id}&date=${date}`}>Daily cash sheet</Link>.</p>
       <section className="card overflow-hidden">
         <TableTitle title="Reservations" helper="Reservations touching this date or created today." />
         <div className="overflow-x-auto">

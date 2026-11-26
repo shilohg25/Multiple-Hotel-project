@@ -4,7 +4,7 @@ export const en: MessageCatalog = {
   needsReview: false,
   labels: {
     'nav.today': 'Today',
-    'nav.sales': 'Daily sales',
+    'nav.sales': 'Daily cash sheet',
     'nav.help': 'How to',
     'nav.helpButton': 'Help',
     'today.title': 'Today',
@@ -19,13 +19,13 @@ export const en: MessageCatalog = {
     'today.chooseStay': 'Choose a room or guest first',
     'today.room': 'Room',
     'today.expense': 'Add expense',
-    'today.close': 'Close the day',
+    'today.close': 'Daily cash sheet',
     'today.rooms': 'Rooms',
     'today.noArrivals': 'No one is due to arrive.',
     'today.noInHouse': 'No guests are in house.',
     'today.noDepartures': 'No one is due to leave.',
-    'close.title': 'Close the day',
-    'close.lead': 'Front desk fills this in. A manager locks it.',
+    'close.title': 'Daily cash sheet',
+    'close.lead': 'Room payments fill in by themselves. Type only the rest, then count the cash once. A manager locks it.',
     'close.back': 'Back to today',
     'close.print': 'Print',
     'help.title': 'How to',
@@ -46,12 +46,13 @@ export const en: MessageCatalog = {
       ]
     },
     close: {
-      title: 'How to close the day',
-      summary: 'The totals are calculated. You count the money and name who was responsible.',
+      title: 'How to fill in the daily cash sheet',
+      summary: 'One sheet for the day. Room payments fill in by themselves. You type the rest and count the money once.',
       steps: [
-        'Read the sales, expenses, and cash on hand. Do not retype those numbers.',
+        'Room payments confirmed today are already on the sheet. Do not type them again.',
+        'Type only walk-in or restaurant sales, add-ons sold at the desk, expenses, and unpaid amounts.',
         'Count the revolving fund by itself. It should come back to the float, usually ₱10,000.',
-        'Count the cash that will go to the bank in the other box.',
+        'Count the cash still in the drawer in the other box. This is the only cash count for the day.',
         'If the result says Short or Excess, write what happened. A manager locks the day.'
       ]
     }

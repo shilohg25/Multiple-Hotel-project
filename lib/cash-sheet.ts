@@ -1,0 +1,124 @@
+import {
+  closeFiguresFromCounts,
+  countRowsFromMap,
+  figuresFromLedger,
+  resolveReturnToFund,
+  summarizeClose,
+  type CloseFigures,
+  type CloseSummary,
+  type LedgerLike
+} from './day-close.ts';
+
+/**
+ * One daily cash sheet.
+ *
+ * The sheet only changes what staff see and type. It never changes close math:
+ * every figure still comes from figuresFromLedger -> closeFiguresFromCounts -> summarizeClose
+ * over the FULL ledger row set, exactly like POST /api/day-closes.
+ */
+
+export type SheetLedgerRow = LedgerLike & {
+  id?: string;
+  description?: string | null;
+  reservation_id?: string | null;
+  created_at?: string | null;
+};
+
+export type SheetSplit<Row extends SheetLedgerRow> = {
+  /** Rows the app wrote itself (confirmed room payments). Read-only on the sheet. */
+  fromApp: Row[];
+  /** Rows staff typed on the sheet (walk-in, restaurant, add-on, expense, collectible...). */
+  typed: Row[];
+  fromAppTotal: number;
+  fromAppByMethod: { method: string; amount: number }[];
+  typedTotal: number;
+};
+
+function money(value: number) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+/** A ledger row the app wrote itself: it is tied to a stay (confirmed payment / staff down payment). */
+export function isFromApp(row: SheetLedgerRow): boolean {
+  return Boolean(row.reservation_id);
+}
+
+/** Display split only. The close always reads every row, so this cannot change any figure. */
+export function splitSheetLedger<Row extends SheetLedgerRow>(rows: Row[]): SheetSplit<Row> {
+  const fromApp = rows.filter(isFromApp);
+  const typed = rows.filter((row) => !isFromApp(row));
+  const byMethod = new Map<string, number>();
+  for (const row of fromApp) {
+    const method = String(row.payment_method || 'other');
+    byMethod.set(method, money((byMethod.get(method) || 0) + Number(row.amount || 0)));
+  }
+  return {
+    fromApp,
+    typed,
+    fromAppTotal: money(fromApp.reduce((sum, row) => sum + Number(row.amount || 0), 0)),
+    fromAppByMethod: [...byMethod.entries()].map(([method, amount]) => ({ method, amount })),
+    typedTotal: money(typed.reduce((sum, row) => sum + Number(row.amount || 0), 0))
+  };
+}
+
+export type SavedCloseRow = {
+  float_counted?: number | string | null;
+  drawer_counted?: number | string | null;
+  bank_deposit?: number | string | null;
+  return_to_fund?: number | string | null;
+} | null;
+
+/**
+ * Base close figures for the sheet. Same inputs and same steps the old Close the day page used:
+ * the ledger for hotel/date/outlet, the hotel's RVF float, then the saved close (if any).
+ * Pass both split halves back in (or the raw rows); order does not matter.
+ */
+export function sheetBaseFigures(rows: SheetLedgerRow[], rvfFloat: number, saved: SavedCloseRow): CloseFigures {
+  const figures = figuresFromLedger(rows, rvfFloat);
+  if (saved) {
+    figures.floatCounted = Number(saved.float_counted || 0);
+    figures.drawerCounted = Number(saved.drawer_counted || 0);
+    figures.bankDeposit = Number(saved.bank_deposit || 0);
+    figures.returnToFund = Number(saved.return_to_fund ?? figures.expenses);
+  }
+  return figures;
+}
+
+/** Starting Return to fund on the sheet. Same rule the old close form used. */
+export function sheetInitialReturnToFund(saved: SavedCloseRow, base: CloseFigures): number {
+  const provided = saved?.return_to_fund;
+  return resolveReturnToFund(provided === null || provided === undefined ? provided : Number(provided), base.returnToFund);
+}
+
+/** Live preview of the one count. Same helpers, same order as POST /api/day-closes. */
+export function sheetCloseSummary(
+  base: CloseFigures,
+  input: {
+    floatCounts: Record<number, number>;
+    drawerCounts: Record<number, number>;
+    bankDeposit: number | null | undefined;
+    returnToFund: number | null | undefined;
+  }
+): CloseSummary {
+  return summarizeClose(closeFiguresFromCounts(base, {
+    floatCounts: countRowsFromMap(input.floatCounts),
+    drawerCounts: countRowsFromMap(input.drawerCounts),
+    bankDeposit: input.bankDeposit,
+    returnToFund: input.returnToFund
+  }));
+}
+
+/**
+ * Categories staff may type on the sheet. Room and Room payment are left out on purpose:
+ * confirmed payments already write those rows. The API still accepts every old category,
+ * and older typed rows still count in the close.
+ */
+export const SHEET_ENTRY_CATEGORIES = [
+  { value: 'other', label: 'Walk-in or restaurant sale' },
+  { value: 'add_on', label: 'Add-on sold at the desk' },
+  { value: 'deposit', label: 'Deposit' },
+  { value: 'expense', label: 'Expense (paid from the drawer)' },
+  { value: 'collectible', label: 'Not paid yet (collectible)' }
+] as const;
+
+export const SHEET_ENTRY_METHODS = ['cash', 'gcash', 'maya', 'bank_transfer', 'card', 'cheque', 'online_gateway', 'booking_dot_com', 'trip_dot_com', 'other'] as const;
