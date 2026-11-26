@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { excludeTestHotelNames, publicVisibleHotels } from '@/lib/test-hotel';
 
 type HotelRow = {
   name: string;
@@ -10,13 +11,11 @@ type HotelRow = {
 export const dynamic = 'force-dynamic';
 
 export default async function BookIndexPage() {
-  const { data } = await supabaseAdmin
-    .from('hotels')
-    .select('name,slug,active')
-    .eq('active', true)
-    .order('name');
+  const { data } = await excludeTestHotelNames(
+    supabaseAdmin.from('hotels').select('name,slug,active').eq('active', true)
+  ).order('name');
 
-  const hotels = (data ?? []) as HotelRow[];
+  const hotels = publicVisibleHotels((data ?? []) as HotelRow[]);
 
   return (
     <main className="mx-auto max-w-3xl space-y-6 p-6">
