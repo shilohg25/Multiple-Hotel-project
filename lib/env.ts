@@ -14,7 +14,9 @@ export const APP_ENV_VARS = [
 ] as const;
 
 export function getMissingEnvVars(names: readonly string[] = APP_ENV_VARS): string[] {
-  return names.filter((name) => !process.env[name]);
+  // Local demo mode (DEMO_MODE=1) has no Supabase settings by design.
+  const demo = process.env.DEMO_MODE === '1';
+  return names.filter((name) => !process.env[name] && !(demo && name.includes('SUPABASE')));
 }
 
 export function getEnvErrorPath(missing: readonly string[], param = 'missing'): string {

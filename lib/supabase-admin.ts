@@ -2,10 +2,16 @@ import 'server-only';
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { requireEnv } from './env';
+import { isDemoMode } from './demo/guard.mjs';
+import { createDemoAdminClient } from './demo/client';
 
 let adminClient: SupabaseClient | null = null;
 
 function getSupabaseAdminClient() {
+  if (!adminClient && isDemoMode()) {
+    // Local demo: in-process PGlite. Never a Supabase connection.
+    adminClient = createDemoAdminClient();
+  }
   if (!adminClient) {
     adminClient = createClient(
       requireEnv('NEXT_PUBLIC_SUPABASE_URL'),
