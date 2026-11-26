@@ -5,6 +5,7 @@ export const LEDGER_QUEUE_STORAGE_KEY = 'hotel_ops_ledger_entry_queue';
 export const LEDGER_NETWORK_ERROR = "Couldn't save this entry. Check your connection and try again.";
 export const LEDGER_TIMEOUT_ERROR = "Couldn't save this entry. The request timed out. Check your connection and try again.";
 export const LEDGER_QUEUE_HINT = "It's saved on this device and will be sent when you're back online.";
+export const LEDGER_NEEDS_ATTENTION_ERROR = "This entry is still saved on this device but could not be sent. Sign in with the same account and try again.";
 
 export type StorageLike = {
   getItem(key: string): string | null;
@@ -12,10 +13,12 @@ export type StorageLike = {
   removeItem(key: string): void;
 };
 
-export type LedgerQueueStatus = 'pending' | 'syncing' | 'failed';
+export type LedgerQueueStatus = 'pending' | 'syncing' | 'failed' | 'needs_attention';
 
 export type LedgerQueueItem = {
   clientRequestId: string;
+  userId: string;
+  hotelId: string;
   payload: Record<string, unknown>;
   createdAt: string;
   status: LedgerQueueStatus;
@@ -33,6 +36,7 @@ export type PostLedgerFailure = {
   ok: false;
   error: string;
   retryable: boolean;
+  needsAttention?: boolean;
   status?: number;
   clientRequestId: string;
 };
@@ -72,9 +76,13 @@ function defaultRandomUUID() {
   return `ledger_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
+export function ledgerQueueStorageKey(userId: string) {
+  return `${LEDGER_QUEUE_STORAGE_KEY}:${userId}`;
+}
+
 export function buildLedgerPayload(
   formValues: Record<string, unknown>,
-  options: { outletId?: string | null; clientRequestId: string }
+  options: { outletId?: string | null; clientRequestId: string; hotelId?: string }
 ): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(formValues)) {
@@ -82,6 +90,7 @@ export function buildLedgerPayload(
   }
   if (payload.category === 'collectible') payload.is_collectible = 'true';
   if (options.outletId) payload.outlet_id = options.outletId;
+  if (options.hotelId && !payload.hotel_id) payload.hotel_id = options.hotelId;
   payload.client_request_id = options.clientRequestId;
   return payload;
 }
@@ -97,42 +106,72 @@ export function isRetryableLedgerStatus(status: number | undefined): boolean {
   return status === 408 || status === 429;
 }
 
-export function readLedgerQueue(storage: StorageLike): LedgerQueueItem[] {
-  const raw = storage.getItem(LEDGER_QUEUE_STORAGE_KEY);
+export function isLedgerAuthFailure(status: number | undefined): boolean {
+  return status === 401 || status === 403;
+}
+
+export function readLedgerQueue(storage: StorageLike, userId: string): LedgerQueueItem[] {
+  const raw = storage.getItem(ledgerQueueStorageKey(userId));
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isLedgerQueueItem);
+    return parsed.filter((item) => isLedgerQueueItem(item) && item.userId === userId);
   } catch {
     return [];
   }
 }
 
-export function writeLedgerQueue(storage: StorageLike, items: LedgerQueueItem[]) {
-  storage.setItem(LEDGER_QUEUE_STORAGE_KEY, JSON.stringify(items));
+export function writeLedgerQueue(storage: StorageLike, userId: string, items: LedgerQueueItem[]) {
+  storage.setItem(ledgerQueueStorageKey(userId), JSON.stringify(items.filter((item) => item.userId === userId)));
 }
 
-export function upsertLedgerQueueItem(storage: StorageLike, item: LedgerQueueItem) {
-  const items = readLedgerQueue(storage);
-  const index = items.findIndex((entry) => entry.clientRequestId === item.clientRequestId);
-  if (index >= 0) items[index] = item;
-  else items.push(item);
-  writeLedgerQueue(storage, items);
-  return item;
+export function upsertLedgerQueueItem(storage: StorageLike, userId: string, item: LedgerQueueItem) {
+  const owned = { ...item, userId };
+  const items = readLedgerQueue(storage, userId);
+  const index = items.findIndex((entry) => entry.clientRequestId === owned.clientRequestId);
+  if (index >= 0) items[index] = owned;
+  else items.push(owned);
+  writeLedgerQueue(storage, userId, items);
+  return owned;
 }
 
-export function removeLedgerQueueItem(storage: StorageLike, clientRequestId: string) {
+export function removeLedgerQueueItem(storage: StorageLike, userId: string, clientRequestId: string) {
   writeLedgerQueue(
     storage,
-    readLedgerQueue(storage).filter((item) => item.clientRequestId !== clientRequestId)
+    userId,
+    readLedgerQueue(storage, userId).filter((item) => item.clientRequestId !== clientRequestId)
   );
 }
 
-export function pendingLedgerEntries(storage: StorageLike): LedgerQueueItem[] {
-  return readLedgerQueue(storage)
+export function pendingLedgerEntries(storage: StorageLike, userId: string): LedgerQueueItem[] {
+  return readLedgerQueue(storage, userId)
     .filter((item) => item.status === 'pending' || item.status === 'failed')
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+export function needsAttentionLedgerEntries(storage: StorageLike, userId: string): LedgerQueueItem[] {
+  return readLedgerQueue(storage, userId)
+    .filter((item) => item.status === 'needs_attention')
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+export function retryableLedgerEntries(storage: StorageLike, userId: string): LedgerQueueItem[] {
+  return readLedgerQueue(storage, userId)
+    .filter((item) => item.status === 'pending' || item.status === 'failed' || item.status === 'needs_attention')
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+export function resetStaleSyncingLedgerEntries(storage: StorageLike, userId: string) {
+  const items = readLedgerQueue(storage, userId);
+  let changed = false;
+  const reset = items.map((item) => {
+    if (item.status !== 'syncing') return item;
+    changed = true;
+    return { ...item, status: 'pending' as const, error: item.error };
+  });
+  if (changed) writeLedgerQueue(storage, userId, reset);
+  return reset.filter((item) => item.status === 'pending' || item.status === 'failed');
 }
 
 function isLedgerQueueItem(value: unknown): value is LedgerQueueItem {
@@ -140,6 +179,9 @@ function isLedgerQueueItem(value: unknown): value is LedgerQueueItem {
   const item = value as Partial<LedgerQueueItem>;
   return typeof item.clientRequestId === 'string'
     && item.clientRequestId.trim().length > 0
+    && typeof item.userId === 'string'
+    && item.userId.trim().length > 0
+    && typeof item.hotelId === 'string'
     && !!item.payload
     && typeof item.payload === 'object'
     && typeof item.createdAt === 'string';
@@ -151,6 +193,13 @@ function errorMessageFromJson(json: unknown, fallback: string) {
     if (typeof error === 'string' && error.trim()) return error;
   }
   return fallback;
+}
+
+export function hotelIdFromLedgerValues(formValues: Record<string, unknown>, hotelId?: string) {
+  const fromValues = formValues.hotel_id;
+  if (typeof fromValues === 'string' && fromValues.trim()) return fromValues;
+  if (hotelId && hotelId.trim()) return hotelId;
+  return '';
 }
 
 export async function postLedgerEntry(
@@ -168,10 +217,12 @@ export async function postLedgerEntry(
     });
     const json = await response.json().catch(() => ({}));
     if (!response.ok) {
+      const needsAttention = isLedgerAuthFailure(response.status);
       return {
         ok: false,
-        error: errorMessageFromJson(json, 'Unable to save ledger entry.'),
+        error: errorMessageFromJson(json, needsAttention ? LEDGER_NEEDS_ATTENTION_ERROR : 'Unable to save ledger entry.'),
         retryable: isRetryableLedgerStatus(response.status),
+        needsAttention,
         status: response.status
       };
     }
@@ -195,6 +246,8 @@ export async function saveLedgerEntryWithQueue(
   options: {
     clientRequestId?: string;
     outletId?: string | null;
+    userId: string;
+    hotelId?: string;
     storage: StorageLike;
     timeoutMs?: number;
     fetchImpl?: typeof fetch;
@@ -203,19 +256,24 @@ export async function saveLedgerEntryWithQueue(
   }
 ): Promise<PostLedgerResult> {
   const clientRequestId = options.clientRequestId || createLedgerClientRequestId(options.createId);
+  const hotelId = hotelIdFromLedgerValues(formValues, options.hotelId);
   const payload = buildLedgerPayload(formValues, {
     outletId: options.outletId,
-    clientRequestId
-  });
-  const existing = readLedgerQueue(options.storage).find((item) => item.clientRequestId === clientRequestId);
-  const queued: LedgerQueueItem = {
     clientRequestId,
+    hotelId
+  });
+  const existing = readLedgerQueue(options.storage, options.userId).find((item) => item.clientRequestId === clientRequestId);
+  const baseItem: LedgerQueueItem = {
+    clientRequestId,
+    userId: options.userId,
+    hotelId: existing?.hotelId || hotelId,
     payload,
     createdAt: existing?.createdAt || (options.now ? options.now() : new Date().toISOString()),
-    status: 'syncing',
+    status: 'pending',
     error: null
   };
-  upsertLedgerQueueItem(options.storage, queued);
+  upsertLedgerQueueItem(options.storage, options.userId, baseItem);
+  upsertLedgerQueueItem(options.storage, options.userId, { ...baseItem, status: 'syncing' });
 
   const result = await postLedgerEntry(payload, {
     timeoutMs: options.timeoutMs,
@@ -223,18 +281,24 @@ export async function saveLedgerEntryWithQueue(
   });
 
   if (result.ok) {
-    removeLedgerQueueItem(options.storage, clientRequestId);
+    removeLedgerQueueItem(options.storage, options.userId, clientRequestId);
     return { ...result, clientRequestId };
   }
 
-  if (result.retryable) {
-    upsertLedgerQueueItem(options.storage, {
-      ...queued,
+  if (result.needsAttention) {
+    upsertLedgerQueueItem(options.storage, options.userId, {
+      ...baseItem,
+      status: 'needs_attention',
+      error: result.error || LEDGER_NEEDS_ATTENTION_ERROR
+    });
+  } else if (result.retryable) {
+    upsertLedgerQueueItem(options.storage, options.userId, {
+      ...baseItem,
       status: 'failed',
       error: result.error
     });
   } else {
-    removeLedgerQueueItem(options.storage, clientRequestId);
+    removeLedgerQueueItem(options.storage, options.userId, clientRequestId);
   }
 
   return { ...result, clientRequestId };
@@ -242,6 +306,7 @@ export async function saveLedgerEntryWithQueue(
 
 export async function syncPendingLedgerEntries(options: {
   storage: StorageLike;
+  userId: string;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
   isOnline?: () => boolean;
@@ -250,12 +315,15 @@ export async function syncPendingLedgerEntries(options: {
     return { processed: 0, synced: 0, failed: 0, lastError: LEDGER_NETWORK_ERROR };
   }
 
+  resetStaleSyncingLedgerEntries(options.storage, options.userId);
   const result: SyncLedgerQueueResult = { processed: 0, synced: 0, failed: 0, lastError: null };
 
-  for (const item of pendingLedgerEntries(options.storage)) {
+  for (const item of pendingLedgerEntries(options.storage, options.userId)) {
     result.processed += 1;
     const saved = await saveLedgerEntryWithQueue(item.payload, {
       clientRequestId: item.clientRequestId,
+      userId: options.userId,
+      hotelId: item.hotelId,
       storage: options.storage,
       timeoutMs: options.timeoutMs,
       fetchImpl: options.fetchImpl,
@@ -271,7 +339,11 @@ export async function syncPendingLedgerEntries(options: {
   return result;
 }
 
-export function queuedLedgerHint(error: string, retryable: boolean) {
+export function queuedLedgerHint(error: string, retryable: boolean, needsAttention = false) {
+  if (needsAttention) {
+    if (error.includes(LEDGER_NEEDS_ATTENTION_ERROR)) return error;
+    return `${error} ${LEDGER_NEEDS_ATTENTION_ERROR}`.trim();
+  }
   if (!retryable) return error;
   return `${error} ${LEDGER_QUEUE_HINT}`;
 }

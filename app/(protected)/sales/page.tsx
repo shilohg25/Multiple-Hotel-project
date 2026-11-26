@@ -84,6 +84,7 @@ export default async function SalesPage({ searchParams }: { searchParams?: Promi
       <SalesCashManager
         hotels={hotels}
         selectedHotel={selectedHotel}
+        userId={staff.userId}
         selectedDate={selectedDate}
         ledgerEntries={(ledgerRaw || []) as LedgerEntry[]}
         cashCounts={(cashRaw || []) as CashCount[]}

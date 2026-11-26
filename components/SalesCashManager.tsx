@@ -6,8 +6,12 @@ import type { CashCount, Hotel, LedgerEntry, PaymentMethod } from '@/types/app';
 import { currency } from '@/lib/money';
 import { queueOfflineItem } from '@/lib/offline/db';
 import {
+  LEDGER_NEEDS_ATTENTION_ERROR,
+  needsAttentionLedgerEntries,
   pendingLedgerEntries,
   queuedLedgerHint,
+  resetStaleSyncingLedgerEntries,
+  retryableLedgerEntries,
   saveLedgerEntryWithQueue,
   syncPendingLedgerEntries
 } from '@/lib/ledger-entry-queue';
@@ -22,7 +26,8 @@ export function SalesCashManager({
   ledgerEntries,
   cashCounts,
   breakdown,
-  outletId
+  outletId,
+  userId
 }: {
   hotels: Hotel[];
   selectedHotel: Hotel;
@@ -30,6 +35,7 @@ export function SalesCashManager({
   ledgerEntries: LedgerEntry[];
   cashCounts: CashCount[];
   outletId?: string | null;
+  userId: string;
   breakdown?: {
     roomPayments: number;
     serviceCharges: number;
@@ -89,6 +95,8 @@ export function SalesCashManager({
       const result = await saveLedgerEntryWithQueue(formValues, {
         clientRequestId: clientRequestId || pendingLedgerIdRef.current || undefined,
         outletId,
+        userId,
+        hotelId: selectedHotel.id,
         storage: window.localStorage
       });
       pendingLedgerIdRef.current = result.clientRequestId;
@@ -99,9 +107,9 @@ export function SalesCashManager({
         router.refresh();
         return;
       }
-      setLedgerCanRetry(result.retryable);
-      setLedgerError(queuedLedgerHint(result.error, result.retryable));
-      if (!result.retryable) pendingLedgerIdRef.current = null;
+      setLedgerCanRetry(result.retryable || Boolean(result.needsAttention));
+      setLedgerError(queuedLedgerHint(result.error, result.retryable, Boolean(result.needsAttention)));
+      if (!result.retryable && !result.needsAttention) pendingLedgerIdRef.current = null;
     } catch (error) {
       setLedgerCanRetry(true);
       setLedgerError(queuedLedgerHint(error instanceof Error ? error.message : "Couldn't save this entry. Check your connection and try again.", true));
@@ -116,7 +124,7 @@ export function SalesCashManager({
   }
 
   async function retryLedgerEntry() {
-    const queued = pendingLedgerEntries(window.localStorage);
+    const queued = retryableLedgerEntries(window.localStorage, userId);
     const item = queued.find((entry) => entry.clientRequestId === pendingLedgerIdRef.current) || queued[0];
     if (item) {
       await submitLedgerEntry(item.payload, item.clientRequestId);
@@ -129,13 +137,21 @@ export function SalesCashManager({
     let cancelled = false;
 
     async function flushQueuedLedgerEntries() {
-      if (typeof window === 'undefined' || (typeof navigator !== 'undefined' && !navigator.onLine)) return;
-      const queued = pendingLedgerEntries(window.localStorage);
-      if (!queued.length) return;
+      if (typeof window === 'undefined' || !userId) return;
+      resetStaleSyncingLedgerEntries(window.localStorage, userId);
+      const attention = needsAttentionLedgerEntries(window.localStorage, userId);
+      if (attention.length) {
+        pendingLedgerIdRef.current = attention[0].clientRequestId;
+        setLedgerCanRetry(true);
+        setLedgerError(queuedLedgerHint(attention[0].error || LEDGER_NEEDS_ATTENTION_ERROR, false, true));
+      }
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (!pendingLedgerEntries(window.localStorage, userId).length) return;
       setLedgerLoading(true);
       try {
         const result = await syncPendingLedgerEntries({
           storage: window.localStorage,
+          userId,
           isOnline: () => navigator.onLine
         });
         if (cancelled) return;
@@ -148,6 +164,12 @@ export function SalesCashManager({
         if (result.failed > 0 && result.lastError) {
           setLedgerCanRetry(true);
           setLedgerError(queuedLedgerHint(result.lastError, true));
+        }
+        const leftoverAttention = needsAttentionLedgerEntries(window.localStorage, userId);
+        if (leftoverAttention.length) {
+          pendingLedgerIdRef.current = leftoverAttention[0].clientRequestId;
+          setLedgerCanRetry(true);
+          setLedgerError(queuedLedgerHint(leftoverAttention[0].error || LEDGER_NEEDS_ATTENTION_ERROR, false, true));
         }
       } catch {
         // Keep the form as-is if a queued retry cannot run yet.
@@ -166,7 +188,7 @@ export function SalesCashManager({
       cancelled = true;
       window.removeEventListener('online', onOnline);
     };
-  }, [router]);
+  }, [router, userId, selectedHotel.id]);
 
   async function saveCashCount(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
