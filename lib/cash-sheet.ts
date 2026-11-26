@@ -241,9 +241,57 @@ export function sheetHeldEntry(input: {
   return source;
 }
 
-/** True while this entry is still in the device queue (another tab may have sent or replaced it). */
+/**
+ * Where this entry is in the device queue (shared by all tabs):
+ * 'queued' waiting here, 'sending' another tab (or this one) is sending it right now, 'gone' sent or replaced.
+ */
+export function sheetQueueState(storage: StorageLike, userId: string, clientRequestId: string): 'queued' | 'sending' | 'gone' {
+  const item = readLedgerQueue(storage, userId).find((entry) => entry.clientRequestId === clientRequestId);
+  if (!item) return 'gone';
+  return item.status === 'syncing' ? 'sending' : 'queued';
+}
+
+/** True while this entry is still waiting in the device queue (not gone and not being sent right now). */
 export function sheetEntryStillQueued(storage: StorageLike, userId: string, clientRequestId: string) {
-  return readLedgerQueue(storage, userId).some((item) => item.clientRequestId === clientRequestId && item.status !== 'syncing');
+  return sheetQueueState(storage, userId, clientRequestId) === 'queued';
+}
+
+/**
+ * The link from the form to the queued entry it came from, kept in sessionStorage per user and hotel so a
+ * reload or back/forward keeps it (the browser may refill the form). Values are a snapshot of what was sent.
+ */
+export type SheetFormLink = { clientRequestId: string; values: Record<string, unknown> };
+
+export function sheetLinkKey(userId: string, hotelId: string) {
+  return `hotel_ops_sheet_form_link:${userId}:${hotelId}`;
+}
+
+export function writeSheetLink(session: StorageLike, userId: string, hotelId: string, link: SheetFormLink | null) {
+  try {
+    if (link) session.setItem(sheetLinkKey(userId, hotelId), JSON.stringify(link));
+    else session.removeItem(sheetLinkKey(userId, hotelId));
+  } catch {
+    // Private mode or a full store: the in-memory link still works for this page.
+  }
+}
+
+/** The saved link, only while its entry is still in the device queue; a stale link is removed. */
+export function restoreSheetLink(session: StorageLike, queue: StorageLike, userId: string, hotelId: string): SheetFormLink | null {
+  let link: SheetFormLink | null = null;
+  try {
+    const raw = session.getItem(sheetLinkKey(userId, hotelId));
+    const parsed = raw ? JSON.parse(raw) as Partial<SheetFormLink> : null;
+    if (parsed && typeof parsed.clientRequestId === 'string' && parsed.values && typeof parsed.values === 'object') {
+      link = { clientRequestId: parsed.clientRequestId, values: parsed.values as Record<string, unknown> };
+    }
+  } catch {
+    link = null;
+  }
+  if (!link || sheetQueueState(queue, userId, link.clientRequestId) === 'gone') {
+    writeSheetLink(session, userId, hotelId, null);
+    return null;
+  }
+  return link;
 }
 
 /**
@@ -313,7 +361,7 @@ export function sendHeldSheetEntry(item: LedgerQueueItem, options: SheetSendOpti
 
 export type SheetReplaceResult =
   | { kind: 'already_saved' | 'replaced' | 'replacement_exists'; amount: number }
-  | { kind: 'gone' }
+  | { kind: 'gone' | 'in_flight' }
   | { kind: 'busy' | 'offline' | 'error'; error: string };
 
 /**
@@ -329,7 +377,10 @@ export async function replaceHeldSheetEntry(
   formValues: Record<string, unknown>,
   options: SheetSendOptions
 ): Promise<SheetReplaceResult> {
-  if (!sheetEntryStillQueued(options.storage, options.userId, item.clientRequestId)) return { kind: 'gone' };
+  const where = sheetQueueState(options.storage, options.userId, item.clientRequestId);
+  if (where === 'gone') return { kind: 'gone' };
+  // Another tab is sending this entry right now: wait for its answer, change nothing.
+  if (where === 'sending') return { kind: 'in_flight' };
   const hotelId = item.hotelId || options.hotelId;
   const entry = buildLedgerPayload(formValues, { outletId: options.outletId, hotelId, clientRequestId: '_' });
   delete entry.client_request_id;

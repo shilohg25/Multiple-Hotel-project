@@ -4,7 +4,7 @@ import { businessDateForHotel } from '@/lib/business-date';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { lockedDayMessage, verifiedOutletId } from '@/lib/day-lock';
 import { supabaseAdmin } from '@/lib/supabase-admin';
-import { createLedgerEntryOnce, replaceLedgerEntryOnce } from '@/lib/ledger-idempotency';
+import { createLedgerEntryOnce, isServerOnlyLedgerRequestId, replaceLedgerEntryOnce, SERVER_ONLY_REQUEST_ID_ERROR } from '@/lib/ledger-idempotency';
 import { parseLedgerPatchBody } from '@/lib/ledger-patch';
 import { createSupabaseLedgerIdempotencyStore } from '@/lib/ledger-idempotency-store';
 
@@ -81,6 +81,7 @@ export async function POST(request: Request) {
   const hotelId = String(payload.hotel_id || '');
   const clientRequestId = String(payload.client_request_id || payload.offline_id || '').trim() || null;
 
+  if (isServerOnlyLedgerRequestId(clientRequestId)) return jsonError(SERVER_ONLY_REQUEST_ID_ERROR, 400);
   if (!hotelId || !canAccessHotel(staff.profile, hotelId)) return jsonError('Hotel access denied.', 403);
 
   const prepared = await prepareLedgerInsert(staff, hotelId, payload);

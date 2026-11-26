@@ -9,7 +9,10 @@ import {
   sendHeldSheetEntry,
   sheetEntryPayload,
   sheetHeldEntry,
-  sheetEntryStillQueued,
+  restoreSheetLink,
+  sheetQueueState,
+  writeSheetLink,
+  type SheetFormLink,
   sheetFormStillSent,
   sheetRetrySource,
   sheetWaitingCount,
@@ -49,6 +52,7 @@ export type CashSheetChoiceCopy = {
   alreadySaved: string;
   replacementExists: string;
   gone: string;
+  inFlight: string;
   saved: string;
 };
 
@@ -116,6 +120,36 @@ export function CashSheetEntries({
   // The one entry the form came from: the last save from this form that failed and is still queued.
   // Only it can be held. Emptying the amount, a save, Send or Replace ends the link.
   const sourceRef = useRef<string | null>(null);
+  const watchRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  /** Set or clear the link; it is also kept in sessionStorage so a reload or back/forward keeps it. */
+  function setSource(link: SheetFormLink | null) {
+    sourceRef.current = link?.clientRequestId ?? null;
+    writeSheetLink(window.sessionStorage, userId, hotelId, link);
+  }
+
+  function stopWatching() {
+    if (watchRef.current) clearInterval(watchRef.current);
+    watchRef.current = null;
+  }
+
+  /**
+   * Another tab is sending the held entry. Keep the choice and the typed amount, and look at the
+   * shared device queue until that send is final: back in the queue -> choose again; gone -> resolved.
+   */
+  function watchOtherTab(item: LedgerQueueItem, formAtClick: Record<string, unknown>) {
+    stopWatching();
+    setMessage(choiceCopy.inFlight);
+    let checks = 0;
+    watchRef.current = setInterval(() => {
+      checks += 1;
+      const where = sheetQueueState(window.localStorage, userId, item.clientRequestId);
+      if (where === 'sending' && checks < 40) return;
+      stopWatching();
+      if (where === 'gone') finishChoice(choiceCopy.gone, formAtClick);
+      else setMessage('');
+    }, 1500);
+  }
 
   function readForm(formElement: HTMLFormElement | null) {
     return readSheetForm(formElement, { hotelId, businessDate, outletId });
@@ -144,7 +178,7 @@ export function CashSheetEntries({
   function finishChoice(text: string, formAtClick: Record<string, unknown>, refresh = true) {
     setHeld(null);
     clearPending();
-    sourceRef.current = null;
+    setSource(null);
     resetFormIfStill(formAtClick);
     setMessage(text);
     if (refresh) router.refresh();
@@ -155,7 +189,7 @@ export function CashSheetEntries({
     setFormAmount(String(values.amount ?? ''));
     if (!String(values.amount ?? '').trim()) {
       // An empty amount ends the link to the earlier entry: what is typed next is a new entry.
-      sourceRef.current = null;
+      setSource(null);
       if (held) {
         setHeld(null);
         autoSendRef.current?.soon();
@@ -196,7 +230,7 @@ export function CashSheetEntries({
       const result = await saveSheetEntryWithQueue(source, { userId, hotelId, outletId, storage: window.localStorage });
       if (result.ok) {
         clearPending();
-        sourceRef.current = null;
+        setSource(null);
         resetFormIfStill(source.values);
         setMessage(result.duplicate ? 'Entry already saved.' : 'Entry saved.');
         router.refresh();
@@ -204,7 +238,7 @@ export function CashSheetEntries({
       }
       const keep = result.retryable || Boolean(result.needsAttention);
       pendingRef.current = keep ? { clientRequestId: result.clientRequestId, payload: source.values } : null;
-      sourceRef.current = result.retryable ? result.clientRequestId : null;
+      setSource(result.retryable ? { clientRequestId: result.clientRequestId, values: source.values } : null);
       setCanRetry(keep);
       setMessage(queuedLedgerHint(result.error, result.retryable, Boolean(result.needsAttention)));
     } catch (error) {
@@ -221,8 +255,13 @@ export function CashSheetEntries({
     const item = held;
     if (!item) return;
     const formAtClick = readForm(formRef.current);
-    // Another tab may have sent or replaced it already: then send nothing.
-    if (!sheetEntryStillQueued(window.localStorage, userId, item.clientRequestId)) {
+    // Another tab may be sending it, or have sent or replaced it already: then send nothing.
+    const where = sheetQueueState(window.localStorage, userId, item.clientRequestId);
+    if (where === 'sending') {
+      watchOtherTab(item, formAtClick);
+      return;
+    }
+    if (where === 'gone') {
       finishChoice(choiceCopy.gone, formAtClick);
       return;
     }
@@ -237,7 +276,7 @@ export function CashSheetEntries({
       }
       if (!result.retryable && !result.needsAttention) {
         setHeld(null);
-        sourceRef.current = null;
+        setSource(null);
       }
       setMessage(queuedLedgerHint(result.error, result.retryable, Boolean(result.needsAttention)));
     } finally {
@@ -264,6 +303,8 @@ export function CashSheetEntries({
         finishChoice(fillSheetCopy(choiceCopy.saved, { amount: money(outcome.amount) }), formValues);
       } else if (outcome.kind === 'gone') {
         finishChoice(choiceCopy.gone, formValues);
+      } else if (outcome.kind === 'in_flight') {
+        watchOtherTab(item, formValues);
       } else if ('error' in outcome) {
         // Busy, offline or refused: nothing changed; the choice stays and pressing Replace again is safe.
         setMessage(outcome.error);
@@ -295,7 +336,12 @@ export function CashSheetEntries({
       const storage = window.localStorage;
       // A save staff started is still running: leave its entry alone and look again shortly.
       if (busyRef.current) return { remaining: sheetWaitingCount(readLedgerQueue(storage, userId)) };
-      if (reason === 'load') resetStaleSyncingLedgerEntries(storage, userId);
+      if (reason === 'load') {
+        resetStaleSyncingLedgerEntries(storage, userId);
+        // After a reload or back/forward: the link to the entry this form came from.
+        const link = restoreSheetLink(window.sessionStorage, storage, userId, hotelId);
+        if (link && !sourceRef.current) sourceRef.current = link.clientRequestId;
+      }
       showAttention();
       const formValues = readSheetForm(formRef.current, { hotelId, businessDate, outletId });
       const waiting = findHeldEntry(formValues, { userId, hotelId, outletId, sourceId: sourceRef.current });
@@ -318,7 +364,10 @@ export function CashSheetEntries({
         if (cancelled) return { remaining: 0 };
         if (result.synced.length > 0) {
           if (pendingRef.current && result.synced.includes(pendingRef.current.clientRequestId)) clearPending();
-          if (sourceRef.current && result.synced.includes(sourceRef.current)) sourceRef.current = null;
+          if (sourceRef.current && result.synced.includes(sourceRef.current)) {
+            sourceRef.current = null;
+            writeSheetLink(window.sessionStorage, userId, hotelId, null);
+          }
           if (formMatch && result.synced.includes(formMatch.clientRequestId)) {
             // Only if the form still shows what was sent: an edit typed during the send is kept.
             const current = readSheetForm(formRef.current, { hotelId, businessDate, outletId });
@@ -346,6 +395,8 @@ export function CashSheetEntries({
     return () => {
       cancelled = true;
       sender.stop();
+      if (watchRef.current) clearInterval(watchRef.current);
+      watchRef.current = null;
       if (autoSendRef.current === sender) autoSendRef.current = null;
     };
   }, [router, userId, hotelId, outletId, businessDate]);
@@ -386,7 +437,7 @@ export function CashSheetEntries({
         {locked ? (
           <p className="text-sm font-semibold">This day is locked. A manager has to unlock it before anything new is added.</p>
         ) : (
-          <form ref={formRef} onSubmit={addEntry} onInput={onFormInput} className="space-y-3">
+          <form ref={formRef} onSubmit={addEntry} onInput={onFormInput} autoComplete="off" className="space-y-3">
             {message ? <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm" role="status">{message}</p> : null}
             {held ? (
               <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3 text-sm" role="alert">
@@ -402,22 +453,22 @@ export function CashSheetEntries({
               </div>
             ) : null}
             <label className="block space-y-1">What is it?
-              <select name="category" className="w-full" defaultValue="other">
+              <select name="category" className="w-full" defaultValue="other" autoComplete="off">
                 {SHEET_ENTRY_CATEGORIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
             <div className="grid grid-cols-2 gap-3">
               <label className="block space-y-1">Amount
-                <input name="amount" type="number" step="0.01" required className="w-full" />
+                <input name="amount" type="number" step="0.01" required className="w-full" autoComplete="off" />
               </label>
               <label className="block space-y-1">Paid by
-                <select name="payment_method" className="w-full" defaultValue="cash">
+                <select name="payment_method" className="w-full" defaultValue="cash" autoComplete="off">
                   {SHEET_ENTRY_METHODS.map((method) => <option key={method} value={method}>{plain(method)}</option>)}
                 </select>
               </label>
             </div>
             <label className="block space-y-1">Note (optional)
-              <input name="description" className="w-full" />
+              <input name="description" className="w-full" autoComplete="off" />
             </label>
             <button className="btn-primary w-full" type="submit" disabled={saving || Boolean(held)}>{saving ? 'Saving…' : 'Save entry'}</button>
             {canRetry && !saving && !held ? (

@@ -25,6 +25,7 @@ export function parseLedgerPatchBody(text: string): { ok: true; body: LedgerPatc
   if (value.action !== 'replace') return { ok: false, status: 400, error: 'action must be "replace".' };
   const clientRequestId = typeof value.client_request_id === 'string' ? value.client_request_id.trim() : '';
   if (!clientRequestId || clientRequestId.length > 200) return { ok: false, status: 400, error: 'client_request_id of the earlier entry is required.' };
+  if (clientRequestId.endsWith(':replace')) return { ok: false, status: 400, error: 'A replacement cannot be replaced again. Correct it with an adjustment.' };
   const entry = value.entry;
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return { ok: false, status: 400, error: 'entry (the corrected entry) is required.' };
   return { ok: true, body: { action: 'replace', hotelId, clientRequestId, entry: entry as Record<string, unknown> } };

@@ -1,13 +1,15 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { replaceHeldSheetEntry, sendHeldSheetEntry, sheetEntryPayload, sheetEntryStillQueued, sheetFormStillSent, sheetHeldEntry, sheetWaitingCount, syncSheetQueue, saveSheetEntryWithQueue, fillSheetCopy } from './cash-sheet.ts';
+import { replaceHeldSheetEntry, restoreSheetLink, sendHeldSheetEntry, sheetEntryPayload, sheetEntryStillQueued, sheetLinkKey, sheetQueueState, writeSheetLink, sheetFormStillSent, sheetHeldEntry, sheetWaitingCount, syncSheetQueue, saveSheetEntryWithQueue, fillSheetCopy } from './cash-sheet.ts';
 import { startSheetAutoSend } from './sheet-auto-send.ts';
 import { parseLedgerPatchBody } from './ledger-patch.ts';
-import { createMemoryStorage, readLedgerQueue, retryableLedgerEntries } from './ledger-entry-queue.ts';
+import { createMemoryStorage, readLedgerQueue, retryableLedgerEntries, upsertLedgerQueueItem } from './ledger-entry-queue.ts';
 import {
   createLedgerEntryOnce,
   createMemoryLedgerIdempotencyStore,
+  isServerOnlyLedgerRequestId,
   replaceLedgerEntryOnce,
+  SERVER_ONLY_REQUEST_ID_ERROR,
   replacementClientRequestId,
   retireLedgerRequest,
   LEDGER_REPLACED_ERROR,
@@ -431,5 +433,84 @@ describe('PR #35 82551cb follow-ups', () => {
     }
     const good = parseLedgerPatchBody(JSON.stringify({ action: 'replace', hotel_id: HOTEL, client_request_id: 'c1', entry: { amount: 560 } }));
     assert.equal(good.ok, true);
+  });
+});
+
+describe('PR #35 8ee58b4 follow-ups', () => {
+  it('item 1: the link survives a reload in sessionStorage; a refilled 560 is held, not auto-sent', async () => {
+    const server = fakeServer();
+    const queue = createMemoryStorage(); // localStorage, shared by tabs
+    const session = createMemoryStorage(); // this tab's sessionStorage, survives reload and back/forward
+    const item = await queue650(server, queue, 'down');
+    writeSheetLink(session, USER, HOTEL, { clientRequestId: item.clientRequestId, values: form('650') });
+
+    // Reload: memory is gone, the browser refilled 560.
+    const link = restoreSheetLink(session, queue, USER, HOTEL);
+    assert.equal(link?.clientRequestId, item.clientRequestId);
+    assert.equal(Number(link?.values.amount), 650, 'snapshot of what was sent');
+    const held = sheetHeldEntry({ formValues: form('560'), queued: retryableLedgerEntries(queue, USER), hotelId: HOTEL, outletId: null, sourceId: link?.clientRequestId });
+    assert.equal(held?.clientRequestId, item.clientRequestId);
+    const synced = await syncSheetQueue({ storage: queue, userId: USER, skipIds: [held!.clientRequestId], fetchImpl: server.fetchImpl, timeoutMs: 20 });
+    assert.deepEqual(synced.synced, []);
+    assert.equal(server.state.posts, 0, 'no auto-send while the restored form differs');
+
+    // Another user or hotel never sees this link.
+    assert.equal(restoreSheetLink(session, queue, 'user-2', HOTEL), null);
+    assert.equal(restoreSheetLink(session, queue, USER, 'd0000000-0000-4000-8000-000000000002'), null);
+
+    // Once the entry leaves the queue, the link is dropped on the next load.
+    await sendHeldSheetEntry(item, options(queue, server.fetchImpl));
+    assert.equal(restoreSheetLink(session, queue, USER, HOTEL), null);
+    assert.equal(session.getItem(sheetLinkKey(USER, HOTEL)), null);
+    writeSheetLink(session, USER, HOTEL, { clientRequestId: 'x', values: {} });
+    writeSheetLink(session, USER, HOTEL, null);
+    assert.equal(session.getItem(sheetLinkKey(USER, HOTEL)), null, 'clearing the link removes it');
+  });
+
+  it('item 2: POST refuses a client_request_id ending in ":replace"; only PATCH replace builds those', async () => {
+    assert.equal(isServerOnlyLedgerRequestId('abc:replace'), true);
+    assert.equal(isServerOnlyLedgerRequestId('abc'), false);
+    assert.equal(isServerOnlyLedgerRequestId(null), false);
+    const server = fakeServer();
+    const item = await queue650(server, createMemoryStorage(), 'down');
+    const posted = await server.handle('POST', { ...item.payload, client_request_id: `${item.clientRequestId}:replace`, amount: 999 });
+    assert.equal(posted.status, 400);
+    assert.equal((posted.json as { error: string }).error, SERVER_ONLY_REQUEST_ID_ERROR);
+    assert.equal(server.rows.length, 0);
+    const patched = await server.handle('PATCH', { action: 'replace', hotel_id: HOTEL, client_request_id: `${item.clientRequestId}:replace`, entry: { amount: 1 } });
+    assert.equal(patched.status, 400, 'a replacement cannot be replaced again');
+    // The server-built replacement still works.
+    const replaced = await server.handle('PATCH', { action: 'replace', hotel_id: HOTEL, client_request_id: item.clientRequestId, entry: { amount: 560 } });
+    assert.equal((replaced.json as { status: string }).status, 'replaced');
+    assert.deepEqual(server.rows.map((row) => row.amount), [560]);
+  });
+
+  it('item 3: Replace while another tab is sending the entry: no request, choice and queue kept, then resolves', async () => {
+    const server = fakeServer();
+    const queue = createMemoryStorage();
+    const item = await queue650(server, queue, 'down');
+    // The other tab marks it 'syncing' in the shared queue while its request is in flight.
+    upsertLedgerQueueItem(queue, USER, { ...readLedgerQueue(queue, USER)[0], status: 'syncing' });
+    assert.equal(sheetQueueState(queue, USER, item.clientRequestId), 'sending');
+    assert.deepEqual(await replaceHeldSheetEntry(item, form('560'), options(queue, server.fetchImpl)), { kind: 'in_flight' });
+    assert.equal(server.state.patches, 0);
+    assert.equal(readLedgerQueue(queue, USER).length, 1, 'nothing removed');
+    assert.equal(sheetEntryStillQueued(queue, USER, item.clientRequestId), false);
+
+    // Final state A: the other tab's send failed, the entry is back in the queue: Replace works.
+    upsertLedgerQueueItem(queue, USER, { ...readLedgerQueue(queue, USER)[0], status: 'failed' });
+    assert.equal(sheetQueueState(queue, USER, item.clientRequestId), 'queued');
+    assert.deepEqual(await replaceHeldSheetEntry(item, form('560'), options(queue, server.fetchImpl)), { kind: 'replaced', amount: 560 });
+
+    // Final state B: the other tab's send finished (entry gone): resolved as handled elsewhere, nothing sent.
+    const server2 = fakeServer();
+    const queue2 = createMemoryStorage();
+    const item2 = await queue650(server2, queue2, 'down');
+    upsertLedgerQueueItem(queue2, USER, { ...readLedgerQueue(queue2, USER)[0], status: 'syncing' });
+    assert.equal((await replaceHeldSheetEntry(item2, form('560'), options(queue2, server2.fetchImpl))).kind, 'in_flight');
+    await sendHeldSheetEntry({ ...item2, status: 'pending' }, options(queue2, server2.fetchImpl)); // the other tab completes
+    assert.equal(sheetQueueState(queue2, USER, item2.clientRequestId), 'gone');
+    assert.deepEqual(await replaceHeldSheetEntry(item2, form('560'), options(queue2, server2.fetchImpl)), { kind: 'gone' });
+    assert.deepEqual(server2.rows.map((row) => row.amount), [650]);
   });
 });

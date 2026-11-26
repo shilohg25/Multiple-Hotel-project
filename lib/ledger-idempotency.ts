@@ -251,7 +251,12 @@ export async function createLedgerEntryOnce(input: {
   now?: () => Date;
   staleMs?: number;
   randomUUID?: () => string;
+  /** Set only by replaceLedgerEntryOnce, for the id it derived itself. */
+  serverBuiltId?: boolean;
 }): Promise<CreateLedgerOnceResult> {
+  if (!input.serverBuiltId && isServerOnlyLedgerRequestId(input.clientRequestId)) {
+    return { ok: false, error: SERVER_ONLY_REQUEST_ID_ERROR, status: 400 };
+  }
   if (!input.clientRequestId) {
     return { ok: true, entry: await input.createEntry(), duplicate: false };
   }
@@ -429,9 +434,17 @@ export async function retireLedgerRequest(input: {
   return { status: 'busy' };
 }
 
+export const REPLACEMENT_ID_SUFFIX = ':replace';
+export const SERVER_ONLY_REQUEST_ID_ERROR = 'This request id is reserved for replacements made by the server.';
+
+/** Ids ending in ':replace' are built only by the server (PATCH replace). POST refuses them with 400. */
+export function isServerOnlyLedgerRequestId(clientRequestId: string | null | undefined) {
+  return typeof clientRequestId === 'string' && clientRequestId.trim().endsWith(REPLACEMENT_ID_SUFFIX);
+}
+
 /** The one replacement id for a retired request. Derived on the server, so every tab and retry lands on the same row. */
 export function replacementClientRequestId(retiredClientRequestId: string) {
-  return `${retiredClientRequestId}:replace`;
+  return `${retiredClientRequestId}${REPLACEMENT_ID_SUFFIX}`;
 }
 
 export type ReplaceLedgerResult =
@@ -471,7 +484,8 @@ export async function replaceLedgerEntryOnce(input: {
     getEntry: input.getEntry,
     sleep: input.sleep,
     now: input.now,
-    staleMs: input.staleMs
+    staleMs: input.staleMs,
+    serverBuiltId: true
   });
   if (!created.ok) return { status: 'error', error: created.error, httpStatus: created.status };
   return { status: created.duplicate ? 'replacement_exists' : 'replaced', entry: created.entry };

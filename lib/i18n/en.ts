@@ -35,6 +35,7 @@ export const en: MessageCatalog = {
     'close.heldReplace': 'Replace with {new}',
     'close.heldAlreadySaved': '{old} was already saved. Correct it with an adjustment.',
     'close.heldReplacementExists': '{amount} was already saved as the replacement. Correct it with an adjustment.',
+    'close.heldInFlight': 'That entry is being sent from another tab. Check again in a moment.',
     'close.heldGone': 'This entry was already sent or replaced in another tab. Nothing more was saved.',
     'close.entrySaved': '{amount} saved.',
     'help.title': 'How to',
