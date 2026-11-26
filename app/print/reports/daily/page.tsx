@@ -40,7 +40,7 @@ export default async function DailyReportPrintPage({ searchParams }: { searchPar
           <Row label="Expected cash" value={currency(report.totals.expectedCash, report.hotel.default_currency)} />
           <Row label="Actual ending cash" value={currency(report.totals.actualEndingCash, report.hotel.default_currency)} />
           <Row label="Variance" value={currency(report.totals.variance, report.hotel.default_currency)} />
-          <Row label="Ending cash counted from" value={endingCashSourceLabel(report.totals.endingCashSource)} />
+          {endingCashSourceLabel(report.totals.endingCashSource) ? <Row label="Ending cash counted from" value={endingCashSourceLabel(report.totals.endingCashSource) || ''} /> : null}
           <Row label="Remittance due" value={currency(report.totals.remittanceDue, report.hotel.default_currency)} />
           <Row label="Remittance paid" value={currency(report.totals.remittancePaid, report.hotel.default_currency)} />
           <Row label="To be billed" value={currency(report.totals.toBeBilled, report.hotel.default_currency)} />

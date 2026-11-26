@@ -181,10 +181,10 @@ export async function getDailyReportData(staff: StaffContext, input: { hotelId?:
       .select('*')
       .eq('hotel_id', hotel.id)
       .eq('count_date', date),
-    // Saved Daily cash sheets for the date (hotel close and any outlet closes). Read only.
+    // Saved closes for the date (hotel and outlets). Only those saved on the Daily cash sheet, after the cutover, are used. Read only.
     supabaseAdmin
       .from('day_closes')
-      .select('outlet_id, drawer_counted, bank_deposit')
+      .select('outlet_id, created_at, rvf_float, float_counted, drawer_counted, bank_deposit')
       .eq('hotel_id', hotel.id)
       .eq('business_date', date),
     supabaseAdmin
