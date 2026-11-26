@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { CASH_DENOMINATIONS, closeFiguresFromCounts, figuresFromLedger, resolveReturnToFund, summarizeClose, type LedgerLike } from './day-close.ts';
-import { SHEET_ENTRY_CATEGORIES, sheetBaseFigures, sheetCloseSummary, sheetInitialReturnToFund, splitSheetLedger, type SavedCloseRow, type SheetLedgerRow } from './cash-sheet.ts';
+import { SHEET_ENTRY_CATEGORIES, sheetBaseFigures, sheetCloseSummary, sheetInitialReturnToFund, sheetReturnToFund, splitSheetLedger, type SavedCloseRow, type SheetLedgerRow } from './cash-sheet.ts';
 
 /*
  * FROZEN copy of the close path at origin/main f392e0c (lib/day-close.ts, app/api/day-closes/route.ts,
@@ -258,5 +258,65 @@ describe('cash sheet display split', () => {
     assert.ok(!values.includes('room_payment'));
     assert.ok(values.includes('expense'));
     assert.ok(values.includes('collectible'));
+  });
+});
+
+describe('return to fund after typing on the same sheet (no reload)', () => {
+  it('an untouched default follows a newly added expense', () => {
+    const empty = sheetBaseFigures([], 10000, null);
+    assert.equal(sheetReturnToFund(null, empty, null), 0);
+    const afterExpense = sheetBaseFigures([typed('expense', 750)], 10000, null);
+    assert.equal(sheetReturnToFund(null, afterExpense, null), 750);
+  });
+
+  it('a value staff typed is kept when an expense is added', () => {
+    const afterExpense = sheetBaseFigures([typed('expense', 750)], 10000, null);
+    assert.equal(sheetReturnToFund(null, afterExpense, 300), 300);
+    assert.equal(sheetReturnToFund(null, afterExpense, 0), 0);
+  });
+
+  it("a saved close's 0 is kept when an expense is added", () => {
+    const saved: SavedCloseRow = { float_counted: 10000, drawer_counted: 0, bank_deposit: 0, return_to_fund: 0 };
+    const afterExpense = sheetBaseFigures([typed('expense', 750)], 10000, saved);
+    assert.equal(sheetReturnToFund(saved, afterExpense, null), 0);
+  });
+
+  it('a saved close without a return to fund follows the expenses, like the old page', () => {
+    const saved: SavedCloseRow = { float_counted: 10000, drawer_counted: 0, bank_deposit: 0, return_to_fund: null };
+    const afterExpense = sheetBaseFigures([typed('expense', 750)], 10000, saved);
+    assert.equal(sheetReturnToFund(saved, afterExpense, null), 750);
+  });
+
+  it('open empty, type counts, add an expense, save: same as the old fresh-load path', () => {
+    const counts = { floatCounts: { 1000: 10 }, drawerCounts: { 1000: 2, 500: 1 } };
+    const rowsBefore: SheetLedgerRow[] = [pay(3200, 'cash')];
+    const rowsAfter: SheetLedgerRow[] = [...rowsBefore, typed('expense', 700)];
+
+    // New sheet: one mount. Staff type counts first (state kept), then add an expense (figures refresh).
+    const returnToFundEdit: number | null = null; // staff never touch Return to fund
+    const firstBase = sheetBaseFigures(rowsBefore, 10000, null);
+    assert.equal(sheetReturnToFund(null, firstBase, returnToFundEdit), 0);
+    const refreshed = sheetBaseFigures(rowsAfter, 10000, null);
+    const rtf = sheetReturnToFund(null, refreshed, returnToFundEdit);
+    const preview = sheetCloseSummary(refreshed, { ...counts, bankDeposit: 0, returnToFund: rtf });
+    const newPayload: Payload = {
+      bank_deposit: 0,
+      return_to_fund: rtf,
+      float_counts: CASH_DENOMINATIONS.map((denomination) => ({ denomination, quantity: (counts.floatCounts as Record<number, number>)[denomination] || 0 })),
+      drawer_counts: CASH_DENOMINATIONS.map((denomination) => ({ denomination, quantity: (counts.drawerCounts as Record<number, number>)[denomination] || 0 }))
+    };
+
+    // Old flow: expense typed on /sales, then Close the day opened fresh with the same counts.
+    const old = legacy.pageAndForm(rowsAfter, 10000, null, counts);
+    const oldPayload: Payload = { ...newPayload, return_to_fund: old.startRtf };
+    const oldSave = legacy.serverSave(rowsAfter, 10000, oldPayload);
+    const newSave = legacy.serverSave(rowsAfter, 10000, newPayload);
+
+    assert.equal(rtf, 700);
+    assert.equal(rtf, old.startRtf);
+    assert.deepEqual(newPayload, oldPayload);
+    for (const key of summaryKeys) assert.equal(preview[key], old.preview[key], `preview ${key}`);
+    for (const key of storedKeys) assert.equal(newSave.record[key], oldSave.record[key], `stored ${key}`);
+    assert.equal(newSave.summary.status, 'balanced');
   });
 });

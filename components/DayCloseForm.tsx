@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CASH_DENOMINATIONS, countMapForBucket, formNumberValue, type CloseFigures, type SavedCountRow } from '@/lib/day-close';
-import { sheetCloseSummary, sheetInitialReturnToFund } from '@/lib/cash-sheet';
+import { sheetCloseSummary, sheetReturnToFund } from '@/lib/cash-sheet';
 import { currency } from '@/lib/money';
 
 type CountMap = Record<number, number>;
@@ -38,7 +38,11 @@ export function DayCloseForm({
   const [message, setMessage] = useState('');
   const [unlockReason, setUnlockReason] = useState('');
   const [bankDeposit, setBankDeposit] = useState(Number(existing?.bank_deposit || 0));
-  const [returnToFund, setReturnToFund] = useState(() => sheetInitialReturnToFund(existing, figures));
+  // null = staff have not touched Return to fund. Then it follows the current default (saved close
+  // value, or the expenses from the ledger), so an expense typed above updates it after the refresh.
+  // Counts and the bank deposit are only ever typed by staff, so keeping them across a refresh is right.
+  const [returnToFundEdit, setReturnToFundEdit] = useState<number | null>(null);
+  const returnToFund = sheetReturnToFund(existing, figures, returnToFundEdit);
   const [saving, setSaving] = useState(false);
   // Same helpers and order as POST /api/day-closes, so the preview equals what gets stored.
   const preview = useMemo(
@@ -129,7 +133,7 @@ export function DayCloseForm({
 
       <div className="grid gap-3 md:grid-cols-2">
         <label className="space-y-1">Return to fund
-          <input name="return_to_fund" type="number" min="0" step="0.01" value={formNumberValue(returnToFund)} onChange={(event) => setReturnToFund(Number(event.target.value || 0))} className="w-full" disabled={locked} />
+          <input name="return_to_fund" type="number" min="0" step="0.01" value={formNumberValue(returnToFund)} onChange={(event) => setReturnToFundEdit(Number(event.target.value || 0))} className="w-full" disabled={locked} />
         </label>
         <label className="space-y-1">Already deposited to the bank
           <input name="bank_deposit" type="number" min="0" step="0.01" value={bankDeposit || ''} onChange={(event) => setBankDeposit(Number(event.target.value || 0))} className="w-full" disabled={locked} />

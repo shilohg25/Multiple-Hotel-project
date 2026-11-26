@@ -90,6 +90,18 @@ export function sheetInitialReturnToFund(saved: SavedCloseRow, base: CloseFigure
   return resolveReturnToFund(provided === null || provided === undefined ? provided : Number(provided), base.returnToFund);
 }
 
+/**
+ * Return to fund the sheet uses right now.
+ * - Staff typed a value: keep it.
+ * - A saved close has a value (even 0): keep it.
+ * - Otherwise follow the current default from the ledger figures (the expenses), so an expense
+ *   typed on the same sheet updates it, exactly like the old Close the day page did on a fresh load.
+ */
+export function sheetReturnToFund(saved: SavedCloseRow, base: CloseFigures, edited: number | null): number {
+  if (edited !== null) return edited;
+  return sheetInitialReturnToFund(saved, base);
+}
+
 /** Live preview of the one count. Same helpers, same order as POST /api/day-closes. */
 export function sheetCloseSummary(
   base: CloseFigures,
