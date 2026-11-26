@@ -77,9 +77,16 @@ describe('daily report cutover details', () => {
     assert.equal(sheetCountedCash([close({ float: 10000, drawer: 500, created: CUTOVER })], { cutover: CUTOVER }), 500);
   });
 
-  it('the placeholder cutover keeps every close on main behaviour until it is set', () => {
-    assert.ok(CASH_SHEET_CUTOVER.startsWith('9999-'));
-    const result = reportEndingCash({ closes: [close({ float: 10000, drawer: 1000, created: AFTER })], cashCounts: [], expectedCash: 1000 });
+  it('the exported cutover is a valid time and the default argument uses it', () => {
+    assert.ok(Number.isFinite(Date.parse(CASH_SHEET_CUTOVER)));
+    const at = new Date(Date.parse(CASH_SHEET_CUTOVER)).toISOString();
+    const before = new Date(Date.parse(CASH_SHEET_CUTOVER) - 1000).toISOString();
+    assert.equal(sheetCountedCash([close({ float: 10000, drawer: 500, created: at })]), 500);
+    assert.equal(sheetCountedCash([close({ float: 10000, drawer: 500, created: before })]), null);
+  });
+
+  it('a close one second before an explicit cutover keeps main figures', () => {
+    const result = reportEndingCash({ closes: [close({ float: 10000, drawer: 1000, created: '2026-11-26T21:59:59.000Z' })], cashCounts: [], expectedCash: 1000, cutover: CUTOVER });
     assert.deepEqual({ a: result.actualEndingCash, v: result.variance, s: result.source }, { a: 0, v: -1000, s: 'none' });
   });
 

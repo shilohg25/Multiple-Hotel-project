@@ -13,10 +13,10 @@
  */
 
 /**
- * PLACEHOLDER. Set to the PR #35 merge time (ISO, UTC) just before merging.
- * While it is in the far future, no close qualifies and the report behaves exactly like main.
+ * When the Daily cash sheet went live: the planned PR #35 merge, 2026-11-26 about 12:00 PM MST (19:00 UTC).
+ * Closes saved before this keep main's report figures.
  */
-export const CASH_SHEET_CUTOVER = '9999-12-31T00:00:00.000Z';
+export const CASH_SHEET_CUTOVER = '2026-11-26T19:00:00.000Z';
 
 export type ReportCloseRow = {
   outlet_id?: string | null;

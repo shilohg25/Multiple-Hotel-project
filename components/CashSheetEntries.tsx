@@ -1,8 +1,17 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { nextSheetEntryAttempt, saveSheetEntry, sheetEntryBody, sheetEntryPayload, SHEET_ENTRY_CATEGORIES, SHEET_ENTRY_METHODS, type SheetEntryAttempt } from '@/lib/cash-sheet';
+import { saveSheetEntryWithQueue, sheetEntryPayload, sheetRetrySource, SHEET_ENTRY_CATEGORIES, SHEET_ENTRY_METHODS, type SheetPendingEntry } from '@/lib/cash-sheet';
+import {
+  LEDGER_NEEDS_ATTENTION_ERROR,
+  needsAttentionLedgerEntries,
+  pendingLedgerEntries,
+  queuedLedgerHint,
+  resetStaleSyncingLedgerEntries,
+  retryableLedgerEntries,
+  syncPendingLedgerEntries
+} from '@/lib/ledger-entry-queue';
 import { currency } from '@/lib/money';
 
 type Row = {
@@ -26,7 +35,8 @@ export function CashSheetEntries({
   currencyCode,
   rows,
   total,
-  locked
+  locked,
+  userId
 }: {
   hotelId: string;
   outletId: string | null;
@@ -35,36 +45,57 @@ export function CashSheetEntries({
   rows: Row[];
   total: number;
   locked: boolean;
+  userId: string;
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
 
-  // The last try that failed. Retry rebuilds the entry from the form as it is now and keeps the
-  // request id only when nothing was edited (same rule as PR #33).
-  const [failed, setFailed] = useState<SheetEntryAttempt | null>(null);
+  // The entry that failed last. It stays in #33's device queue (hotel_ops_ledger_entry_queue:<userId>).
+  // Retry reads the form as it is now; the id is kept only when nothing was edited.
+  const pendingRef = useRef<SheetPendingEntry>(null);
+  const [canRetry, setCanRetry] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
-  async function submit(formElement: HTMLFormElement) {
+  function readForm(formElement: HTMLFormElement | null) {
+    if (!formElement) return { amount: '' } as Record<string, unknown>;
     const form = new FormData(formElement);
-    const payload = sheetEntryPayload(
+    return sheetEntryPayload(
       { category: form.get('category'), description: form.get('description'), amount: form.get('amount'), payment_method: form.get('payment_method') },
       { hotelId, businessDate, outletId }
     );
-    const attempt = nextSheetEntryAttempt(failed, payload, () => crypto.randomUUID());
+  }
+
+  function clearPending() {
+    pendingRef.current = null;
+    setCanRetry(false);
+  }
+
+  async function submit() {
+    const source = sheetRetrySource({
+      formValues: readForm(formRef.current),
+      pending: pendingRef.current,
+      queued: retryableLedgerEntries(window.localStorage, userId)
+    });
+    if (!source) return;
     setSaving(true);
     setMessage('');
     try {
-      const result = await saveSheetEntry(sheetEntryBody(attempt));
-      if (!result.ok) {
-        setMessage(result.error);
-        setFailed(result.canRetry ? attempt : null);
+      const result = await saveSheetEntryWithQueue(source, { userId, hotelId, outletId, storage: window.localStorage });
+      if (result.ok) {
+        clearPending();
+        formRef.current?.reset();
+        setMessage(result.duplicate ? 'Entry already saved.' : 'Entry saved.');
+        router.refresh();
         return;
       }
-      setFailed(null);
-      formElement.reset();
-      setMessage('Entry saved.');
-      router.refresh();
+      const keep = result.retryable || Boolean(result.needsAttention);
+      pendingRef.current = keep ? { clientRequestId: result.clientRequestId, payload: source.values } : null;
+      setCanRetry(keep);
+      setMessage(queuedLedgerHint(result.error, result.retryable, Boolean(result.needsAttention)));
+    } catch (error) {
+      setCanRetry(true);
+      setMessage(queuedLedgerHint(error instanceof Error ? error.message : "Couldn't save this entry. Check your connection and try again.", true));
     } finally {
       setSaving(false);
     }
@@ -72,8 +103,52 @@ export function CashSheetEntries({
 
   async function addEntry(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await submit(event.currentTarget);
+    await submit();
   }
+
+  // Same auto-send as #33: on load and when the device comes back online, send queued entries.
+  useEffect(() => {
+    let cancelled = false;
+    function showAttention() {
+      const attention = needsAttentionLedgerEntries(window.localStorage, userId);
+      if (!attention.length) return;
+      pendingRef.current = { clientRequestId: attention[0].clientRequestId, payload: attention[0].payload };
+      setCanRetry(true);
+      setMessage(queuedLedgerHint(attention[0].error || LEDGER_NEEDS_ATTENTION_ERROR, false, true));
+    }
+    async function flush() {
+      if (!userId) return;
+      resetStaleSyncingLedgerEntries(window.localStorage, userId);
+      showAttention();
+      if (!navigator.onLine || !pendingLedgerEntries(window.localStorage, userId).length) return;
+      setSaving(true);
+      try {
+        const result = await syncPendingLedgerEntries({ storage: window.localStorage, userId, isOnline: () => navigator.onLine });
+        if (cancelled) return;
+        if (result.synced > 0) {
+          clearPending();
+          setMessage(result.synced === 1 ? 'Entry saved.' : `${result.synced} entries saved.`);
+          router.refresh();
+        }
+        if (result.failed > 0 && result.lastError) {
+          setCanRetry(true);
+          setMessage(queuedLedgerHint(result.lastError, true));
+        }
+        showAttention();
+      } catch {
+        // Keep the form as it is if a queued entry cannot be sent yet.
+      } finally {
+        if (!cancelled) setSaving(false);
+      }
+    }
+    const onOnline = () => { void flush(); };
+    void flush();
+    window.addEventListener('online', onOnline);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('online', onOnline);
+    };
+  }, [router, userId, hotelId]);
 
   return (
     <section className="card p-5">
@@ -132,8 +207,8 @@ export function CashSheetEntries({
               <input name="description" className="w-full" />
             </label>
             <button className="btn-primary w-full" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save entry'}</button>
-            {failed && !saving ? (
-              <button className="btn-secondary w-full" type="button" onClick={() => { if (formRef.current) void submit(formRef.current); }}>Retry</button>
+            {canRetry && !saving ? (
+              <button className="btn-secondary w-full" type="button" onClick={() => void submit()}>Retry</button>
             ) : null}
           </form>
         )}

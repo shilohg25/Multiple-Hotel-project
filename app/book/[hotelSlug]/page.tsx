@@ -3,20 +3,18 @@ import { businessToday } from '@/lib/date';
 import { formatHotelTime } from '@/lib/stay-hours';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { PublicBookingForm } from '@/components/PublicBookingForm';
+import { publicHotelNotFound, excludeTestHotelNames } from '@/lib/test-hotel';
 import type { Hotel, Room } from '@/types/app';
 
 export const dynamic = 'force-dynamic';
 
 export default async function PublicBookingPage({ params }: { params: Promise<{ hotelSlug: string }> }) {
   const { hotelSlug } = await params;
-  const { data: hotelRaw, error } = await supabaseAdmin
-    .from('hotels')
-    .select('*')
-    .eq('slug', hotelSlug)
-    .eq('active', true)
-    .single();
+  const { data: hotelRaw, error } = await excludeTestHotelNames(
+    supabaseAdmin.from('hotels').select('*').eq('slug', hotelSlug).eq('active', true)
+  ).maybeSingle();
 
-  if (error || !hotelRaw) notFound();
+  if (error || publicHotelNotFound(hotelRaw)) notFound();
   const hotel = hotelRaw as Hotel;
   const { data: roomsRaw } = await supabaseAdmin
     .from('rooms')

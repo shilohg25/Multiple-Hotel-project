@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { CASH_DENOMINATIONS, closeFiguresFromCounts, figuresFromLedger, resolveReturnToFund, summarizeClose, type LedgerLike } from './day-close.ts';
-import { nextSheetEntryAttempt, sheetEntryBody, sheetEntryPayload, saveSheetEntry, SHEET_ENTRY_OFFLINE_MESSAGE, SHEET_ENTRY_TIMEOUT_MESSAGE, SHEET_ENTRY_CATEGORIES, sheetBaseFigures, sheetCloseSummary, sheetInitialReturnToFund, sheetReturnToFund, splitSheetLedger, type SavedCloseRow, type SheetLedgerRow } from './cash-sheet.ts';
+import { saveSheetEntryWithQueue, sheetEntryPayload, sheetRetrySource, SHEET_ENTRY_CATEGORIES, sheetBaseFigures, sheetCloseSummary, sheetInitialReturnToFund, sheetReturnToFund, splitSheetLedger, type SavedCloseRow, type SheetLedgerRow } from './cash-sheet.ts';
+import { createMemoryStorage, LEDGER_TIMEOUT_ERROR, LEDGER_NETWORK_ERROR, ledgerQueueStorageKey, readLedgerQueue, retryableLedgerEntries } from './ledger-entry-queue.ts';
 
 /*
  * FROZEN copy of the close path at origin/main f392e0c (lib/day-close.ts, app/api/day-closes/route.ts,
@@ -321,94 +322,118 @@ describe('return to fund after typing on the same sheet (no reload)', () => {
   });
 });
 
-describe('sheet Save entry never hangs', () => {
-  const abortable = (makeResponse?: () => Response): typeof fetch => ((_input, init) => new Promise((resolve, reject) => {
-    const signal = init?.signal;
-    signal?.addEventListener('abort', () => { const error = new Error('aborted'); error.name = 'AbortError'; reject(error); }, { once: true });
-    if (makeResponse) resolve(makeResponse());
-  })) as typeof fetch;
-
-  it('times out when the server never answers, with Retry', async () => {
-    const started = Date.now();
-    const result = await saveSheetEntry({ amount: 10 }, { fetchImpl: abortable(), timeoutMs: 50 });
-    assert.deepEqual(result, { ok: false, error: SHEET_ENTRY_TIMEOUT_MESSAGE, canRetry: true });
-    assert.ok(Date.now() - started < 2000);
-  });
-
-  it('times out when headers arrive but the body stalls', async () => {
-    const stalledBody = () => new Response(new ReadableStream({ start() { /* never sends */ } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    const result = await saveSheetEntry({ amount: 10 }, { fetchImpl: abortable(stalledBody), timeoutMs: 50 });
-    assert.deepEqual(result, { ok: false, error: SHEET_ENTRY_TIMEOUT_MESSAGE, canRetry: true });
-  });
-
-  it('reports no internet with Retry when fetch fails', async () => {
-    const offline = (() => Promise.reject(new TypeError('Failed to fetch'))) as typeof fetch;
-    assert.deepEqual(await saveSheetEntry({ amount: 10 }, { fetchImpl: offline, timeoutMs: 50 }), { ok: false, error: SHEET_ENTRY_OFFLINE_MESSAGE, canRetry: true });
-  });
-
-  it('shows the server error without Retry for a refused entry (for example a locked day)', async () => {
-    const locked = (() => Promise.resolve(Response.json({ error: 'This day is locked.' }, { status: 409 }))) as typeof fetch;
-    assert.deepEqual(await saveSheetEntry({ amount: 10 }, { fetchImpl: locked }), { ok: false, error: 'This day is locked.', canRetry: false });
-  });
-
-  it('saves, and Retry sends the same client_request_id', async () => {
-    const sent: string[] = [];
-    let calls = 0;
-    const flaky = ((_input: RequestInfo | URL, init?: RequestInit) => {
-      sent.push(String(init?.body));
-      calls += 1;
-      return calls === 1 ? Promise.reject(new TypeError('Failed to fetch')) : Promise.resolve(Response.json({ entry: { id: 'x' } }));
-    }) as typeof fetch;
-    const body = { amount: 10, client_request_id: 'req-1' };
-    assert.equal((await saveSheetEntry(body, { fetchImpl: flaky })).ok, false);
-    assert.deepEqual(await saveSheetEntry(body, { fetchImpl: flaky }), { ok: true });
-    assert.equal(sent[0], sent[1]);
-    assert.ok(sent[1].includes('"client_request_id":"req-1"'));
-  });
-});
-
-describe('sheet Retry uses what is in the form now', () => {
+describe('sheet Save entry uses the #33 ledger queue', () => {
+  const USER = 'user-a';
   const scope = { hotelId: 'h1', businessDate: '2026-11-27', outletId: null };
+  const opts = (storage: ReturnType<typeof createMemoryStorage>, fetchImpl: typeof fetch, extra: Partial<{ timeoutMs: number; createId: () => string }> = {}) =>
+    ({ userId: USER, hotelId: 'h1', outletId: null, storage, fetchImpl, ...extra });
   const ids = () => { let n = 0; return () => `id-${++n}`; };
-
-  it('save 650, time out, edit to 560, Retry: 560 is sent with a new request id', async () => {
-    const newId = ids();
-    const first = nextSheetEntryAttempt(null, sheetEntryPayload({ category: 'other', amount: '650', payment_method: 'cash', description: 'TEST- snack' }, scope), newId);
-    const stalled = ((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
-      init?.signal?.addEventListener('abort', () => { const error = new Error('aborted'); error.name = 'AbortError'; reject(error); }, { once: true });
-    })) as typeof fetch;
-    const timedOut = await saveSheetEntry(sheetEntryBody(first), { fetchImpl: stalled, timeoutMs: 30 });
-    assert.equal(timedOut.ok, false);
-
+  const stalled = (() => ((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+    init?.signal?.addEventListener('abort', () => { const error = new Error('aborted'); error.name = 'AbortError'; reject(error); }, { once: true });
+  }))) as () => typeof fetch;
+  const recorder = (status = 200) => {
     const sent: Record<string, unknown>[] = [];
-    const ok = ((_input: RequestInfo | URL, init?: RequestInit) => { sent.push(JSON.parse(String(init?.body))); return Promise.resolve(Response.json({ entry: { id: 'x' } })); }) as typeof fetch;
-    const retry = nextSheetEntryAttempt(first, sheetEntryPayload({ category: 'other', amount: '560', payment_method: 'cash', description: 'TEST- snack' }, scope), newId);
-    assert.deepEqual(await saveSheetEntry(sheetEntryBody(retry), { fetchImpl: ok }), { ok: true });
-    assert.equal(sent[0].amount, '560');
-    assert.equal(sent[0].client_request_id, 'id-2');
-    assert.notEqual(retry.requestId, first.requestId);
+    const impl = ((_input: RequestInfo | URL, init?: RequestInit) => {
+      sent.push(JSON.parse(String(init?.body)));
+      return Promise.resolve(Response.json(status === 200 ? { entry: { id: 'x' } } : { error: 'This day is locked. A manager has to unlock it first.' }, { status }));
+    }) as typeof fetch;
+    return { sent, impl };
+  };
+  const form = (fields: Record<string, unknown>) => sheetEntryPayload(fields, scope);
+
+  it('a stalled server times out, the entry stays queued on this device under the user key', async () => {
+    const storage = createMemoryStorage();
+    const values = form({ category: 'other', amount: '650', payment_method: 'cash' });
+    const result = await saveSheetEntryWithQueue({ values, previousPayload: null }, opts(storage, stalled(), { timeoutMs: 30, createId: ids() }));
+    assert.equal(result.ok, false);
+    assert.equal(!result.ok && result.error, LEDGER_TIMEOUT_ERROR);
+    assert.equal(!result.ok && result.retryable, true);
+    assert.ok(storage.getItem(ledgerQueueStorageKey(USER)));
+    assert.equal(readLedgerQueue(storage, USER)[0].payload.amount, '650');
+    assert.equal(readLedgerQueue(storage, 'user-b').length, 0);
   });
 
-  it('Retry with nothing edited keeps the same request id', () => {
-    const newId = ids();
-    const fields = { category: 'expense', amount: '120', payment_method: 'cash', description: 'TEST- ice' };
-    const first = nextSheetEntryAttempt(null, sheetEntryPayload(fields, scope), newId);
-    const retry = nextSheetEntryAttempt(first, sheetEntryPayload({ ...fields }, scope), newId);
-    assert.equal(retry.requestId, first.requestId);
-    assert.deepEqual(sheetEntryBody(retry), sheetEntryBody(first));
+  it('a stalled response body also times out', async () => {
+    const storage = createMemoryStorage();
+    const stalledBody = ((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((resolve) => {
+      void init;
+      resolve(new Response(new ReadableStream({ start() { /* never sends */ } }), { status: 200 }));
+    })) as typeof fetch;
+    const result = await saveSheetEntryWithQueue({ values: form({ amount: '10' }), previousPayload: null }, opts(storage, stalledBody, { timeoutMs: 30 }));
+    assert.equal(!result.ok && result.error, LEDGER_TIMEOUT_ERROR);
   });
 
-  it('any edited field (category, method, note, amount) gets a new id', () => {
+  it('save 650, time out, edit to 560, Retry: 560 is sent with a new id and the 650 copy leaves the queue', async () => {
+    const storage = createMemoryStorage();
+    const createId = ids();
+    const first = form({ category: 'other', amount: '650', payment_method: 'cash', description: 'TEST- snack' });
+    const failed = await saveSheetEntryWithQueue({ values: first, previousPayload: null }, opts(storage, stalled(), { timeoutMs: 30, createId }));
+    assert.equal(failed.ok, false);
+    const pending = { clientRequestId: failed.clientRequestId, payload: first };
+
+    const edited = form({ category: 'other', amount: '560', payment_method: 'cash', description: 'TEST- snack' });
+    const source = sheetRetrySource({ formValues: edited, pending, queued: retryableLedgerEntries(storage, USER) });
+    assert.ok(source);
+    const ok = recorder();
+    const saved = await saveSheetEntryWithQueue(source!, opts(storage, ok.impl, { createId }));
+    assert.equal(saved.ok, true);
+    assert.equal(ok.sent.length, 1);
+    assert.equal(ok.sent[0].amount, '560');
+    assert.notEqual(ok.sent[0].client_request_id, failed.clientRequestId);
+    assert.equal(readLedgerQueue(storage, USER).length, 0);
+  });
+
+  it('Retry with nothing edited sends the same client_request_id', async () => {
+    const storage = createMemoryStorage();
+    const createId = ids();
+    const values = form({ category: 'expense', amount: '120', payment_method: 'cash', description: 'TEST- ice' });
+    const offline = (() => Promise.reject(new TypeError('Failed to fetch'))) as typeof fetch;
+    const failed = await saveSheetEntryWithQueue({ values, previousPayload: null }, opts(storage, offline, { createId }));
+    assert.equal(!failed.ok && failed.error, LEDGER_NETWORK_ERROR);
+    const source = sheetRetrySource({ formValues: form({ category: 'expense', amount: '120', payment_method: 'cash', description: 'TEST- ice' }), pending: { clientRequestId: failed.clientRequestId, payload: values }, queued: retryableLedgerEntries(storage, USER) });
+    const ok = recorder();
+    assert.equal((await saveSheetEntryWithQueue(source!, opts(storage, ok.impl, { createId }))).ok, true);
+    assert.equal(ok.sent[0].client_request_id, failed.clientRequestId);
+  });
+
+  it('any edited field (category, method, note, amount) gets a new id', async () => {
     const base = { category: 'other', amount: '100', payment_method: 'cash', description: 'a' };
     for (const change of [{ category: 'expense' }, { payment_method: 'gcash' }, { description: 'b' }, { amount: '100.5' }]) {
-      const newId = ids();
-      const first = nextSheetEntryAttempt(null, sheetEntryPayload(base, scope), newId);
-      const next = nextSheetEntryAttempt(first, sheetEntryPayload({ ...base, ...change }, scope), newId);
-      assert.notEqual(next.requestId, first.requestId, JSON.stringify(change));
+      const storage = createMemoryStorage();
+      const createId = ids();
+      const offline = (() => Promise.reject(new TypeError('Failed to fetch'))) as typeof fetch;
+      const failed = await saveSheetEntryWithQueue({ values: form(base), previousPayload: null }, opts(storage, offline, { createId }));
+      const source = sheetRetrySource({ formValues: form({ ...base, ...change }), pending: { clientRequestId: failed.clientRequestId, payload: form(base) }, queued: retryableLedgerEntries(storage, USER) });
+      const ok = recorder();
+      await saveSheetEntryWithQueue(source!, opts(storage, ok.impl, { createId }));
+      assert.notEqual(ok.sent[0].client_request_id, failed.clientRequestId, JSON.stringify(change));
     }
   });
 
-  it('builds the same entry fields as before (collectible flag, outlet, no id inside the payload)', () => {
+  it('an empty form after a reload retries the entry still queued on this device', async () => {
+    const storage = createMemoryStorage();
+    const offline = (() => Promise.reject(new TypeError('Failed to fetch'))) as typeof fetch;
+    const values = form({ category: 'other', amount: '75' });
+    const failed = await saveSheetEntryWithQueue({ values, previousPayload: null }, opts(storage, offline, { createId: ids() }));
+    const source = sheetRetrySource({ formValues: form({}), pending: null, queued: retryableLedgerEntries(storage, USER) });
+    assert.equal(source?.clientRequestId, failed.clientRequestId);
+    const ok = recorder();
+    assert.equal((await saveSheetEntryWithQueue(source!, opts(storage, ok.impl))).ok, true);
+    assert.equal(ok.sent[0].amount, '75');
+    assert.equal(ok.sent[0].client_request_id, failed.clientRequestId);
+    assert.equal(sheetRetrySource({ formValues: form({}), pending: null, queued: retryableLedgerEntries(storage, USER) }), null);
+  });
+
+  it('a locked day is not queued and offers no Retry', async () => {
+    const storage = createMemoryStorage();
+    const locked = recorder(409);
+    const result = await saveSheetEntryWithQueue({ values: form({ amount: '10' }), previousPayload: null }, opts(storage, locked.impl));
+    assert.equal(result.ok, false);
+    assert.equal(!result.ok && result.retryable, false);
+    assert.equal(readLedgerQueue(storage, USER).length, 0);
+  });
+
+  it('builds the same entry fields as before (collectible flag, outlet, no id inside the form values)', () => {
     const payload = sheetEntryPayload({ category: 'collectible', amount: '800', payment_method: 'cash', description: '' }, { ...scope, outletId: 'cafe' });
     assert.deepEqual(payload, { hotel_id: 'h1', entry_date: '2026-11-27', category: 'collectible', description: '', amount: '800', payment_method: 'cash', is_collectible: 'true', outlet_id: 'cafe' });
     assert.equal('client_request_id' in payload, false);

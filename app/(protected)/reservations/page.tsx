@@ -1,7 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { canCreateReservation } from '@/lib/access';
 import { requireStaff, canAccessHotel } from '@/lib/auth';
-import { monthRange } from '@/lib/date';
+import { businessToday, monthRange } from '@/lib/date';
 import { ReservationBoard } from '@/components/ReservationBoard';
 import type { Hotel, Reservation, Room } from '@/types/app';
 
@@ -27,20 +27,34 @@ export default async function ReservationsPage({ searchParams }: { searchParams?
     );
   }
 
-  const [{ data: roomsRaw }, { data: reservationsRaw }] = await Promise.all([
+  const boardSelect = '*, guests(*), rooms(id,name,room_type_name)';
+  const [{ data: roomsRaw }, { data: reservationsRaw }, { data: overdueRaw }] = await Promise.all([
     supabaseAdmin.from('rooms').select('*').eq('hotel_id', hotel.id).eq('active', true).order('sort_order').order('name'),
     supabaseAdmin
       .from('reservations')
-      .select('*, guests(*), rooms(id,name,room_type_name)')
+      .select(boardSelect)
       .eq('hotel_id', hotel.id)
       .lt('check_in', to)
       .gt('check_out', from)
       .not('status', 'in', '(cancelled,no_show)')
+      .order('check_in'),
+    supabaseAdmin
+      .from('reservations')
+      .select(boardSelect)
+      .eq('hotel_id', hotel.id)
+      .eq('status', 'checked_in')
+      .lte('check_out', from)
+      .lt('check_in', to)
       .order('check_in')
   ]);
 
   const rooms = (roomsRaw || []) as Room[];
-  const reservations = (reservationsRaw || []) as Reservation[];
+  const byId = new Map<string, Reservation>();
+  for (const reservation of [...((reservationsRaw || []) as Reservation[]), ...((overdueRaw || []) as Reservation[])]) {
+    byId.set(reservation.id, reservation);
+  }
+  const reservations = [...byId.values()];
+  const today = businessToday(hotel.timezone);
 
   return (
     <div className="space-y-6">
@@ -48,7 +62,7 @@ export default async function ReservationsPage({ searchParams }: { searchParams?
         <h1 className="text-3xl font-black tracking-tight">Reservations</h1>
         <p className="mt-1 text-slate-500">Gantt-style room board with drag-to-move scheduling.</p>
       </div>
-      <ReservationBoard hotel={hotel} hotels={hotels} rooms={rooms} reservations={reservations} from={from} to={to} canCreate={canCreateReservation(staff.profile.role)} />
+      <ReservationBoard hotel={hotel} hotels={hotels} rooms={rooms} reservations={reservations} from={from} to={to} today={today} canCreate={canCreateReservation(staff.profile.role)} />
     </div>
   );
 }

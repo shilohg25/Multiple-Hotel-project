@@ -12,6 +12,7 @@ export const en: MessageCatalog = {
     'today.arrivals': 'Arrivals',
     'today.inHouse': 'In house',
     'today.departures': 'Departures',
+    'today.overdue': 'Overdue',
     'today.checkIn': 'Check in',
     'today.charge': 'Add charge',
     'today.payment': 'Record payment',
@@ -24,6 +25,7 @@ export const en: MessageCatalog = {
     'today.noArrivals': 'No one is due to arrive.',
     'today.noInHouse': 'No guests are in house.',
     'today.noDepartures': 'No one is due to leave.',
+    'today.noOverdue': 'No overdue stays.',
     'close.title': 'Daily cash sheet',
     'close.lead': 'Room payments fill in by themselves. Type only the rest, then count the cash once. A manager locks it.',
     'close.back': 'Back to today',
@@ -37,12 +39,13 @@ export const en: MessageCatalog = {
   guides: {
     today: {
       title: 'How to use Today',
-      summary: 'Today is the first screen of the shift. It shows who is coming, who is here, and who is leaving.',
+      summary: 'Today is the first screen of the shift. It shows who is coming, who is here, who is leaving, and anyone still checked in after checkout.',
       steps: [
         'Check the property and the date at the top. For Sotera Café or Tago Resto, pick that outlet.',
         'Amber rooms are arrivals. Open the room and press Check in.',
         'Green rooms are guests already in the hotel.',
-        'Blue rooms leave today. Open the room and press Check out.'
+        'Blue rooms leave today. Open the room and press Check out.',
+        'Rose rooms are overdue: still checked in after their checkout date. Open the stay, collect any balance, and check them out.'
       ]
     },
     close: {

@@ -8,7 +8,7 @@ import {
   type CloseSummary,
   type LedgerLike
 } from './day-close.ts';
-import { DEFAULT_FETCH_TIMEOUT_MS, fetchJsonWithTimeout, isNetworkError, RequestTimeoutError } from './fetch-timeout.ts';
+import { saveLedgerEntryWithQueue, type LedgerQueueItem, type PostLedgerResult, type StorageLike } from './ledger-entry-queue.ts';
 
 /**
  * One daily cash sheet.
@@ -136,40 +136,6 @@ export const SHEET_ENTRY_CATEGORIES = [
 
 export const SHEET_ENTRY_METHODS = ['cash', 'gcash', 'maya', 'bank_transfer', 'card', 'cheque', 'online_gateway', 'booking_dot_com', 'trip_dot_com', 'other'] as const;
 
-export type SheetEntrySaveResult =
-  | { ok: true }
-  | { ok: false; error: string; canRetry: boolean };
-
-export const SHEET_ENTRY_TIMEOUT_MESSAGE = 'Could not save this entry: no answer from the server. What you typed is still in the form. Press Retry.';
-export const SHEET_ENTRY_OFFLINE_MESSAGE = 'No internet. This entry was not saved. What you typed is still in the form. Press Retry when you are back online.';
-
-/**
- * Save one typed sheet entry. The 12 s timeout covers the response body too, so the button can
- * never sit on "Saving…". The body carries a client_request_id that stays the same on Retry, so a
- * server with ledger dedupe (PR #33) never saves it twice; servers without it ignore the field.
- */
-export async function saveSheetEntry(
-  body: Record<string, unknown>,
-  options: { fetchImpl?: typeof fetch; timeoutMs?: number } = {}
-): Promise<SheetEntrySaveResult> {
-  try {
-    const { response, json } = await fetchJsonWithTimeout('/api/ledger', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    }, { timeoutMs: options.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS, fetchImpl: options.fetchImpl });
-    if (!response.ok) {
-      const error = (json as { error?: string } | null)?.error || 'Could not save this entry.';
-      return { ok: false, error, canRetry: response.status >= 500 };
-    }
-    return { ok: true };
-  } catch (error) {
-    if (error instanceof RequestTimeoutError) return { ok: false, error: SHEET_ENTRY_TIMEOUT_MESSAGE, canRetry: true };
-    if (isNetworkError(error)) return { ok: false, error: SHEET_ENTRY_OFFLINE_MESSAGE, canRetry: true };
-    return { ok: false, error: 'Could not save this entry.', canRetry: true };
-  }
-}
-
 /** The entry fields read from the sheet form, without any request id. */
 export function sheetEntryPayload(
   fields: { category?: unknown; description?: unknown; amount?: unknown; payment_method?: unknown },
@@ -189,26 +155,48 @@ export function sheetEntryPayload(
   return payload;
 }
 
-function stableJson(value: Record<string, unknown>): string {
-  return JSON.stringify(Object.keys(value).sort().map((key) => [key, value[key]]));
-}
-
-export type SheetEntryAttempt = { payload: Record<string, unknown>; requestId: string };
+export type SheetPendingEntry = { clientRequestId: string; payload: Record<string, unknown> } | null;
 
 /**
- * Request id for a save or Retry, built from what is in the form NOW (same rule as PR #33):
- * the same entry as the last failed try keeps its client_request_id, so a late server save is not
- * saved twice; an edited entry is a different entry and gets a new id.
+ * What Save entry / Retry sends, using PR #33's ledger queue (hotel_ops_ledger_entry_queue:<userId>).
+ * - The form has an amount: send the form as it is NOW. #33's resolveLedgerClientRequestId keeps the
+ *   pending client_request_id only when the entry is unchanged; an edited entry gets a new id and the
+ *   old queued copy is dropped.
+ * - The form is empty (for example after a reload) and an entry is still queued on this device:
+ *   send that queued entry with its own id.
  */
-export function nextSheetEntryAttempt(
-  previous: SheetEntryAttempt | null,
-  payload: Record<string, unknown>,
-  newId: () => string
-): SheetEntryAttempt {
-  if (previous && stableJson(previous.payload) === stableJson(payload)) return { payload, requestId: previous.requestId };
-  return { payload, requestId: newId() };
+export function sheetRetrySource(input: {
+  formValues: Record<string, unknown>;
+  pending: SheetPendingEntry;
+  queued: LedgerQueueItem[];
+}): { values: Record<string, unknown>; clientRequestId?: string; previousPayload: Record<string, unknown> | null } | null {
+  const amount = String(input.formValues.amount ?? '').trim();
+  if (amount) {
+    return {
+      values: input.formValues,
+      clientRequestId: input.pending?.clientRequestId,
+      previousPayload: input.pending?.payload ?? null
+    };
+  }
+  const item = input.queued.find((entry) => entry.clientRequestId === input.pending?.clientRequestId) || input.queued[0];
+  if (!item) return null;
+  return { values: item.payload, clientRequestId: item.clientRequestId, previousPayload: item.payload };
 }
 
-export function sheetEntryBody(attempt: SheetEntryAttempt): Record<string, unknown> {
-  return { ...attempt.payload, client_request_id: attempt.requestId };
+/** One sheet save through #33's queue. Same timeout, dedupe and queue rules as the old Daily sales form. */
+export function saveSheetEntryWithQueue(
+  source: { values: Record<string, unknown>; clientRequestId?: string; previousPayload: Record<string, unknown> | null },
+  options: { userId: string; hotelId: string; outletId?: string | null; storage: StorageLike; timeoutMs?: number; fetchImpl?: typeof fetch; createId?: () => string }
+): Promise<PostLedgerResult> {
+  return saveLedgerEntryWithQueue(source.values, {
+    clientRequestId: source.clientRequestId,
+    previousPayload: source.previousPayload,
+    outletId: options.outletId,
+    userId: options.userId,
+    hotelId: options.hotelId,
+    storage: options.storage,
+    timeoutMs: options.timeoutMs,
+    fetchImpl: options.fetchImpl,
+    createId: options.createId
+  });
 }

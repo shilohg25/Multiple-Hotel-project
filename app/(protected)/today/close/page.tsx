@@ -151,6 +151,7 @@ export default async function DailyCashSheetPage({ searchParams }: { searchParam
         rows={split.typed}
         total={split.typedTotal}
         locked={locked}
+        userId={staff.userId}
       />
 
       <DayCloseForm

@@ -39,7 +39,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const pastCheckIn = pastCheckInChangeRefusal(checkIn, String(reservation.check_in || ''), businessToday(hotelRaw?.timezone));
   if (pastCheckIn) return jsonError(pastCheckIn);
 
-  const conflict = await hasReservationConflict({ roomId, checkIn, checkOut, ignoreReservationId: id });
+  const conflict = await hasReservationConflict({ roomId, checkIn, checkOut, businessToday: businessToday(hotelRaw?.timezone), ignoreReservationId: id });
   if (conflict) return jsonError(ROOM_JUST_TAKEN);
 
   const { data, error: updateError } = await supabaseAdmin
