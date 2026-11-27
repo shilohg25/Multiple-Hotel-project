@@ -23,6 +23,7 @@ import { ReservationFolio } from '@/components/ReservationFolio';
 import { ReservationActions } from '@/components/ReservationActions';
 import { RateOverridePanel } from '@/components/RateOverridePanel';
 import { StayHoursPanel, type StayTimeRequest } from '@/components/StayHoursPanel';
+import { ScrollToHash } from '@/components/ScrollToHash';
 import type { ChannelRate, RateOverrideRequest } from '@/types/app';
 import { SavePrintSnapshotButton } from '@/components/offline/SavePrintSnapshotButton';
 import type { Guest, Hotel, Payment, Reservation, ReservationCharge, Room, ServiceItem } from '@/types/app';
@@ -102,6 +103,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
 
   return (
     <div className="space-y-6">
+      <ScrollToHash />
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
         <div>
           <Link href={`/reservations?hotel=${reservation.hotel_id}`} className="text-sm font-semibold text-slate-500 hover:text-slate-900">Back to board</Link>

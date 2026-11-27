@@ -9,6 +9,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { balanceDueLabel } from '@/lib/stay-cleanup';
 import { stayFolioView } from '@/lib/stay-total';
 import { roomStatus, staysOnDate, type DatedStay, type StaySlice } from '@/lib/today-board';
+import type { StayPickerStay } from '@/lib/stay-picker';
 import { BookingAlerts, type BookingAlert } from '@/components/BookingAlerts';
 import { StayActionLinks } from '@/components/StayActionLinks';
 import { HelpPanel } from '@/components/HelpPanel';
@@ -194,7 +195,20 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
     ...card,
     detail: [`Checkout was ${card.stay.check_out}`, overdueLines.get(card.stay.id)].filter(Boolean).join(' · ')
   }));
-  const actionable = [...overdue, ...inHouse, ...arrivals, ...departures];
+  const toPickerStay = (card: (typeof overdue)[number], status: StayPickerStay['status']): StayPickerStay => ({
+    id: card.stay.id,
+    guestName: card.stay.guest_name,
+    roomName: card.room.name,
+    checkIn: card.stay.check_in,
+    checkOut: card.stay.check_out,
+    status
+  });
+  const pickerStays: StayPickerStay[] = [
+    ...overdue.map((card) => toPickerStay(card, 'overdue')),
+    ...inHouse.map((card) => toPickerStay(card, 'in_house')),
+    ...arrivals.map((card) => toPickerStay(card, 'arrival')),
+    ...departures.map((card) => toPickerStay(card, 'departure'))
+  ];
   const alertSelect = 'id, check_in, guest_count, with_breakfast, guests(full_name)';
   const [onlineResult, pastResult] = await Promise.all([
     supabaseAdmin
@@ -252,11 +266,21 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
       <BookingAlerts online={onlineAlerts} past={pastAlerts} onlineCount={onlineResult.count ?? onlineAlerts.length} pastCount={pastResult.count ?? pastAlerts.length} />
 
       <StayActionLinks
-        stays={actionable.map((card) => ({ id: card.stay!.id, label: `${label(locale, 'today.room')} ${card.room.name} · ${card.stay!.guest_name}` }))}
+        stays={pickerStays}
+        labels={{
+          room: label(locale, 'today.room'),
+          statuses: {
+            overdue: label(locale, 'today.stayOverdue'),
+            in_house: label(locale, 'today.stayInHouse'),
+            arrival: label(locale, 'today.stayArrival'),
+            departure: label(locale, 'today.stayDeparture')
+          }
+        }}
         chargeLabel={label(locale, 'today.charge')}
         paymentLabel={label(locale, 'today.payment')}
         prompt={label(locale, 'today.whichStay')}
         chooseLabel={label(locale, 'today.chooseStay')}
+        emptyLabel={label(locale, 'today.noStayToCharge')}
       />
       <div className={`grid gap-3 ${canCreate ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
         {canCreate ? <Link href={`/reservations/new`} className="btn-primary min-h-16 text-base">{label(locale, 'today.checkIn')}</Link> : null}

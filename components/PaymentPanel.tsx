@@ -209,7 +209,7 @@ export function PaymentPanel({
         </div>
       </section>
 
-      <section className="card p-5">
+      <section id="record-payment" className="card scroll-mt-24 p-5">
         <h2 className="text-lg font-bold">Add payment proof</h2>
         <p className="mt-1 text-sm text-slate-500">Proof and payment details are mandatory. The booking remains tentative until payment is confirmed.</p>
         {message ? <div className="mt-4 rounded-lg bg-slate-100 px-3 py-2 text-sm">{message}</div> : null}
