@@ -13,10 +13,10 @@
  */
 
 /**
- * When the Daily cash sheet went live: the planned PR #35 merge, 2026-11-26 1:30 PM MST (20:30 UTC).
+ * When the Daily cash sheet went live: the planned PR #35 merge is 2026-11-27 6:00 PM MST (01:00 UTC Nov 28).
  * Closes saved before this keep main's report figures.
  */
-export const CASH_SHEET_CUTOVER = '2026-11-26T20:30:00.000Z';
+export const CASH_SHEET_CUTOVER = '2026-11-28T01:00:00.000Z';
 
 export type ReportCloseRow = {
   outlet_id?: string | null;
