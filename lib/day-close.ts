@@ -158,6 +158,19 @@ export function hasCashBeenCounted(
   return quantityEntered(floatCounts) || quantityEntered(drawerCounts) || Number(bankDeposit || 0) > 0;
 }
 
+/**
+ * Display-only: a saved close always shows its stored Short/Excess/Balanced,
+ * even when every count is still zero. Unsaved empty counts stay "Not counted yet".
+ */
+export function shouldShowCloseVariance(
+  savedClose: unknown,
+  floatCounts: Record<number, number> | { quantity?: number | string | null; denomination?: number | string | null }[],
+  drawerCounts: Record<number, number> | { quantity?: number | string | null; denomination?: number | string | null }[],
+  bankDeposit?: number | string | null
+): boolean {
+  return Boolean(savedClose) || hasCashBeenCounted(floatCounts, drawerCounts, bankDeposit);
+}
+
 /** Rebuild the denomination map the close form needs from saved day_close_counts rows. */
 export function countMapForBucket(rows: SavedCountRow[], bucket: CountBucket): Record<number, number> {
   const map: Record<number, number> = {};

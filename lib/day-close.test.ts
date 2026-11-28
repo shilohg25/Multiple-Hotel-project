@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { closeFiguresFromCounts, countMapForBucket, countTotal, figuresFromLedger, formNumberValue, hasCashBeenCounted, resolveReturnToFund, summarizeClose } from './day-close.ts';
+import { closeFiguresFromCounts, countMapForBucket, countTotal, figuresFromLedger, formNumberValue, hasCashBeenCounted, resolveReturnToFund, shouldShowCloseVariance, summarizeClose } from './day-close.ts';
 
 describe('close the day', () => {
   it('matches the 8 Nov sheet example, including collectables in room sales', () => {
@@ -161,6 +161,16 @@ describe('close the day', () => {
   it('ignores invalid or negative quantities when deciding whether a count exists', () => {
     assert.equal(hasCashBeenCounted({ 1000: -1 }, { 500: Number.NaN }, 'not-a-number'), false);
     assert.equal(hasCashBeenCounted({ 1000: -1, 500: 1 }, {}, 0), true);
+  });
+
+
+  it('shows the stored Short on a saved close even when every count is still zero', () => {
+    const saved = { id: 'close-1', variance_status: 'short' };
+    assert.equal(shouldShowCloseVariance(null, {}, {}, 0), false);
+    assert.equal(shouldShowCloseVariance(undefined, {}, {}, 0), false);
+    assert.equal(shouldShowCloseVariance(saved, {}, {}, 0), true);
+    assert.equal(shouldShowCloseVariance(saved, { 1000: 0 }, { 1000: 0 }, 0), true);
+    assert.equal(shouldShowCloseVariance(null, { 1000: 10 }, {}, 0), true);
   });
 
 });

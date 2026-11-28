@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CASH_DENOMINATIONS, countMapForBucket, formNumberValue, hasCashBeenCounted, type CloseFigures, type SavedCountRow } from '@/lib/day-close';
+import { CASH_DENOMINATIONS, countMapForBucket, formNumberValue, shouldShowCloseVariance, type CloseFigures, type SavedCountRow } from '@/lib/day-close';
 import { fillSheetCopy, sheetCloseSummary, sheetReturnToFund } from '@/lib/cash-sheet';
 import { currency } from '@/lib/money';
 import { fetchJsonWithTimeout, RequestTimeoutError } from '@/lib/fetch-timeout';
@@ -112,7 +112,7 @@ export function DayCloseForm({
   );
   const floatCounted = preview.floatCounted;
   const drawerCounted = preview.drawerCounted;
-  const counted = hasCashBeenCounted(floatCounts, drawerCounts, bankDeposit);
+  const counted = shouldShowCloseVariance(existing, floatCounts, drawerCounts, bankDeposit);
   const feedbackKey = savedFeedbackKey(hotelId, businessDate, outletId);
 
   useEffect(() => {
