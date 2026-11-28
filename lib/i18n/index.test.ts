@@ -24,4 +24,13 @@ describe('translations', () => {
     assert.equal(en.needsReview, false);
     assert.equal(tl.needsReview && hil.needsReview && akl.needsReview && mln.needsReview, true);
   });
+
+  it('uses Record payment as the stay payment form heading in every locale', () => {
+    assert.equal(en.labels['payment.recordTitle'], 'Record payment');
+    assert.equal(en.labels['payment.recordTitle'], en.labels['today.payment']);
+    for (const catalog of [en, tl, hil, akl, mln]) {
+      assert.equal(Boolean(catalog.labels['payment.recordTitle']), true);
+      assert.equal(catalog.labels['payment.recordTitle'], catalog.labels['today.payment']);
+    }
+  });
 });

@@ -1,8 +1,15 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  STAY_PICKER_ROW_GAP_PX,
+  STAY_PICKER_ROW_HEIGHT_PX,
+  STAY_PICKER_VISIBLE_ROWS,
   formatStayPickerDates,
   stayPickerActionHref,
+  stayPickerActions,
+  stayPickerCountLabel,
+  stayPickerLinkActivatesOnKey,
+  stayPickerListMaxHeightPx,
   stayPickerRow,
   stayPickerRows,
   type StayPickerLabels,
@@ -90,5 +97,35 @@ describe('stay picker rows', () => {
     assert.equal(row.roomLabel, 'Kuwarto 202');
     assert.equal(row.statusLabel, 'Nasa loob');
     assert.equal(row.summary, 'TEST- Ben In-House · Kuwarto 202 · Nov 25, 2026 – Nov 28, 2026 · Nasa loob');
+  });
+});
+
+describe('stay picker follow-ups', () => {
+  it('sizes the list box to a whole number of rows', () => {
+    assert.equal(STAY_PICKER_VISIBLE_ROWS, 5);
+    assert.equal(
+      stayPickerListMaxHeightPx(),
+      STAY_PICKER_VISIBLE_ROWS * STAY_PICKER_ROW_HEIGHT_PX + (STAY_PICKER_VISIBLE_ROWS - 1) * STAY_PICKER_ROW_GAP_PX
+    );
+    assert.equal(stayPickerListMaxHeightPx(4), 4 * STAY_PICKER_ROW_HEIGHT_PX + 3 * STAY_PICKER_ROW_GAP_PX);
+    assert.equal(stayPickerListMaxHeightPx(1), STAY_PICKER_ROW_HEIGHT_PX);
+  });
+
+  it('shows a stay count so a scrolled list is not silent about hidden rows', () => {
+    assert.equal(stayPickerCountLabel(1, '1 stay', '{n} stays'), '1 stay');
+    assert.equal(stayPickerCountLabel(4, '1 stay', '{n} stays'), '4 stays');
+    assert.equal(stayPickerCountLabel(0, '1 stay', '{n} stays'), '0 stays');
+  });
+
+  it('treats Space like Enter on the charge and payment links', () => {
+    assert.equal(stayPickerLinkActivatesOnKey(' '), true);
+    assert.equal(stayPickerLinkActivatesOnKey('Spacebar'), true);
+    assert.equal(stayPickerLinkActivatesOnKey('Enter'), false);
+    assert.equal(stayPickerLinkActivatesOnKey('Tab'), false);
+  });
+
+  it('hides Add charge when the caller cannot add charges, without changing the rule', () => {
+    assert.deepEqual(stayPickerActions(true), ['charge', 'payment']);
+    assert.deepEqual(stayPickerActions(false), ['payment']);
   });
 });
