@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { closeFiguresFromCounts, countMapForBucket, countTotal, figuresFromLedger, formNumberValue, resolveReturnToFund, summarizeClose } from './day-close.ts';
+import { closeFiguresFromCounts, countMapForBucket, countTotal, figuresFromLedger, formNumberValue, hasCashBeenCounted, resolveReturnToFund, shouldShowCloseVariance, summarizeClose } from './day-close.ts';
 
 describe('close the day', () => {
   it('matches the 8 Nov sheet example, including collectables in room sales', () => {
@@ -135,4 +135,42 @@ describe('close the day', () => {
     assert.equal(formNumberValue(undefined), '');
     assert.notEqual(formNumberValue(0), '');
   });
+
+  it('treats an empty sheet as not yet counted, even when the math is already short', () => {
+    assert.equal(hasCashBeenCounted({}, {}, 0), false);
+    assert.equal(hasCashBeenCounted({ 1000: 0, 500: 0 }, { 1000: 0 }, 0), false);
+    assert.equal(hasCashBeenCounted({}, {}, null), false);
+    assert.equal(hasCashBeenCounted({}, {}, undefined), false);
+    assert.equal(hasCashBeenCounted([{ quantity: 0 }, { quantity: '0' }], [], 0), false);
+    const empty = summarizeClose(figuresFromLedger([{ category: 'room', payment_method: 'cash', amount: 2250 }], 10000));
+    assert.equal(empty.status, 'short');
+    assert.equal(empty.variance, -12250);
+    assert.equal(hasCashBeenCounted({}, {}, empty.bankDeposit), false);
+  });
+
+  it('treats a float, drawer, or bank deposit entry as counted', () => {
+    assert.equal(hasCashBeenCounted({ 1000: 10 }, {}, 0), true);
+    assert.equal(hasCashBeenCounted({}, { 1: 1 }, 0), true);
+    assert.equal(hasCashBeenCounted({}, {}, 0.01), true);
+    assert.equal(hasCashBeenCounted([{ quantity: 2 }], [], 0), true);
+    assert.equal(hasCashBeenCounted([], [{ denomination: 100, quantity: '3' }], 0), true);
+    // Return-to-fund is not passed in, so editing it cannot flip this flag.
+    assert.equal(hasCashBeenCounted({}, {}, 0), false);
+  });
+
+  it('ignores invalid or negative quantities when deciding whether a count exists', () => {
+    assert.equal(hasCashBeenCounted({ 1000: -1 }, { 500: Number.NaN }, 'not-a-number'), false);
+    assert.equal(hasCashBeenCounted({ 1000: -1, 500: 1 }, {}, 0), true);
+  });
+
+
+  it('shows the stored Short on a saved close even when every count is still zero', () => {
+    const saved = { id: 'close-1', variance_status: 'short' };
+    assert.equal(shouldShowCloseVariance(null, {}, {}, 0), false);
+    assert.equal(shouldShowCloseVariance(undefined, {}, {}, 0), false);
+    assert.equal(shouldShowCloseVariance(saved, {}, {}, 0), true);
+    assert.equal(shouldShowCloseVariance(saved, { 1000: 0 }, { 1000: 0 }, 0), true);
+    assert.equal(shouldShowCloseVariance(null, { 1000: 10 }, {}, 0), true);
+  });
+
 });
