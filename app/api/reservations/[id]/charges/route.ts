@@ -6,6 +6,7 @@ import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { normalizeServiceCategory } from '@/lib/service-categories';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { getProcessedOfflineRequest, recordProcessedOfflineRequest } from '@/lib/idempotency';
+import { chargeAmountRefusal } from '@/lib/charge-amount';
 
 function optionalText(value: unknown) {
   const text = String(value ?? '').trim();
@@ -90,7 +91,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   if (!description) return jsonError('Charge description is required.');
   if (!Number.isFinite(quantity) || quantity <= 0) return jsonError('Quantity must be greater than zero.');
-  if (!Number.isFinite(unitPrice) || unitPrice < 0) return jsonError('Unit price must be a valid non-negative number.');
+  const amountError = chargeAmountRefusal(unitPrice);
+  if (amountError) return jsonError(amountError);
 
   const totalAmount = roundMoney(quantity * unitPrice);
   const { data: charge, error } = await insertCharge({

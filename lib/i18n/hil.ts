@@ -38,6 +38,8 @@ export const hil: MessageCatalog = {
     'help.intro': 'Malip-ot nga mga tikang para sa bag-o nga shift. Ang app ang mag-kalkula. Kamo ang mag-isip sang kuwarta kag magpangayo sa manager kon kinahanglan sang approval.',
     'help.questions': 'Mga pamangkot',
     'help.allGuides': 'Buksan ang tanan nga giya',
+    'folio.zeroCharge': 'Magbutang sang halaga sang bayad nga mas damo sa ₱0.00.',
+    'reserve.previewPending': 'Pili-a anay ang check-in kag check-out para makita ang total sang stay.',
     'lang.review': 'Draft ini nga hubad kag kinahanglan pa sang review.'
   },
   guides: {

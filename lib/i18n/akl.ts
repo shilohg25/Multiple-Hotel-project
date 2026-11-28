@@ -38,6 +38,8 @@ export const akl: MessageCatalog = {
     'help.intro': 'Malip-ot nga mga tikang para sa bag-ong shift. Ro app ro magakuwenta. Kamo ro mag-isip it kuwarta ag magpangayo sa manager kon kinahanglan it approval.',
     'help.questions': 'Mga pamangkot',
     'help.allGuides': 'Buksi tanan nga giya',
+    'folio.zeroCharge': 'Magbutang it kantidad it bayad nga mas damo sa ₱0.00.',
+    'reserve.previewPending': 'Pilia anay ro check-in ag check-out para makita ro total it stay.',
     'lang.review': 'Draft nga hubad ini ag kinahanglan pa nga marebyu.'
   },
   guides: {

@@ -24,6 +24,7 @@ import { ReservationActions } from '@/components/ReservationActions';
 import { RateOverridePanel } from '@/components/RateOverridePanel';
 import { StayHoursPanel, type StayTimeRequest } from '@/components/StayHoursPanel';
 import { ScrollToHash } from '@/components/ScrollToHash';
+import { getLocale, label } from '@/lib/i18n';
 import type { ChannelRate, RateOverrideRequest } from '@/types/app';
 import { SavePrintSnapshotButton } from '@/components/offline/SavePrintSnapshotButton';
 import type { Guest, Hotel, Payment, Reservation, ReservationCharge, Room, ServiceItem } from '@/types/app';
@@ -32,6 +33,7 @@ type PaymentWithUrl = Payment & { proof_url?: string | null };
 
 export default async function ReservationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const staff = await requireStaff();
+  const locale = await getLocale();
   const { id } = await params;
 
   const { data, error } = await supabaseAdmin
@@ -244,6 +246,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
         canManage={canManageReservationCharges(staff.profile)}
         canDelete={canDeleteReservationCharges(staff.profile)}
         toBeBilled={Boolean(billed)}
+        zeroChargeLabel={label(locale, 'folio.zeroCharge')}
       />
 
       <EmailDraftPanel hotel={reservation.hotels} reservation={reservation} guest={reservation.guests} />

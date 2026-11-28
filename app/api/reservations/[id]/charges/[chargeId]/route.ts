@@ -7,6 +7,7 @@ import { AUTO_BREAKFAST_REMOVED_ACTION, canDeleteFolioCharge, isAutoBreakfastCha
 import { stayFolioView } from '@/lib/stay-total';
 import { normalizeServiceCategory } from '@/lib/service-categories';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { chargeAmountRefusal } from '@/lib/charge-amount';
 
 function optionalText(value: unknown) {
   const text = String(value ?? '').trim();
@@ -93,7 +94,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   if (!description) return jsonError('Charge description is required.');
   if (!Number.isFinite(quantity) || quantity <= 0) return jsonError('Quantity must be greater than zero.');
-  if (!Number.isFinite(unitPrice) || unitPrice < 0) return jsonError('Unit price must be a valid non-negative number.');
+  if (hasOwn(payload, 'unit_price')) {
+    const amountError = chargeAmountRefusal(payload.unit_price);
+    if (amountError) return jsonError(amountError);
+  } else if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+    return jsonError('Unit price must be a valid non-negative number.');
+  }
 
   const totalAmount = roundMoney(quantity * unitPrice);
   const categorySource = hasOwn(payload, 'category') ? payload.category : serviceItem?.category || current.category;
