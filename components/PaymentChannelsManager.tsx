@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import type { Hotel } from '@/types/app';
 import { cardSettlementNet, guestCardCharge } from '@/lib/card-fees';
 import { currency } from '@/lib/money';
+import { EMPTY_HOTEL_MESSAGE_EN } from '@/lib/empty-hotel';
+import { EmptyHotelState } from '@/components/EmptyHotelState';
 
 export type PaymentChannel = {
   id: string;
@@ -21,13 +23,13 @@ export type PaymentChannel = {
   sort_order: number;
 };
 
-export function PaymentChannelsManager({ hotels, channels }: { hotels: Hotel[]; channels: PaymentChannel[] }) {
+export function PaymentChannelsManager({ hotels, channels, emptyHotelMessage = EMPTY_HOTEL_MESSAGE_EN }: { hotels: Hotel[]; channels: PaymentChannel[]; emptyHotelMessage?: string }) {
   const router = useRouter();
   const [hotelId, setHotelId] = useState(hotels[0]?.id || '');
   const [message, setMessage] = useState('');
   const hotel = hotels.find((item) => item.id === hotelId) || hotels[0];
   const rows = channels.filter((item) => item.hotel_id === hotel?.id).sort((a, b) => a.sort_order - b.sort_order);
-  if (!hotel) return <p className="text-sm text-slate-500">Add a property first.</p>;
+  if (!hotel) return <EmptyHotelState message={emptyHotelMessage} />;
 
   return (
     <div className="space-y-4">

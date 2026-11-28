@@ -4,9 +4,13 @@ import { hotelsForProfile, rowsForHotels, rowsLinkedTo } from '@/lib/hotel-scope
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { ChannelRatesManager } from '@/components/ChannelRatesManager';
 import type { ChannelRate, Hotel, Room, RoomType } from '@/types/app';
+import { getLocale, label } from '@/lib/i18n';
+import { EMPTY_HOTEL_MESSAGE_KEY } from '@/lib/empty-hotel';
 
 export default async function ChannelRatesPage() {
   const staff = await requireStaff();
+  const locale = await getLocale();
+  const emptyHotelMessage = label(locale, EMPTY_HOTEL_MESSAGE_KEY);
   if (!canManagePricingSetup(staff.profile)) redirect('/dashboard');
 
   const { data: hotelsRaw } = await supabaseAdmin.from('hotels').select('*').eq('active', true).order('name');
@@ -36,6 +40,7 @@ export default async function ChannelRatesPage() {
         roomTypes={roomTypes}
         rates={rowsLinkedTo((ratesRaw || []) as ChannelRate[], (rate) => rate.room_type_id, new Set(roomTypeIds))}
         rooms={rowsForHotels((roomsRaw || []) as Room[], allowedHotelIds)}
+        emptyHotelMessage={emptyHotelMessage}
       />
     </div>
   );

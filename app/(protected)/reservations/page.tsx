@@ -4,6 +4,7 @@ import { requireStaff, canAccessHotel } from '@/lib/auth';
 import { businessToday, monthRange } from '@/lib/date';
 import { ReservationBoard } from '@/components/ReservationBoard';
 import type { Hotel, Reservation, Room } from '@/types/app';
+import { EmptyHotelStateLocalized } from '@/components/EmptyHotelStateLocalized';
 
 type SearchParams = { hotel?: string; from?: string; to?: string };
 
@@ -19,12 +20,7 @@ export default async function ReservationsPage({ searchParams }: { searchParams?
   const to = params.to || defaultTo;
 
   if (!hotel) {
-    return (
-      <div className="card p-6">
-        <h1 className="text-2xl font-black">Reservations</h1>
-        <p className="mt-2 text-sm text-slate-500">Create a hotel first.</p>
-      </div>
-    );
+    return <EmptyHotelStateLocalized />;
   }
 
   const boardSelect = '*, guests(*), rooms(id,name,room_type_name)';

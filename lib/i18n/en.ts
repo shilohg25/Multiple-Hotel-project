@@ -54,6 +54,7 @@ export const en: MessageCatalog = {
     'help.intro': 'Short steps for a new shift. The app calculates the totals. You count the cash, name the guest, and ask a manager when a price or a day needs approval.',
     'help.questions': 'Questions',
     'help.allGuides': 'Open all guides',
+    'empty.noHotel': 'No hotel is available for your account. Ask a manager.',
     'lang.review': 'This translation is a draft and needs review.'
   },
   guides: {

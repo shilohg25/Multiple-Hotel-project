@@ -10,8 +10,10 @@ import { calculateDownpayment, downpaymentLabel } from '@/lib/downpayment';
 import { roomAmountLabel } from '@/lib/hotel-pricing';
 import { BILL_LATER_SOURCES, DIRECT_BOOKING_SOURCES, FULL_PREPAID_OTA_SOURCES, clampGuestCount, quotePublicStay } from '@/lib/public-quote';
 import { queueOfflineItem } from '@/lib/offline/db';
+import { EMPTY_HOTEL_MESSAGE_EN } from '@/lib/empty-hotel';
+import { EmptyHotelState } from '@/components/EmptyHotelState';
 
-export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Room[] }) {
+export function ReservationForm({ hotels, rooms, emptyHotelMessage = EMPTY_HOTEL_MESSAGE_EN }: { hotels: Hotel[]; rooms: Room[]; emptyHotelMessage?: string }) {
   const router = useRouter();
   const activeRooms = useMemo(() => rooms.filter((room) => room.active), [rooms]);
   const firstHotelWithRooms = useMemo(
@@ -200,7 +202,7 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
   }
 
   if (!hotels.length) {
-    return <div className="card p-6 text-sm text-slate-500">Create at least one hotel before adding reservations.</div>;
+    return <EmptyHotelState message={emptyHotelMessage} />;
   }
 
   if (!hasAnyRooms) {

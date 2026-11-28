@@ -9,6 +9,7 @@ import { BookingAlerts, type BookingAlert } from '@/components/BookingAlerts';
 import { StatCard } from '@/components/StatCard';
 import { ReservationStatusBadge, PaymentStatusBadge } from '@/components/StatusBadge';
 import type { Hotel, Payment, Reservation } from '@/types/app';
+import { shouldShowHotelActionLinks } from '@/lib/empty-hotel';
 
 export default async function DashboardPage() {
   const staff = await requireStaff();
@@ -115,10 +116,12 @@ export default async function DashboardPage() {
           <h1 className="text-3xl font-black tracking-tight">Dashboard</h1>
           <p className="mt-1 text-slate-500">Reservations, payment proofs, and hotel operations.</p>
         </div>
-        <div className="flex gap-2">
-          {canCreateReservation(staff.profile.role) ? <Link href="/reservations/new" className="btn-primary">New reservation</Link> : null}
-          <Link href={hotels[0] ? `/book/${hotels[0].slug}` : '/hotels'} className="btn-secondary">Public booking page</Link>
-        </div>
+        {shouldShowHotelActionLinks(hotels.length) ? (
+          <div className="flex gap-2">
+            {canCreateReservation(staff.profile.role) ? <Link href="/reservations/new" className="btn-primary">New reservation</Link> : null}
+            <Link href={`/book/${hotels[0].slug}`} className="btn-secondary">Public booking page</Link>
+          </div>
+        ) : null}
       </div>
 
       <BookingAlerts online={onlineAlerts} past={pastAlerts} onlineCount={onlineResult.count ?? onlineAlerts.length} pastCount={pastResult.count ?? pastAlerts.length} />
