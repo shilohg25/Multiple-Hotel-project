@@ -5,6 +5,7 @@ import { readToBeBilled } from '@/lib/public-quote';
 import { getDailyReportData } from '@/lib/report-data';
 import { endingCashSourceLabel } from '@/lib/report-cash';
 import { SavePrintSnapshotButton } from '@/components/offline/SavePrintSnapshotButton';
+import { EmptyHotelStateLocalized } from '@/components/EmptyHotelStateLocalized';
 
 type SearchParams = { hotel?: string; date?: string };
 
@@ -14,7 +15,7 @@ export default async function DailyReportPage({ searchParams }: { searchParams?:
   const { hotels, report } = await getDailyReportData(staff, { hotelId: params.hotel, date: params.date });
   const date = report?.date || params.date || '';
 
-  if (!report) return <div className="card p-6 text-sm text-slate-500">Create a hotel before viewing reports.</div>;
+  if (!report) return <EmptyHotelStateLocalized />;
 
   return (
     <div className="space-y-6">

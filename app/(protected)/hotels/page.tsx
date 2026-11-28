@@ -5,9 +5,13 @@ import { HotelManager, type HotelRoomCount } from '@/components/HotelManager';
 import { ReportingUnitsManager } from '@/components/ReportingUnitsManager';
 import { PropertyHoursForm } from '@/components/PropertyHoursForm';
 import type { Hotel, Outlet, Room } from '@/types/app';
+import { getLocale, label } from '@/lib/i18n';
+import { EMPTY_HOTEL_MESSAGE_KEY } from '@/lib/empty-hotel';
 
 export default async function HotelsPage() {
   const staff = await requireStaff();
+  const locale = await getLocale();
+  const emptyHotelMessage = label(locale, EMPTY_HOTEL_MESSAGE_KEY);
   const { data } = await supabaseAdmin.from('hotels').select('*').order('name');
   const hotels = hotelsForProfile(staff.profile, (data || []) as Hotel[]);
   const hotelIdList = hotels.map((hotel) => hotel.id);
@@ -38,7 +42,7 @@ export default async function HotelsPage() {
         <h1 className="text-3xl font-black tracking-tight">Hotels / Properties</h1>
         <p className="mt-1 text-slate-500">Add and manage hotels, rental properties, and the rooms/units they can book.</p>
       </div>
-      <HotelManager hotels={hotels} roomCounts={roomCounts} role={staff.profile.role} />
+      <HotelManager hotels={hotels} roomCounts={roomCounts} role={staff.profile.role} emptyHotelMessage={emptyHotelMessage} />
       <PropertyHoursForm hotels={hotels} role={staff.profile.role} />
       <ReportingUnitsManager hotels={hotels} outlets={rowsForHotels((outletsRaw || []) as Outlet[], hotelIds)} role={staff.profile.role} />
     </div>

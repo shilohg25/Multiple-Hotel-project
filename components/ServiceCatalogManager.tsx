@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import type { Hotel, ServiceItem } from '@/types/app';
 import { currency } from '@/lib/money';
 import { serviceCategoryOptions } from '@/lib/service-categories';
+import { EMPTY_HOTEL_MESSAGE_EN } from '@/lib/empty-hotel';
+import { EmptyHotelState } from '@/components/EmptyHotelState';
 
 type ServiceDraft = {
   name: string;
@@ -34,7 +36,7 @@ function draftFromService(item: ServiceItem): ServiceDraft {
   };
 }
 
-export function ServiceCatalogManager({ hotels, serviceItems }: { hotels: Hotel[]; serviceItems: ServiceItem[] }) {
+export function ServiceCatalogManager({ hotels, serviceItems, emptyHotelMessage = EMPTY_HOTEL_MESSAGE_EN }: { hotels: Hotel[]; serviceItems: ServiceItem[]; emptyHotelMessage?: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedHotelId = searchParams.get('hotel') || hotels[0]?.id || '';
@@ -153,7 +155,7 @@ export function ServiceCatalogManager({ hotels, serviceItems }: { hotels: Hotel[
   }
 
   if (!selectedHotel) {
-    return <div className="card p-6 text-sm text-slate-500">Add an active hotel before managing service items.</div>;
+    return <EmptyHotelState message={emptyHotelMessage} />;
   }
 
   return (

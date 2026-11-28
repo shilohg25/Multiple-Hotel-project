@@ -4,9 +4,13 @@ import { requireStaff, canAccessHotel } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { ReservationForm } from '@/components/ReservationForm';
 import type { Hotel, Room } from '@/types/app';
+import { getLocale, label } from '@/lib/i18n';
+import { EMPTY_HOTEL_MESSAGE_KEY } from '@/lib/empty-hotel';
 
 export default async function NewReservationPage() {
   const staff = await requireStaff();
+  const locale = await getLocale();
+  const emptyHotelMessage = label(locale, EMPTY_HOTEL_MESSAGE_KEY);
   if (!canCreateReservation(staff.profile.role)) {
     return (
       <section className="card mx-auto max-w-lg space-y-3 p-6">
@@ -30,7 +34,7 @@ export default async function NewReservationPage() {
         <h1 className="text-3xl font-black tracking-tight">New reservation</h1>
         <p className="mt-1 text-slate-500">Walk-ins, direct bookings, and bank transfers need at least half the stay. Booking.com, Trip.com, Agoda, and Expedia are prepaid in full. Front desk can save an LGU or company stay to be billed, with an invoice or PO and no deposit.</p>
       </div>
-      <ReservationForm hotels={hotels} rooms={rooms} />
+      <ReservationForm hotels={hotels} rooms={rooms} emptyHotelMessage={emptyHotelMessage} />
     </div>
   );
 }

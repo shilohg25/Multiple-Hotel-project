@@ -3,9 +3,13 @@ import { requireStaff, canAccessHotel } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { RoomManager } from '@/components/RoomManager';
 import type { Hotel, Room } from '@/types/app';
+import { getLocale, label } from '@/lib/i18n';
+import { EMPTY_HOTEL_MESSAGE_KEY } from '@/lib/empty-hotel';
 
 export default async function RoomsPage() {
   const staff = await requireStaff();
+  const locale = await getLocale();
+  const emptyHotelMessage = label(locale, EMPTY_HOTEL_MESSAGE_KEY);
   const [{ data: hotelsRaw }, { data: roomsRaw }] = await Promise.all([
     supabaseAdmin.from('hotels').select('*').eq('active', true).order('name'),
     supabaseAdmin.from('rooms').select('*').order('sort_order').order('name')
@@ -21,7 +25,7 @@ export default async function RoomsPage() {
         <p className="mt-1 text-slate-500">Manage rooms, units, villas, cottages, or rental spaces for each hotel/property.</p>
       </div>
       <Suspense fallback={<div className="card p-6">Loading rooms...</div>}>
-        <RoomManager hotels={hotels} rooms={rooms} role={staff.profile.role} />
+        <RoomManager hotels={hotels} rooms={rooms} role={staff.profile.role} emptyHotelMessage={emptyHotelMessage} />
       </Suspense>
     </div>
   );

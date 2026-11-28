@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { Hotel, Room } from '@/types/app';
 import { currency } from '@/lib/money';
+import { EMPTY_HOTEL_MESSAGE_EN } from '@/lib/empty-hotel';
+import { EmptyHotelState } from '@/components/EmptyHotelState';
 
 type RoomDraft = {
   room_type_name: string;
@@ -22,7 +24,7 @@ function draftFromRoom(room: Room): RoomDraft {
   };
 }
 
-export function SettingsPricingManager({ hotels, rooms }: { hotels: Hotel[]; rooms: Room[] }) {
+export function SettingsPricingManager({ hotels, rooms, emptyHotelMessage = EMPTY_HOTEL_MESSAGE_EN }: { hotels: Hotel[]; rooms: Room[]; emptyHotelMessage?: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedHotelId = searchParams.get('hotel') || hotels[0]?.id || '';
@@ -85,7 +87,7 @@ export function SettingsPricingManager({ hotels, rooms }: { hotels: Hotel[]; roo
   }
 
   if (!selectedHotel) {
-    return <div className="card p-6 text-sm text-slate-500">Add an active hotel before managing room pricing.</div>;
+    return <EmptyHotelState message={emptyHotelMessage} />;
   }
 
   return (

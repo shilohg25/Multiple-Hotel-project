@@ -38,6 +38,7 @@ export const mln: MessageCatalog = {
     'help.intro': 'Malip-ot nga mga tikang para sa bag-ong shift. Ro app ro magkuwenta. Kamo ro mag-isip it kwarta ag magpangutana sa manager kung kinahanglan it approval.',
     'help.questions': 'Mga pamangkot',
     'help.allGuides': 'Buksan tanan nga giya',
+    'empty.noHotel': 'Uwa hotel nga available sa imong account. Magpangutana sa manager.',
     'lang.review': 'Draft nga hubad ini ag kinahanglan pa marebyu.'
   },
   guides: {

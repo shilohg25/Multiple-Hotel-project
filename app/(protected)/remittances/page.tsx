@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { RemittanceManager } from '@/components/RemittanceManager';
 import type { Hotel, Outlet, Remittance, ReservationCharge } from '@/types/app';
 import Link from 'next/link';
+import { EmptyHotelStateLocalized } from '@/components/EmptyHotelStateLocalized';
 
 type SearchParams = { hotel?: string; outlet?: string; from?: string; to?: string };
 
@@ -15,7 +16,7 @@ export default async function RemittancesPage({ searchParams }: { searchParams?:
   const selectedHotel = hotels.find((hotel) => hotel.id === params.hotel) || hotels[0];
 
   if (!selectedHotel) {
-    return <div className="card p-6 text-sm text-slate-500">Create a hotel before using remittances.</div>;
+    return <EmptyHotelStateLocalized />;
   }
 
   const periodStart = params.from || `${businessMonth(selectedHotel.timezone)}-01`;

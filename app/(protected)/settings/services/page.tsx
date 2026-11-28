@@ -5,9 +5,13 @@ import { hotelsForProfile, rowsForHotels } from '@/lib/hotel-scope';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { ServiceCatalogManager } from '@/components/ServiceCatalogManager';
 import type { Hotel, ServiceItem } from '@/types/app';
+import { getLocale, label } from '@/lib/i18n';
+import { EMPTY_HOTEL_MESSAGE_KEY } from '@/lib/empty-hotel';
 
 export default async function SettingsServicesPage() {
   const staff = await requireStaff();
+  const locale = await getLocale();
+  const emptyHotelMessage = label(locale, EMPTY_HOTEL_MESSAGE_KEY);
   if (!canManageServiceCatalog(staff.profile)) redirect('/dashboard');
 
   const { data: hotelsRaw } = await supabaseAdmin.from('hotels').select('*').eq('active', true).order('name');
@@ -25,7 +29,7 @@ export default async function SettingsServicesPage() {
         <p className="mt-1 text-slate-500">Breakfast, extra bed, and hourly charges. Managers and owners can change the prices.</p>
       </div>
       <Suspense fallback={<div className="card p-6">Loading service catalog...</div>}>
-        <ServiceCatalogManager hotels={hotels} serviceItems={serviceItems} />
+        <ServiceCatalogManager hotels={hotels} serviceItems={serviceItems} emptyHotelMessage={emptyHotelMessage} />
       </Suspense>
     </div>
   );

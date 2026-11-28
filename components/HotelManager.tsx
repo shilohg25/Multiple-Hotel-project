@@ -7,6 +7,7 @@ import { currency } from '@/lib/money';
 import { downpaymentLabel } from '@/lib/downpayment';
 import { DEFAULT_BUSINESS_TIMEZONE } from '@/lib/date';
 import { slugify } from '@/lib/slug';
+import { EMPTY_HOTEL_MESSAGE_EN, shouldShowOwnerPanel } from '@/lib/empty-hotel';
 
 export type HotelRoomCount = {
   hotel_id: string;
@@ -18,11 +19,13 @@ export type HotelRoomCount = {
 export function HotelManager({
   hotels,
   role,
-  roomCounts
+  roomCounts,
+  emptyHotelMessage = EMPTY_HOTEL_MESSAGE_EN
 }: {
   hotels: Hotel[];
   role: Role;
   roomCounts: HotelRoomCount[];
+  emptyHotelMessage?: string;
 }) {
   const router = useRouter();
   const countByHotel = new Map(roomCounts.map((count) => [count.hotel_id, count]));
@@ -63,8 +66,10 @@ export function HotelManager({
     router.refresh();
   }
 
+  const showOwnerPanel = shouldShowOwnerPanel(role);
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
+    <div className={showOwnerPanel ? 'grid gap-6 lg:grid-cols-[1fr_420px]' : 'grid gap-6'}>
       <section className="card overflow-hidden">
         <div className="border-b border-slate-200 px-5 py-4">
           <h2 className="text-lg font-bold">Hotels / Properties</h2>
@@ -115,16 +120,14 @@ export function HotelManager({
               </div>
             );
           })}
-          {!hotels.length ? <p className="px-5 py-6 text-sm text-slate-500">No hotels/properties yet.</p> : null}
+          {!hotels.length ? <p className="px-5 py-6 text-sm text-slate-500">{emptyHotelMessage}</p> : null}
         </div>
       </section>
 
+      {showOwnerPanel ? (
       <section className="card p-5">
         <h2 className="text-lg font-bold">Add hotel/property</h2>
         <p className="mt-1 text-sm text-slate-500">Only owners can create hotels/properties. Add rooms/units after saving the property.</p>
-        {role !== 'owner' ? (
-          <div className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Owner access is required to add hotels/properties.</div>
-        ) : (
           <form onSubmit={onSubmit} className="mt-4 space-y-4">
             {message ? <div className="rounded-lg bg-slate-100 px-3 py-2 text-sm">{message}</div> : null}
             <div className="space-y-2">
@@ -213,8 +216,8 @@ export function HotelManager({
             </div>
             <button className="btn-primary w-full" disabled={loading} type="submit">{loading ? 'Saving...' : 'Save hotel/property'}</button>
           </form>
-        )}
       </section>
+      ) : null}
     </div>
   );
 }
