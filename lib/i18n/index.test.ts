@@ -24,4 +24,16 @@ describe('translations', () => {
     assert.equal(en.needsReview, false);
     assert.equal(tl.needsReview && hil.needsReview && akl.needsReview && mln.needsReview, true);
   });
+
+  it('translates the zero-charge and walk-in preview messages in every locale', () => {
+    for (const key of ['folio.zeroCharge', 'reserve.previewPending'] as const) {
+      assert.ok(en.labels[key]);
+      for (const locale of [en, tl, hil, akl, mln]) {
+        const value = locale.labels[key] || en.labels[key];
+        assert.ok(value && value.length > 8, `${key} missing`);
+      }
+    }
+    assert.match(en.labels['folio.zeroCharge'], /₱0\.00/);
+    assert.match(en.labels['reserve.previewPending'], /stay total/);
+  });
 });

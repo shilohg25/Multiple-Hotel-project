@@ -54,6 +54,8 @@ export const en: MessageCatalog = {
     'help.intro': 'Short steps for a new shift. The app calculates the totals. You count the cash, name the guest, and ask a manager when a price or a day needs approval.',
     'help.questions': 'Questions',
     'help.allGuides': 'Open all guides',
+    'folio.zeroCharge': 'Enter a charge amount greater than ₱0.00.',
+    'reserve.previewPending': 'Choose check-in and check-out dates to see the stay total.',
     'lang.review': 'This translation is a draft and needs review.'
   },
   guides: {

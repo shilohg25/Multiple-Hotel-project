@@ -4,14 +4,23 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { Hotel, Room } from '@/types/app';
-import { diffDays, staffBookingMinDate } from '@/lib/date';
+import { addDays, staffBookingMinDate, toISODate } from '@/lib/date';
 import { currency } from '@/lib/money';
+import { defaultWalkInCheckIn, stayDatesReady, walkInPreviewNights } from '@/lib/walkin-preview';
 import { calculateDownpayment, downpaymentLabel } from '@/lib/downpayment';
 import { roomAmountLabel } from '@/lib/hotel-pricing';
 import { BILL_LATER_SOURCES, DIRECT_BOOKING_SOURCES, FULL_PREPAID_OTA_SOURCES, clampGuestCount, quotePublicStay } from '@/lib/public-quote';
 import { queueOfflineItem } from '@/lib/offline/db';
 
-export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Room[] }) {
+export function ReservationForm({
+  hotels,
+  rooms,
+  previewPendingLabel = 'Choose check-in and check-out dates to see the stay total.'
+}: {
+  hotels: Hotel[];
+  rooms: Room[];
+  previewPendingLabel?: string;
+}) {
   const router = useRouter();
   const activeRooms = useMemo(() => rooms.filter((room) => room.active), [rooms]);
   const firstHotelWithRooms = useMemo(
@@ -22,7 +31,7 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
   const [hotelId, setHotelId] = useState(() => firstHotelWithRooms?.id || hotels[0]?.id || '');
   const [roomId, setRoomId] = useState('');
   const [hotelWasSelected, setHotelWasSelected] = useState(false);
-  const [checkIn, setCheckIn] = useState('');
+  const [checkIn, setCheckIn] = useState(() => defaultWalkInCheckIn(firstHotelWithRooms?.timezone || hotels[0]?.timezone));
   const [checkOut, setCheckOut] = useState('');
   const [guestCount, setGuestCount] = useState(1);
   const [withBreakfast, setWithBreakfast] = useState(true);
@@ -80,29 +89,44 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
     setHotelWasSelected(true);
   }
 
-  const nights = checkIn && checkOut && checkOut > checkIn ? Math.max(1, diffDays(checkIn, checkOut)) : 1;
+  const datesReady = stayDatesReady(checkIn, checkOut);
+  const nights = walkInPreviewNights(checkIn, checkOut);
   const roomCapacity = Math.max(1, Math.floor(Number(selectedRoom?.capacity || 1)));
   const guests = clampGuestCount(guestCount, roomCapacity);
-  const quote = hotel && selectedRoom
-    ? quotePublicStay({
+  const quoteInput = hotel && selectedRoom
+    ? {
       hotelSlug: hotel.slug,
       roomTypeName: selectedRoom.room_type_name,
       nightlyRate: Number(selectedRoom.base_rate || 0),
-      checkIn: checkIn || '2026-01-01',
-      checkOut: checkOut && checkOut > (checkIn || '2026-01-01') ? checkOut : '2026-01-02',
       guestCount: guests,
       withBreakfast,
       downpaymentType: hotel.downpayment_type,
       defaultPercent: Number(hotel.default_downpayment_percent || 0),
       defaultAmount: Number(hotel.default_downpayment_amount || 0)
+    }
+    : null;
+  // Breakfast flags depend on the hotel/room, not the stay dates. Use a 1-night window
+  // only for those flags; never show its totals in the preview.
+  const policyQuote = quoteInput
+    ? quotePublicStay({
+      ...quoteInput,
+      checkIn: today,
+      checkOut: toISODate(addDays(today, 1))
+    })
+    : null;
+  const quote = quoteInput && datesReady
+    ? quotePublicStay({
+      ...quoteInput,
+      checkIn,
+      checkOut
     })
     : null;
   const fullPrepaid = (FULL_PREPAID_OTA_SOURCES as readonly string[]).includes(bookingSource) && paymentKind === 'ota_prepaid';
   const billLater = (BILL_LATER_SOURCES as readonly string[]).includes(bookingSource) && paymentKind === 'invoice';
   const directBooking = (DIRECT_BOOKING_SOURCES as readonly string[]).includes(bookingSource);
   const surchargeAmount = Number(surcharge || 0);
-  const stayTotal = (quote?.total || 0) + surchargeAmount;
-  const downpayment = !hotel || !quote
+  const stayTotal = datesReady ? (quote?.total || 0) + surchargeAmount : 0;
+  const downpayment = !datesReady || !hotel || !quote
     ? 0
     : quote.fixedDownpaymentPercent != null
       ? Math.round(stayTotal * quote.fixedDownpaymentPercent) / 100
@@ -116,8 +140,12 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!hotel || !selectedRoom || !quote) {
+    if (!hotel || !selectedRoom) {
       setMessage('Choose a hotel and room before saving the reservation.');
+      return;
+    }
+    if (!datesReady || !quote) {
+      setMessage(previewPendingLabel);
       return;
     }
     const paid = billLater ? 0 : fullPrepaid ? stayTotal : Number(deskPayment || 0);
@@ -304,12 +332,12 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
       </div>
       <div className="space-y-2">
         <label>Breakfast</label>
-        {quote?.breakfastChoiceEnabled ? (
+        {policyQuote?.breakfastChoiceEnabled ? (
           <select name="with_breakfast" className="w-full" value={withBreakfast ? 'true' : 'false'} onChange={(event) => setWithBreakfast(event.target.value === 'true')}>
             <option value="true">Yes, breakfast included</option>
             <option value="false">No - room only</option>
           </select>
-        ) : quote?.breakfastIncluded ? (
+        ) : policyQuote?.breakfastIncluded ? (
           <p className="rounded-md bg-slate-50 px-3 py-2 text-sm">Breakfast for 2 is included in the room rate.</p>
         ) : (
           <p className="rounded-md bg-slate-50 px-3 py-2 text-sm">Room only</p>
@@ -353,11 +381,13 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
       ) : (
         <div className="space-y-2">
           <label>{bookingSource === 'walk_in' ? 'Amount paid at the desk' : fullPrepaid ? 'Amount the OTA collected' : 'Payment amount'}</label>
-          <input name="desk_payment" type="number" min="0" step="0.01" max={stayTotal || undefined} value={fullPrepaid ? String(stayTotal || '') : deskPayment} onChange={(event) => setDeskPayment(event.target.value)} readOnly={fullPrepaid} className="w-full" />
+          <input name="desk_payment" type="number" min="0" step="0.01" max={datesReady ? stayTotal || undefined : undefined} value={fullPrepaid && datesReady ? String(stayTotal || '') : deskPayment} onChange={(event) => setDeskPayment(event.target.value)} readOnly={fullPrepaid} className="w-full" />
           <p className="text-sm text-slate-600">
             {fullPrepaid
               ? 'The OTA collects the full stay. Enter the OTA reference. No proof file and no 50% deposit.'
-              : `Must cover the down payment of ${currency(downpayment, hotel.default_currency)} and cannot exceed the stay total. The room is held only after this payment is saved.`}
+              : datesReady
+                ? `Must cover the down payment of ${currency(downpayment, hotel.default_currency)} and cannot exceed the stay total. The room is held only after this payment is saved.`
+                : previewPendingLabel}
           </p>
         </div>
       )}
@@ -382,12 +412,13 @@ export function ReservationForm({ hotels, rooms }: { hotels: Hotel[]; rooms: Roo
 
       <div className="rounded-xl bg-slate-50 p-4 lg:col-span-2">
         <div className="grid gap-3 md:grid-cols-4">
-          <div><p className="text-xs text-slate-500">Nights</p><p className="font-bold">{nights}</p></div>
-          <div><p className="text-xs text-slate-500">{roomAmountLabel(Boolean(quote?.breakfastIncluded))}</p><p className="font-bold">{currency(quote?.roomTotal || 0, hotel.default_currency)}</p></div>
-          <div><p className="text-xs text-slate-500">Extra bed</p><p className="font-bold">{quote?.extraBedLine || 'No extra bed'}</p></div>
-          <div><p className="text-xs text-slate-500">Stay total</p><p className="font-bold">{currency(stayTotal, hotel.default_currency)}</p></div>
-          <div><p className="text-xs text-slate-500">Required down payment</p><p className="font-bold">{currency(downpayment, hotel.default_currency)}</p></div>
+          <div><p className="text-xs text-slate-500">Nights</p><p className="font-bold">{datesReady ? nights : '—'}</p></div>
+          <div><p className="text-xs text-slate-500">{roomAmountLabel(Boolean((datesReady ? quote : policyQuote)?.breakfastIncluded))}</p><p className="font-bold">{datesReady ? currency(quote?.roomTotal || 0, hotel.default_currency) : '—'}</p></div>
+          <div><p className="text-xs text-slate-500">Extra bed</p><p className="font-bold">{datesReady ? (quote?.extraBedLine || 'No extra bed') : '—'}</p></div>
+          <div><p className="text-xs text-slate-500">Stay total</p><p className="font-bold">{datesReady ? currency(stayTotal, hotel.default_currency) : '—'}</p></div>
+          <div><p className="text-xs text-slate-500">Required down payment</p><p className="font-bold">{datesReady ? currency(downpayment, hotel.default_currency) : '—'}</p></div>
         </div>
+        {!datesReady ? <p className="mt-3 text-sm text-slate-600">{previewPendingLabel}</p> : null}
         <p className="mt-3 text-xs text-slate-500">Down payment rule: {downpaymentLabel(hotel.downpayment_type)}. Walk-ins, direct bookings, and bank transfers need at least half. Booking.com, Trip.com, Agoda, and Expedia are prepaid in full. Front desk can save an LGU or company stay to be billed, with an invoice or PO and no deposit.</p>
       </div>
 

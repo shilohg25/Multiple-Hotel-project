@@ -38,6 +38,8 @@ export const tl: MessageCatalog = {
     'help.intro': 'Maikling hakbang para sa bagong shift. Kinakalkula ng app ang mga total. Bilangin ninyo ang pera, isulat ang pangalan, at magtanong sa manager kapag kailangan ng approval.',
     'help.questions': 'Mga tanong',
     'help.allGuides': 'Buksan ang lahat ng gabay',
+    'folio.zeroCharge': 'Maglagay ng halaga ng singil na higit sa ₱0.00.',
+    'reserve.previewPending': 'Pumili muna ng check-in at check-out para makita ang total ng stay.',
     'lang.review': 'Draft ang saling ito at kailangan pang suriin.'
   },
   guides: {
