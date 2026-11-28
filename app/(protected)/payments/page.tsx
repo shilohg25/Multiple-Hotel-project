@@ -6,11 +6,13 @@ import { paymentMethodLabel } from '@/lib/payment-method-label';
 import { ConfirmSubmittedPayment } from '@/components/ConfirmSubmittedPayment';
 import { PaymentStatusBadge } from '@/components/StatusBadge';
 import type { Guest, Hotel, Payment, Reservation } from '@/types/app';
+import { getLocale, label } from '@/lib/i18n';
 
 type PaymentRow = Payment & { reservations: Reservation & { guests: Guest; hotels: Hotel } };
 
 export default async function PaymentsPage() {
   const staff = await requireStaff();
+  const locale = await getLocale();
   const { data } = await supabaseAdmin
     .from('payments')
     .select('*, reservations(*, guests(*), hotels(*))')
@@ -23,7 +25,7 @@ export default async function PaymentsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-black tracking-tight">Payments</h1>
-        <p className="mt-1 text-slate-500">Payment proof is mandatory. Confirmed down payments secure bookings.</p>
+        <p className="mt-1 text-slate-500">{label(locale, 'payment.listLead')}</p>
       </div>
       <section className="card overflow-hidden">
         <div className="overflow-x-auto">

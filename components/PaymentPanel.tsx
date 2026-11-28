@@ -9,9 +9,32 @@ import { PAYMENT_OVER_OWED, amountReservedByPayments } from '@/lib/payment-cap';
 import { paymentMethodLabel } from '@/lib/payment-method-label';
 import { queueOfflineItem } from '@/lib/offline/db';
 import { PaymentStatusBadge } from './StatusBadge';
+import { hasProofFile, isSentinelProofPath, proofFileRequired, validatePaymentProofInput } from '@/lib/payment-proof';
 
 type PaymentWithUrl = Payment & { proof_url?: string | null };
 const maxOfflineProofSize = 10 * 1024 * 1024;
+
+export type PaymentPanelCopy = {
+  leadCash: string;
+  leadOther: string;
+  notes: string;
+  proof: string;
+  optional: string;
+  noPhoto: string;
+  submit: string;
+  submitCash: string;
+};
+
+const defaultCopy: PaymentPanelCopy = {
+  leadCash: 'Write a note. A photo is optional for cash. The booking stays tentative until a manager confirms the payment.',
+  leadOther: 'A note and a payment proof are required. The booking remains tentative until payment is confirmed.',
+  notes: 'Payment information / notes',
+  proof: 'Payment proof',
+  optional: 'optional',
+  noPhoto: 'No photo',
+  submit: 'Submit proof',
+  submitCash: 'Submit payment'
+};
 
 export function PaymentPanel({
   reservationId,
@@ -21,7 +44,8 @@ export function PaymentPanel({
   cardSurchargePercent = 3,
   cardMdrPercent = 3.5,
   stayTotal,
-  toBeBilled = false
+  toBeBilled = false,
+  copy = defaultCopy
 }: {
   reservationId: string;
   payments: PaymentWithUrl[];
@@ -31,6 +55,7 @@ export function PaymentPanel({
   cardMdrPercent?: number;
   stayTotal?: number;
   toBeBilled?: boolean;
+  copy?: PaymentPanelCopy;
 }) {
   const router = useRouter();
   const [message, setMessage] = useState('');
@@ -48,6 +73,17 @@ export function PaymentPanel({
     const paying = method === 'card' ? guestCardCharge(Number(amount || 0), cardSurchargePercent) : Number(amount || 0);
     if (remaining != null && paying > remaining + 0.001) {
       setMessage(PAYMENT_OVER_OWED);
+      return;
+    }
+
+    const formPreview = new FormData(formElement);
+    const proofCheck = validatePaymentProofInput({
+      method,
+      paymentDetails: String(formPreview.get('payment_details') || ''),
+      hasProof: hasProofFile(formPreview.get('proof') as File | null)
+    });
+    if (!proofCheck.ok) {
+      setMessage(proofCheck.error);
       return;
     }
 
@@ -101,11 +137,18 @@ export function PaymentPanel({
   async function saveOfflineDraft() {
     if (!offlineDraft) return;
     const proof = offlineDraft.proof;
-    if (!(proof instanceof File) || proof.size === 0) {
-      setMessage('Payment proof file is required before saving an offline payment draft.');
+    const offlineMethod = String(offlineDraft.method || method);
+    const hasProof = hasProofFile(proof instanceof File ? proof : null);
+    const proofCheck = validatePaymentProofInput({
+      method: offlineMethod,
+      paymentDetails: String(offlineDraft.payment_details || ''),
+      hasProof
+    });
+    if (!proofCheck.ok) {
+      setMessage(proofCheck.error);
       return;
     }
-    if (proof.size > maxOfflineProofSize) {
+    if (hasProof && proof instanceof File && proof.size > maxOfflineProofSize) {
       setMessage('Payment proof is too large for offline storage. Maximum size is 10 MB.');
       return;
     }
@@ -114,8 +157,7 @@ export function PaymentPanel({
     try {
       await queueOfflineItem('payment_draft', {
         ...offlineDraft,
-        proof,
-        proofName: proof.name
+        ...(hasProof && proof instanceof File ? { proof, proofName: proof.name } : {})
       });
       setOfflineDraft(null);
       setMessage('Saved locally. Sync when internet returns. Offline payment drafts are submitted only; they are never auto-confirmed.');
@@ -186,7 +228,11 @@ export function PaymentPanel({
                   </td>
                   <td className="px-5 py-3"><PaymentStatusBadge status={payment.status} /></td>
                   <td className="px-5 py-3">
-                    {payment.proof_url ? <a href={payment.proof_url} target="_blank" className="text-sm font-semibold text-slate-900 underline">View proof</a> : <span className="text-slate-500">Unavailable</span>}
+                    {payment.proof_url ? (
+                      <a href={payment.proof_url} target="_blank" className="text-sm font-semibold text-slate-900 underline">View proof</a>
+                    ) : (
+                      <span className="text-slate-500">{isSentinelProofPath(payment.proof_path) || !payment.proof_path ? copy.noPhoto : 'Unavailable'}</span>
+                    )}
                   </td>
                   <td className="px-5 py-3">
                     {payment.status === 'submitted' && canConfirm ? (
@@ -211,7 +257,7 @@ export function PaymentPanel({
 
       <section id="record-payment" className="card scroll-mt-24 p-5">
         <h2 className="text-lg font-bold">Add payment proof</h2>
-        <p className="mt-1 text-sm text-slate-500">Proof and payment details are mandatory. The booking remains tentative until payment is confirmed.</p>
+        <p className="mt-1 text-sm text-slate-500">{proofFileRequired(method) ? copy.leadOther : copy.leadCash}</p>
         {message ? <div className="mt-4 rounded-lg bg-slate-100 px-3 py-2 text-sm">{message}</div> : null}
         <form onSubmit={uploadPayment} className="mt-4 space-y-4">
           <div className="space-y-2">
@@ -243,22 +289,22 @@ export function PaymentPanel({
             </select>
           </div>
           <div className="space-y-2">
-            <label>Payer name <span className="text-slate-400">optional</span></label>
+            <label>Payer name <span className="text-slate-400">{copy.optional}</span></label>
             <input name="payer_name" className="w-full" />
           </div>
           <div className="space-y-2">
-            <label>Reference number <span className="text-slate-400">optional</span></label>
+            <label>Reference number <span className="text-slate-400">{copy.optional}</span></label>
             <input name="payment_reference" className="w-full" />
           </div>
           <div className="space-y-2">
-            <label>Payment information / notes</label>
+            <label>{copy.notes}</label>
             <textarea name="payment_details" rows={3} required className="w-full" placeholder="Reference, sender, date/time paid, or cashier notes." />
           </div>
           <div className="space-y-2">
-            <label>Payment proof</label>
-            <input name="proof" type="file" accept="image/*,application/pdf" required className="w-full" />
+            <label>{copy.proof}{proofFileRequired(method) ? null : <> <span className="text-slate-400">{copy.optional}</span></>}</label>
+            <input name="proof" type="file" accept="image/*,application/pdf" required={proofFileRequired(method)} className="w-full" />
           </div>
-          <button className="btn-primary w-full" type="submit" disabled={loading}>{loading ? 'Uploading...' : 'Submit proof'}</button>
+          <button className="btn-primary w-full" type="submit" disabled={loading}>{loading ? 'Uploading...' : proofFileRequired(method) ? copy.submit : copy.submitCash}</button>
           {offlineDraft ? (
             <button className="btn-secondary w-full" type="button" disabled={loading} onClick={() => void saveOfflineDraft()}>
               Save offline payment draft

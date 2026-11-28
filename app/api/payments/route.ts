@@ -6,6 +6,7 @@ import { amountReservedByPayments, submitFitsStay } from '@/lib/payment-cap';
 import { loadStayMoney } from '@/lib/stay-money';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { getProcessedOfflineRequest, recordProcessedOfflineRequest } from '@/lib/idempotency';
+import { hasProofFile, storedProofPath, validatePaymentProofInput } from '@/lib/payment-proof';
 
 export const runtime = 'nodejs';
 
@@ -37,8 +38,9 @@ export async function POST(request: Request) {
 
   if (!reservationId) return jsonError('Reservation is required.');
   if (!Number.isFinite(amount) || amount <= 0) return jsonError('Payment amount must be greater than zero.');
-  if (!paymentDetails) return jsonError('Payment information / reference details are required.');
-  if (!(proof instanceof File) || proof.size === 0) return jsonError('Payment proof is mandatory.');
+  const hasProof = hasProofFile(proof instanceof File ? proof : null);
+  const proofCheck = validatePaymentProofInput({ method, paymentDetails, hasProof });
+  if (!proofCheck.ok) return jsonError(proofCheck.error);
 
   const { data: reservation, error: reservationError } = await supabaseAdmin
     .from('reservations')
@@ -75,16 +77,26 @@ export async function POST(request: Request) {
   const fit = submitFitsStay(loaded.money.total, amountReservedByPayments(loaded.money.payments), storedAmount);
   if (!fit.ok) return jsonError(fit.error);
 
-  const path = `${reservation.hotel_id}/${reservationId}/${Date.now()}-${cleanFileName(proof.name)}`;
-  const buffer = Buffer.from(await proof.arrayBuffer());
-  const { error: uploadError } = await supabaseAdmin.storage
-    .from('payment-proofs')
-    .upload(path, buffer, {
-      contentType: proof.type || 'application/octet-stream',
-      upsert: false
-    });
+  let path: string | null = null;
+  let proofOriginalName: string | null = null;
+  if (hasProof && proof instanceof File) {
+    path = `${reservation.hotel_id}/${reservationId}/${Date.now()}-${cleanFileName(proof.name)}`;
+    const buffer = Buffer.from(await proof.arrayBuffer());
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from('payment-proofs')
+      .upload(path, buffer, {
+        contentType: proof.type || 'application/octet-stream',
+        upsert: false
+      });
 
-  if (uploadError) return jsonError(uploadError.message, 400);
+    if (uploadError) return jsonError(uploadError.message, 400);
+    proofOriginalName = proof.name;
+  }
+  const storedPath = storedProofPath({ method, uploadedPath: path });
+  if (typeof storedPath !== 'string') {
+    if (path) await supabaseAdmin.storage.from('payment-proofs').remove([path]);
+    return jsonError(storedPath.error);
+  }
 
   const { data: payment, error: paymentError } = await supabaseAdmin
     .from('payments')
@@ -95,15 +107,15 @@ export async function POST(request: Request) {
       payer_name: payerName,
       payment_reference: paymentReference,
       payment_details: cardNotice ? `${paymentDetails}\n${cardNotice}` : paymentDetails,
-      proof_path: path,
-      proof_original_name: proof.name,
+      proof_path: storedPath,
+      proof_original_name: proofOriginalName,
       status: 'submitted'
     })
     .select('*')
     .single();
 
   if (paymentError) {
-    await supabaseAdmin.storage.from('payment-proofs').remove([path]);
+    if (path) await supabaseAdmin.storage.from('payment-proofs').remove([path]);
     return jsonError(paymentError.message, 400);
   }
 
