@@ -8,7 +8,7 @@ import { balanceDueLabel } from '@/lib/stay-cleanup';
 import { isAutoPostedCharge } from '@/lib/breakfast-toggle';
 import { queueOfflineItem } from '@/lib/offline/db';
 import { serviceCategoryOptions } from '@/lib/service-categories';
-import { CHARGE_AMOUNT_ERROR, chargeAmountRefusal } from '@/lib/charge-amount';
+import { CHARGE_AMOUNT_ERROR, chargeAmountErrorVisible, chargeAmountRefusal } from '@/lib/charge-amount';
 
 export function ReservationFolio({
   reservationId,
@@ -61,6 +61,7 @@ export function ReservationFolio({
   const [offlineDraft, setOfflineDraft] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [amountInteracted, setAmountInteracted] = useState(false);
 
   const chargesSubtotal = charges.reduce((sum, charge) => sum + Number(charge.total_amount || 0), 0);
   const displayTotal = Number(roomTotal || 0) + chargesSubtotal + Number(expectedExtraBed || 0);
@@ -76,6 +77,7 @@ export function ReservationFolio({
     setUnitPrice(String(Number(selectedService.default_price || 0)));
     setRemittanceRequired(Boolean(selectedService.remittance_required));
     setRemittanceNote(selectedService.remittance_note || '');
+    setAmountInteracted(false);
   }, [selectedService]);
 
   async function addCharge(event: React.FormEvent<HTMLFormElement>) {
@@ -84,6 +86,7 @@ export function ReservationFolio({
     setMessage('');
     const amountError = chargeAmountRefusal(unitPrice);
     if (amountError) {
+      setAmountInteracted(true);
       setMessage(zeroChargeLabel);
       return;
     }
@@ -335,7 +338,19 @@ export function ReservationFolio({
                 </div>
                 <div className="space-y-2">
                   <label>Unit price</label>
-                  <input value={unitPrice} onChange={(event) => setUnitPrice(event.target.value)} type="number" min="0.01" step="0.01" required className="w-full" />
+                  <input
+                    value={unitPrice}
+                    onChange={(event) => {
+                      setUnitPrice(event.target.value);
+                      setAmountInteracted(true);
+                    }}
+                    onBlur={() => setAmountInteracted(true)}
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    required
+                    className="w-full"
+                  />
                 </div>
               </div>
               <label className="flex items-center gap-2 text-sm">
@@ -353,7 +368,7 @@ export function ReservationFolio({
               <div className="rounded-lg bg-slate-50 p-3 text-sm">
                 <span className="text-slate-500">Charge total</span>
                 <span className="ml-2 font-bold">{currency(draftTotal, currencyCode)}</span>
-                {chargeAmountRefusal(unitPrice) ? <p className="mt-2 text-sm text-red-700">{zeroChargeLabel}</p> : null}
+                {chargeAmountErrorVisible(amountInteracted, unitPrice) ? <p className="mt-2 text-sm text-red-700">{zeroChargeLabel}</p> : null}
               </div>
               <button className="btn-primary w-full" type="submit" disabled={loading}>{loading ? 'Adding...' : 'Add charge'}</button>
               {offlineDraft ? (
