@@ -183,6 +183,15 @@ export default async function DailyCashSheetPage({ searchParams }: { searchParam
         savedCounts={savedCounts}
         canLock={canLock}
         shortages={shortages}
+        copy={{
+          sheetSaved: label(locale, 'close.sheetSaved'),
+          sheetSavedPlain: label(locale, 'close.sheetSavedPlain'),
+          notCountedYet: label(locale, 'close.notCountedYet'),
+          variance: label(locale, 'close.variance'),
+          short: label(locale, 'close.statusShort'),
+          excess: label(locale, 'close.statusExcess'),
+          balanced: label(locale, 'close.statusBalanced')
+        }}
       />
     </div>
   );

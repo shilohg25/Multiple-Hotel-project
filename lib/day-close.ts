@@ -138,6 +138,26 @@ export type SavedCountRow = {
   quantity: number | string;
 };
 
+function quantityEntered(counts: Record<number, number> | { quantity?: number | string | null; denomination?: number | string | null }[]): boolean {
+  const values = Array.isArray(counts)
+    ? counts.map((row) => Number(row.quantity || 0))
+    : Object.values(counts).map((value) => Number(value || 0));
+  return values.some((value) => Number.isFinite(value) && value > 0);
+}
+
+/**
+ * Display-only: true once staff have entered a cash count (any float or drawer
+ * quantity, or money already deposited). Return-to-fund is not a count.
+ * Close math is unchanged and can still score a short of an empty drawer.
+ */
+export function hasCashBeenCounted(
+  floatCounts: Record<number, number> | { quantity?: number | string | null; denomination?: number | string | null }[],
+  drawerCounts: Record<number, number> | { quantity?: number | string | null; denomination?: number | string | null }[],
+  bankDeposit?: number | string | null
+): boolean {
+  return quantityEntered(floatCounts) || quantityEntered(drawerCounts) || Number(bankDeposit || 0) > 0;
+}
+
 /** Rebuild the denomination map the close form needs from saved day_close_counts rows. */
 export function countMapForBucket(rows: SavedCountRow[], bucket: CountBucket): Record<number, number> {
   const map: Record<number, number> = {};
