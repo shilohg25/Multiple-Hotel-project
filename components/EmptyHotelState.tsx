@@ -1,3 +1,3 @@
 export function EmptyHotelState({ message }: { message: string }) {
-  return <div className="card p-6 text-sm text-slate-500">{message}</div>;
+  return <div className="card p-6 text-sm text-slate-600">{message}</div>;
 }

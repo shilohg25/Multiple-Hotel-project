@@ -122,6 +122,10 @@ describe('header identity', () => {
       name: 'Pat Manager',
       roleLabel: null
     });
+    assert.deepEqual(formatHeaderIdentity('TEST- Demo Restaurant', 'restaurant_staff'), {
+      name: 'TEST- Demo Restaurant',
+      roleLabel: null
+    });
   });
 
   it('shows a readable role when the name does not already include it', () => {

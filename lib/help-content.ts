@@ -29,7 +29,7 @@ export const helpGuides: HelpGuide[] = [
     steps: [
       'Look at "Already in the app". Confirmed room payments are there already. Do not type them again.',
       'Under "Typed today", add only walk-in or restaurant sales, add-ons sold at the desk, expenses, and unpaid amounts.',
-      'Count the revolving fund by itself. It should come back to the float, usually ₱10,000.',
+      'Count the revolving fund (RVF) by itself. It should come back to the float, usually ₱10,000.',
       'Count the cash still in the drawer in the other box. This is the only cash count for the day.',
       'Choose the staff member responsible for this shift.',
       'If the result says Short or Excess, write what happened.',
@@ -52,7 +52,7 @@ export const helpGuides: HelpGuide[] = [
     id: 'rates',
     title: 'When the price is different',
     screen: 'general',
-    summary: 'Walk-in and OTA prices are already set. Front desk does not change them.',
+    summary: 'Walk-in and OTA (online travel agency, like Booking.com) prices are already set. Front desk does not change them.',
     steps: [
       'If the guest was promised a different price, request it on the stay and write why.',
       'A manager approves or rejects it.',
@@ -64,7 +64,9 @@ export const helpGuides: HelpGuide[] = [
 export const helpFaqs = [
   { question: 'What if nobody is arriving?', answer: 'That is normal. The arrivals box stays empty. Check the in-house list and the departures.' },
   { question: 'Who locks the day?', answer: 'Front desk fills in the count. A manager locks it. Only a manager can open it again, and they must write why.' },
-  { question: 'What is the RVF?', answer: 'It is the cash float that stays in the drawer, usually ₱10,000. Count it separately from the money you will deposit.' },
+  { question: 'What is the RVF (revolving fund)?', answer: 'It is the cash float that stays in the drawer, usually ₱10,000. Count it separately from the money you will deposit.' },
+  { question: 'What is an OTA?', answer: 'OTA means online travel agency, like Booking.com, Trip.com, or Expedia. Those stays use a separate OTA price, and the agency usually collects the payment.' },
+  { question: 'What is MDR?', answer: "MDR is the bank's card fee (merchant discount rate). The app uses it to estimate what the bank will credit after a card payment. You do not type this fee by hand." },
   { question: 'What if I am short?', answer: 'Write a note before the day can be locked. The shortage is recorded against the staff member named on the shift. A manager can see that charge.' },
   { question: 'Which button do I use for the restaurant?', answer: 'Pick Sotera Café or Tago Resto at the top of Today. The steps are the same as the hotel.' }
 ];

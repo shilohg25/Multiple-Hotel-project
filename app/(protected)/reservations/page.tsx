@@ -56,7 +56,7 @@ export default async function ReservationsPage({ searchParams }: { searchParams?
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-black tracking-tight">Reservations</h1>
-        <p className="mt-1 text-slate-500">Gantt-style room board with drag-to-move scheduling.</p>
+        <p className="mt-1 text-sm text-slate-600">Rooms and stays for the dates you pick. You can drag a stay to a new date or room.</p>
       </div>
       <ReservationBoard hotel={hotel} hotels={hotels} rooms={rooms} reservations={reservations} from={from} to={to} today={today} canCreate={canCreateReservation(staff.profile.role)} />
     </div>

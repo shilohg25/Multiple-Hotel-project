@@ -39,6 +39,7 @@ export const hil: MessageCatalog = {
     'help.questions': 'Mga pamangkot',
     'help.allGuides': 'Buksan ang tanan nga giya',
     'empty.noHotel': 'Wala sang hotel nga available sa imo account. Magpangayo sa manager.',
+    'empty.noHotelOwner': 'Wala sang hotel nga available sa imo account. Magdugang sang hotel ukon i-on liwat ang isa.',
     'lang.review': 'Draft ini nga hubad kag kinahanglan pa sang review.'
   },
   guides: {
@@ -57,7 +58,7 @@ export const hil: MessageCatalog = {
       summary: 'Nakalkula na ang mga total. Isipa ang kuwarta kag isulat kon sin-o ang responsable.',
       steps: [
         'Basaha ang baligya, gasto, kag cash on hand. Indi na pag-type liwat.',
-        'Isipa nga lang ang revolving fund. Dapat magbalik ini sa float, masami ₱10,000.',
+        'Isipa nga lang ang revolving fund (RVF). Dapat magbalik ini sa float, masami ₱10,000.',
         'Sa pihak nga kahon, isipa ang cash nga i-deposit sa bangko.',
         'Kon Short ukon Excess, isulat kon ngaa. Ang manager ang mag-lock.'
       ]
@@ -66,6 +67,8 @@ export const hil: MessageCatalog = {
   faqs: [
     { question: 'Paano kon wala sang gaabot?', answer: 'Normal ina. Wala sang sulod ang arrivals. Tan-awa ang ara sa sulod kag ang maga-halin.' },
     { question: 'Sin-o ang nag-lock sang adlaw?', answer: 'Ang front desk ang nagalistahan. Ang manager ang nag-lock. Kinahanglan sang rason para buksan liwat.' },
-    { question: 'Ano ang RVF?', answer: 'Amo ini ang float nga nabilin sa drawer, masami ₱10,000. Ibulag ini sa i-deposit.' }
+    { question: 'Ano ang RVF (revolving fund)?', answer: 'Amo ini ang float nga nabilin sa drawer, masami ₱10,000. Ibulag ini sa i-deposit.' },
+    { question: 'Ano ang OTA?', answer: 'Ang OTA amo ang online travel agency, pareho sang Booking.com, Trip.com, ukon Expedia. May iba nga presyo ang mga stay nga to, kag masami ang agency ang magkuha sang bayad.' },
+    { question: 'Ano ang MDR?', answer: 'Ang MDR amo ang card fee sang banko (merchant discount rate). Ginagamit ini sang app para tantyahon kung ano ang i-credit sang banko pagkatapos sang card payment. Indi ninyo ini i-type mismo.' }
   ]
 };

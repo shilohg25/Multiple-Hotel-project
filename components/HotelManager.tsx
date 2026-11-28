@@ -3,11 +3,10 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Hotel, Role } from '@/types/app';
-import { currency } from '@/lib/money';
-import { downpaymentLabel } from '@/lib/downpayment';
 import { DEFAULT_BUSINESS_TIMEZONE } from '@/lib/date';
 import { slugify } from '@/lib/slug';
 import { EMPTY_HOTEL_MESSAGE_EN, shouldShowOwnerPanel } from '@/lib/empty-hotel';
+import { hotelBadgeClass, hotelCardBadges, hotelDownpaymentSummary } from '@/lib/hotel-card';
 
 export type HotelRoomCount = {
   hotel_id: string;
@@ -83,25 +82,22 @@ export function HotelManager({
             return (
               <div key={hotel.id} className="px-5 py-4">
                 <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
-                  <div>
+                  <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-bold">{hotel.name}</p>
-                      <span className={`rounded-full px-2 py-1 text-xs font-bold ${hotel.active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-                        {hotel.active ? 'Active' : 'Inactive'}
-                      </span>
-                      <span className={`rounded-full px-2 py-1 text-xs font-bold ${setupNeeded ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700'}`}>
-                        {setupNeeded ? 'Setup needed' : 'Ready'}
-                      </span>
+                      <p className="text-base font-bold leading-tight">{hotel.name}</p>
+                      {hotelCardBadges(hotel.active, setupNeeded).map((badge) => (
+                        <span key={badge.kind} className={`rounded-full px-2 py-1 text-xs font-bold ${hotelBadgeClass(badge.kind)}`}>
+                          {badge.label}
+                        </span>
+                      ))}
                     </div>
-                    <p className="text-sm text-slate-500">
-                      /{hotel.slug} - {downpaymentLabel(hotel.downpayment_type)}
-                      {hotel.downpayment_type === 'percent' ? ` ${hotel.default_downpayment_percent}%` : ''}
-                      {hotel.downpayment_type === 'fixed' ? ` ${currency(hotel.default_downpayment_amount, hotel.default_currency)}` : ''}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-500">{hotel.address || 'Address not set'} - {hotel.contact_phone || 'Phone not set'}</p>
-                    <p className="mt-1 text-sm text-slate-500">Business timezone: {hotel.timezone || DEFAULT_BUSINESS_TIMEZONE}</p>
-                    <p className="mt-1 text-sm text-slate-500">Legal name: {hotel.legal_name || 'Not set'}</p>
-                    <p className="mt-2 text-sm font-semibold text-slate-700">
+                    <p className="text-sm text-slate-600">{hotel.address || 'Address not set'}</p>
+                    <p className="text-sm text-slate-600">{hotel.contact_phone || 'Phone not set'}</p>
+                    <p className="text-sm text-slate-600">Booking page: /{hotel.slug}</p>
+                    <p className="text-sm text-slate-600">{hotelDownpaymentSummary(hotel)}</p>
+                    <p className="text-sm text-slate-600">Business timezone: {hotel.timezone || DEFAULT_BUSINESS_TIMEZONE}</p>
+                    {hotel.legal_name ? <p className="text-sm text-slate-600">Legal name: {hotel.legal_name}</p> : null}
+                    <p className="pt-1 text-sm font-semibold text-slate-800">
                       Rooms / Units: {counts.active} active, {counts.inactive} inactive, {counts.total} total
                     </p>
                     {setupNeeded ? (
@@ -120,7 +116,7 @@ export function HotelManager({
               </div>
             );
           })}
-          {!hotels.length ? <p className="px-5 py-6 text-sm text-slate-500">{emptyHotelMessage}</p> : null}
+          {!hotels.length ? <p className="px-5 py-6 text-sm text-slate-600">{emptyHotelMessage}</p> : null}
         </div>
       </section>
 

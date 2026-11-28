@@ -39,6 +39,7 @@ export const mln: MessageCatalog = {
     'help.questions': 'Mga pamangkot',
     'help.allGuides': 'Buksan tanan nga giya',
     'empty.noHotel': 'Uwa hotel nga available sa imong account. Magpangutana sa manager.',
+    'empty.noHotelOwner': 'Uwa hotel nga available sa imong account. Magdugang it hotel o i-on liwat ro isa.',
     'lang.review': 'Draft nga hubad ini ag kinahanglan pa marebyu.'
   },
   guides: {
@@ -57,7 +58,7 @@ export const mln: MessageCatalog = {
       summary: 'Nakalkula eon ro mga total. Isipa ro kwarta ag isulat kon sin-o ro responsable.',
       steps: [
         'Basaha ro baligya, gasto, ag cash on hand. Uwa eon pag-type liwat.',
-        'Isipa nga isaea ro revolving fund. Dapat magbalik sa float, masami ₱10,000.',
+        'Isipa nga isaea ro revolving fund (RVF). Dapat magbalik sa float, masami ₱10,000.',
         'Sa pihak nga kahon, isipa ro cash nga i-deposit sa bangko.',
         'Kung Short o Excess, isulat kon basihon. Manager ro mag-lock.'
       ]
@@ -66,6 +67,8 @@ export const mln: MessageCatalog = {
   faqs: [
     { question: 'Paano kung uwa gaabot?', answer: 'Normal ra. Uwa sa arrivals. Tan-awa ro yara sa sueod ag ro magahalin.' },
     { question: 'Sin-o ro nag-lock it adlaw?', answer: 'Front desk ro nagalista. Manager ro nag-lock. Kinahanglan it rason para mabuksan liwat.' },
-    { question: 'Ano ro RVF?', answer: 'Float nga nabilin sa drawer, masami ₱10,000. Ibulag sa i-deposit.' }
+    { question: 'Ano ro RVF (revolving fund)?', answer: 'Float nga nabilin sa drawer, masami ₱10,000. Ibulag sa i-deposit.' },
+    { question: 'Ano ro OTA?', answer: 'Ro OTA hay online travel agency, pareho it Booking.com, Trip.com, o Expedia. May ibang presyo ro mga stay nga to, ag masami ro agency ro magakuha it bayad.' },
+    { question: 'Ano ro MDR?', answer: 'Ro MDR hay card fee it bangko (merchant discount rate). Ginagamit it app para tantyahon kung ano ro i-credit it bangko pagkatapos it card payment. Indi ninyo ini i-type mismo.' }
   ]
 };

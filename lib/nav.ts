@@ -111,5 +111,16 @@ export function formatHeaderIdentity(
   if (candidates.some((candidate) => candidate && nameNorm.includes(candidate))) {
     return { name, roleLabel: null };
   }
+
+  // "TEST- Demo Restaurant" should not also show "Restaurant staff".
+  const nameWords = new Set(nameNorm.split(' ').filter(Boolean));
+  const distinctive = roleLabel
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .split(' ')
+    .filter((word) => word && word !== 'staff' && word.length >= 4);
+  if (distinctive.some((word) => nameWords.has(word))) {
+    return { name, roleLabel: null };
+  }
   return { name, roleLabel };
 }

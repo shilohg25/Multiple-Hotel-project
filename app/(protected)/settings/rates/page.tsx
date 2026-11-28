@@ -5,12 +5,12 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { ChannelRatesManager } from '@/components/ChannelRatesManager';
 import type { ChannelRate, Hotel, Room, RoomType } from '@/types/app';
 import { getLocale, label } from '@/lib/i18n';
-import { EMPTY_HOTEL_MESSAGE_KEY } from '@/lib/empty-hotel';
+import { emptyHotelMessageKey } from '@/lib/empty-hotel';
 
 export default async function ChannelRatesPage() {
   const staff = await requireStaff();
   const locale = await getLocale();
-  const emptyHotelMessage = label(locale, EMPTY_HOTEL_MESSAGE_KEY);
+  const emptyHotelMessage = label(locale, emptyHotelMessageKey(staff.profile.role));
   if (!canManagePricingSetup(staff.profile)) redirect('/dashboard');
 
   const { data: hotelsRaw } = await supabaseAdmin.from('hotels').select('*').eq('active', true).order('name');
@@ -33,7 +33,7 @@ export default async function ChannelRatesPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-black tracking-tight">Room rates by channel</h1>
-        <p className="mt-1 text-slate-500">Set the walk-in, OTA, and short-time price for each room type. A one-off price still needs a manager to approve it on the stay.</p>
+        <p className="mt-1 text-sm text-slate-600">Set the walk-in, OTA, and short-time price for each room type. A one-off price still needs a manager to approve it on the stay.</p>
       </div>
       <ChannelRatesManager
         hotels={hotels}

@@ -6,12 +6,12 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { ServiceCatalogManager } from '@/components/ServiceCatalogManager';
 import type { Hotel, ServiceItem } from '@/types/app';
 import { getLocale, label } from '@/lib/i18n';
-import { EMPTY_HOTEL_MESSAGE_KEY } from '@/lib/empty-hotel';
+import { emptyHotelMessageKey } from '@/lib/empty-hotel';
 
 export default async function SettingsServicesPage() {
   const staff = await requireStaff();
   const locale = await getLocale();
-  const emptyHotelMessage = label(locale, EMPTY_HOTEL_MESSAGE_KEY);
+  const emptyHotelMessage = label(locale, emptyHotelMessageKey(staff.profile.role));
   if (!canManageServiceCatalog(staff.profile)) redirect('/dashboard');
 
   const { data: hotelsRaw } = await supabaseAdmin.from('hotels').select('*').eq('active', true).order('name');
@@ -26,7 +26,7 @@ export default async function SettingsServicesPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-black tracking-tight">Services & Charges</h1>
-        <p className="mt-1 text-slate-500">Breakfast, extra bed, and hourly charges. Managers and owners can change the prices.</p>
+        <p className="mt-1 text-sm text-slate-600">Breakfast, extra bed, and hourly charges. Managers and owners can change the prices.</p>
       </div>
       <Suspense fallback={<div className="card p-6">Loading service catalog...</div>}>
         <ServiceCatalogManager hotels={hotels} serviceItems={serviceItems} emptyHotelMessage={emptyHotelMessage} />

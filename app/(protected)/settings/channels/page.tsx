@@ -5,12 +5,12 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { PaymentChannelsManager, type PaymentChannel } from '@/components/PaymentChannelsManager';
 import type { Hotel } from '@/types/app';
 import { getLocale, label } from '@/lib/i18n';
-import { EMPTY_HOTEL_MESSAGE_KEY } from '@/lib/empty-hotel';
+import { emptyHotelMessageKey } from '@/lib/empty-hotel';
 
 export default async function PaymentChannelsPage() {
   const staff = await requireStaff();
   const locale = await getLocale();
-  const emptyHotelMessage = label(locale, EMPTY_HOTEL_MESSAGE_KEY);
+  const emptyHotelMessage = label(locale, emptyHotelMessageKey(staff.profile.role));
   if (!canManagePricingSetup(staff.profile)) redirect('/dashboard');
   const { data: hotelsRaw } = await supabaseAdmin.from('hotels').select('*').eq('active', true).order('name');
   const hotels = hotelsForProfile(staff.profile, (hotelsRaw || []) as Hotel[]);
@@ -22,7 +22,7 @@ export default async function PaymentChannelsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-black tracking-tight">Payment channels</h1>
-        <p className="mt-1 text-slate-500">Cash, GCash, Maya, bank, card, cheque, OTA payout, and company billing. The card surcharge and bank MDR are settings.</p>
+        <p className="mt-1 text-sm text-slate-600">Cash, GCash, Maya, bank, card, cheque, OTA payout, and company billing. The card surcharge and bank MDR are settings.</p>
       </div>
       <PaymentChannelsManager hotels={hotels} channels={rowsForHotels((channelsRaw || []) as PaymentChannel[], new Set(hotelIds))} emptyHotelMessage={emptyHotelMessage} />
     </div>

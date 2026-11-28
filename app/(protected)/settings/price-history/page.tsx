@@ -12,7 +12,7 @@ import {
 } from '@/lib/price-history';
 import type { Hotel, PriceChangeLog } from '@/types/app';
 import { getLocale, label } from '@/lib/i18n';
-import { EMPTY_HOTEL_MESSAGE_KEY } from '@/lib/empty-hotel';
+import { emptyHotelMessageKey } from '@/lib/empty-hotel';
 
 type SearchParams = { hotel?: string };
 
@@ -22,7 +22,7 @@ export default async function PriceHistoryPage({ searchParams }: { searchParams?
   const params = (await searchParams) || {};
   const staff = await requireStaff();
   const locale = await getLocale();
-  const emptyHotelMessage = label(locale, EMPTY_HOTEL_MESSAGE_KEY);
+  const emptyHotelMessage = label(locale, emptyHotelMessageKey(staff.profile.role));
   if (staff.profile.role !== 'owner' && staff.profile.role !== 'manager') redirect('/dashboard');
 
   const { data: hotelsRaw } = await supabaseAdmin.from('hotels').select('*').eq('active', true).order('name');
@@ -72,7 +72,7 @@ export default async function PriceHistoryPage({ searchParams }: { searchParams?
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-black tracking-tight">Price Change History</h1>
-        <p className="mt-1 text-slate-500">Read-only audit trail for room, service, payment-channel, and channel-rate price changes.</p>
+        <p className="mt-1 text-sm text-slate-600">Read-only audit trail for room, service, payment-channel, and channel-rate price changes.</p>
       </div>
 
       <section className="card p-5">
