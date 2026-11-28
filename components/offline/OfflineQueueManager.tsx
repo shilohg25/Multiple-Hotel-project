@@ -127,9 +127,9 @@ export function OfflineQueueManager() {
         <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
           <div>
             <h2 className="text-lg font-bold">Offline limits</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Offline mode saves staff drafts and print snapshots only. Payments cannot be confirmed offline, bookings cannot be secured offline,
-              and the server validates all room/date conflicts during sync.
+            <p className="mt-1 text-sm text-slate-600">
+              This page only stores drafts and print copies on this device. You cannot confirm a payment or hold a room while offline.
+              When you sync, the server checks room and date conflicts.
             </p>
           </div>
           <button className="btn-primary print-hidden" type="button" disabled={syncing} onClick={() => void syncNow()}>
@@ -164,6 +164,9 @@ export function OfflineQueueManager() {
             </div>
           </div>
         ) : null}
+        {!queue.length ? (
+          <p className="px-5 py-6 text-sm text-slate-600">No offline drafts on this device yet. Anything you save while the internet is out will show up here so you can sync it later.</p>
+        ) : (
         <div className="overflow-x-auto">
           <table className="min-w-[760px] w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
@@ -207,10 +210,11 @@ export function OfflineQueueManager() {
                   </td>
                 </tr>
               ))}
-              {!queue.length ? <tr><td className="px-5 py-6 text-slate-500" colSpan={7}>No offline drafts in this browser.</td></tr> : null}
+
             </tbody>
           </table>
         </div>
+        )}
       </section>
 
       <section className="card p-5 print-hidden">

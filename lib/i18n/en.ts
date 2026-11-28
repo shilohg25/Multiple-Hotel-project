@@ -54,6 +54,8 @@ export const en: MessageCatalog = {
     'help.intro': 'Short steps for a new shift. The app calculates the totals. You count the cash, name the guest, and ask a manager when a price or a day needs approval.',
     'help.questions': 'Questions',
     'help.allGuides': 'Open all guides',
+    'empty.noHotel': 'No hotel is available for your account. Ask a manager.',
+    'empty.noHotelOwner': 'No hotel is available for your account. Add a hotel or turn one back on.',
     'lang.review': 'This translation is a draft and needs review.'
   },
   guides: {
@@ -62,7 +64,8 @@ export const en: MessageCatalog = {
       summary: 'Today is the first screen of the shift. It shows who is coming, who is here, who is leaving, and anyone still checked in after checkout.',
       steps: [
         'Check the property and the date at the top. For Sotera Café or Tago Resto, pick that outlet.',
-        'Amber rooms are arrivals. Open the room and press Check in.',
+        'Amber rooms are arrivals. Open the stay and use Check in guest.',
+        'Use Walk-in for a new guest who has no booking yet. The other big buttons are for a charge, a payment, an expense, or the Daily cash sheet.',
         'Green rooms are guests already in the hotel.',
         'Blue rooms leave today. Open the room and press Check out.',
         'Rose rooms are overdue: still checked in after their checkout date. Open the stay, collect any balance, and check them out.'
@@ -74,7 +77,7 @@ export const en: MessageCatalog = {
       steps: [
         'Room payments confirmed today are already on the sheet. Do not type them again.',
         'Type only walk-in or restaurant sales, add-ons sold at the desk, expenses, and unpaid amounts.',
-        'Count the revolving fund by itself. It should come back to the float, usually ₱10,000.',
+        'Count the revolving fund (RVF) by itself. It should come back to the float, usually ₱10,000.',
         'Count the cash still in the drawer in the other box. This is the only cash count for the day.',
         'If the result says Short or Excess, write what happened. A manager locks the day.'
       ]
@@ -83,6 +86,8 @@ export const en: MessageCatalog = {
   faqs: [
     { question: 'What if nobody is arriving?', answer: 'That is normal. The arrivals box stays empty. Check the in-house list and the departures.' },
     { question: 'Who locks the day?', answer: 'Front desk fills in the count. A manager locks it. Only a manager can open it again, and they must write why.' },
-    { question: 'What is the RVF?', answer: 'It is the cash float that stays in the drawer, usually ₱10,000. Count it separately from the money you will deposit.' }
+    { question: 'What is the RVF (revolving fund)?', answer: 'It is the cash float that stays in the drawer, usually ₱10,000. Count it separately from the money you will deposit.' },
+    { question: 'What is an OTA?', answer: 'OTA means online travel agency, like Booking.com, Trip.com, or Expedia. Those stays use a separate OTA price, and the agency usually collects the payment.' },
+    { question: 'What is MDR?', answer: "MDR is the bank's card fee (merchant discount rate). The app uses it to estimate what the bank will credit after a card payment. You do not type this fee by hand." }
   ]
 };

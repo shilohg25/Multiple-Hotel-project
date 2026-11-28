@@ -1,27 +1,9 @@
 import type { Profile } from '@/types/app';
 import { isFrontline } from '@/lib/access';
 import { getLocale, label } from '@/lib/i18n';
+import { getStaffNavGroups } from '@/lib/nav';
 import { StaffHeader } from '@/components/StaffHeader';
 import { OfflineStatusBanner } from '@/components/offline/OfflineStatusBanner';
-
-const navItems = [
-  { href: '/today', label: 'Today' },
-  { href: '/dashboard', label: 'Dashboard' },
-  { href: '/reservations', label: 'Reservations' },
-  { href: '/board', label: 'Board' },
-  { href: '/payments', label: 'Payments' },
-  { href: '/sales', label: 'Daily cash sheet' },
-  { href: '/reports/daily', label: 'Reports' },
-  { href: '/reports/monthly', label: 'Monthly' },
-  { href: '/rooms', label: 'Rooms / Units' },
-  { href: '/remittances', label: 'Remittances' },
-  { href: '/day-tours', label: 'Day Tours' },
-  { href: '/offline', label: 'Offline Queue' },
-  { href: '/help', label: 'How to' },
-  { href: '/hotels', label: 'Hotels' }
-];
-
-const frontlineHrefs = new Set(['/today', '/sales', '/offline', '/help']);
 
 export async function Shell({ children, profile }: { children: React.ReactNode; profile: Profile }) {
   const locale = await getLocale();
@@ -31,9 +13,10 @@ export async function Shell({ children, profile }: { children: React.ReactNode; 
     if (href === '/help') return label(locale, 'nav.help');
     return fallback;
   };
-  const visibleNavItems = isFrontline(profile.role)
-    ? navItems.filter((item) => frontlineHrefs.has(item.href))
-    : [...navItems, { href: '/settings', label: 'Settings' }];
+  const groups = getStaffNavGroups(profile.role).map((group) => ({
+    ...group,
+    items: group.items.map((item) => ({ href: item.href, label: nameFor(item.href, item.label) }))
+  }));
 
   return (
     <div className="min-h-screen min-w-0">
@@ -41,7 +24,7 @@ export async function Shell({ children, profile }: { children: React.ReactNode; 
         homeHref={isFrontline(profile.role) ? '/today' : '/dashboard'}
         locale={locale}
         profile={profile}
-        items={visibleNavItems.map((item) => ({ href: item.href, label: nameFor(item.href, item.label) }))}
+        groups={groups}
       />
       <OfflineStatusBanner />
       <main className="mx-auto min-w-0 max-w-7xl px-4 py-6">{children}</main>

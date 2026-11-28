@@ -27,7 +27,7 @@ function rangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: strin
 
 function reservationColor(status: Reservation['status']) {
   switch (status) {
-    case 'secured': return 'bg-emerald-600 border-emerald-700 text-white';
+    case 'secured': return 'bg-emerald-700 border-emerald-800 text-white';
     case 'payment_submitted': return 'bg-blue-600 border-blue-700 text-white';
     case 'checked_in': return 'bg-indigo-600 border-indigo-700 text-white';
     case 'cancelled': return 'bg-red-100 border-red-200 text-red-700';
@@ -185,8 +185,8 @@ export function ReservationBoard({
         <div className="border-b border-slate-200 px-4 py-3">
           <div className="flex flex-col justify-between gap-2 md:flex-row md:items-start">
             <div>
-              <h2 className="text-base font-bold leading-tight">Gantt booking board</h2>
-              <p className="mt-0.5 text-xs text-slate-500">Drag a booking horizontally to change dates or vertically to move rooms. Secured overlaps are blocked.</p>
+              <h2 className="text-base font-bold leading-tight">Room board</h2>
+              <p className="mt-0.5 text-sm text-slate-600">Drag a stay sideways to change dates, or up and down to move it to another room. A stay that is already secured cannot overlap another.</p>
             </div>
             <p className="text-xs text-slate-500">{formatDate(from)} – {formatDate(toISODate(addDays(to, -1)))}</p>
           </div>

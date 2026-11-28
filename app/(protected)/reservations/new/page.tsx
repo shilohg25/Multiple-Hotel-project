@@ -4,14 +4,18 @@ import { requireStaff, canAccessHotel } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { ReservationForm } from '@/components/ReservationForm';
 import type { Hotel, Room } from '@/types/app';
+import { getLocale, label } from '@/lib/i18n';
+import { emptyHotelMessageKey } from '@/lib/empty-hotel';
 
 export default async function NewReservationPage() {
   const staff = await requireStaff();
+  const locale = await getLocale();
+  const emptyHotelMessage = label(locale, emptyHotelMessageKey(staff.profile.role));
   if (!canCreateReservation(staff.profile.role)) {
     return (
       <section className="card mx-auto max-w-lg space-y-3 p-6">
         <h1 className="text-2xl font-black">You cannot create a reservation</h1>
-        <p className="text-sm text-slate-600">Front desk, managers, and owners can create reservations. Cashier and restaurant staff use Today and daily sales.</p>
+        <p className="text-sm text-slate-600">Front desk, managers, and owners can create reservations. Cashier and restaurant staff use Today and the Daily cash sheet.</p>
         <Link href="/today" className="btn-primary">Go to Today</Link>
       </section>
     );
@@ -28,9 +32,9 @@ export default async function NewReservationPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-black tracking-tight">New reservation</h1>
-        <p className="mt-1 text-slate-500">Walk-ins, direct bookings, and bank transfers need at least half the stay. Booking.com, Trip.com, Agoda, and Expedia are prepaid in full. Front desk can save an LGU or company stay to be billed, with an invoice or PO and no deposit.</p>
+        <p className="mt-1 text-sm text-slate-600">Walk-ins, direct bookings, and bank transfers need at least half the stay. Booking.com, Trip.com, Agoda, and Expedia are prepaid in full. Front desk can save an LGU or company stay to be billed, with an invoice or PO and no deposit.</p>
       </div>
-      <ReservationForm hotels={hotels} rooms={rooms} />
+      <ReservationForm hotels={hotels} rooms={rooms} emptyHotelMessage={emptyHotelMessage} />
     </div>
   );
 }

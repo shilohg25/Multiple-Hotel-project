@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { requireStaff } from '@/lib/auth';
+import { shouldShowOwnerControlsHeading } from '@/lib/empty-hotel';
 
 const ownerCards = [
   {
@@ -61,7 +62,9 @@ export default async function SettingsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-black tracking-tight">Settings</h1>
-        <p className="mt-1 text-slate-500">Owner controls for pricing, staff access, hotel setup, and system health.</p>
+        {shouldShowOwnerControlsHeading(staff.profile.role) ? (
+          <p className="mt-1 text-slate-500">Owner controls for pricing, staff access, hotel setup, and system health.</p>
+        ) : null}
       </div>
       <div className="grid gap-4 md:grid-cols-3">
         {cards.map((card) => (

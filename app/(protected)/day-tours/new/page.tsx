@@ -2,6 +2,7 @@ import { requireStaff, canAccessHotel } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { DayTourBookingForm } from '@/components/DayTourBookingForm';
 import type { DayTourPackage, Hotel } from '@/types/app';
+import { EmptyHotelStateLocalized } from '@/components/EmptyHotelStateLocalized';
 
 type SearchParams = { hotel?: string };
 
@@ -13,7 +14,7 @@ export default async function NewDayTourBookingPage({ searchParams }: { searchPa
   const selectedHotel = hotels.find((hotel) => hotel.id === params.hotel) || hotels[0];
 
   if (!selectedHotel) {
-    return <div className="card p-6 text-sm text-slate-500">Create a hotel before adding day tour bookings.</div>;
+    return <EmptyHotelStateLocalized />;
   }
 
   const { data: packagesRaw } = await supabaseAdmin

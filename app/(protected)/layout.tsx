@@ -22,7 +22,7 @@ export default async function ProtectedLayout({ children }: { children: React.Re
       <Shell profile={staff.profile}>
         <section className="card mx-auto max-w-lg space-y-3 p-6">
           <h1 className="text-2xl font-black">{createBlocked ? 'You cannot create a reservation' : 'This screen is for a manager'}</h1>
-          <p className="text-sm text-slate-600">{createBlocked ? 'Front desk, managers, and owners can create reservations. Cashier and restaurant staff use Today and daily sales.' : 'Front desk, cashier, and restaurant staff work from Today and daily sales.'}</p>
+          <p className="text-sm text-slate-600">{createBlocked ? 'Front desk, managers, and owners can create reservations. Cashier and restaurant staff use Today and the Daily cash sheet.' : 'Front desk, cashier, and restaurant staff work from Today and the Daily cash sheet.'}</p>
           <Link href="/today" className="btn-primary">Go to Today</Link>
         </section>
       </Shell>

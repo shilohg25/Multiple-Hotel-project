@@ -5,7 +5,7 @@ export const mln: MessageCatalog = {
   needsReview: true,
   labels: {
     'nav.today': 'Makaron',
-    'nav.sales': 'Baligya makaron',
+    'nav.sales': 'Adlaw-adlaw nga cash sheet',
     'nav.help': 'Paano-on',
     'nav.helpButton': 'Bulig',
     'today.title': 'Makaron',
@@ -25,12 +25,12 @@ export const mln: MessageCatalog = {
     'today.noStayToCharge': 'Uwa stay nga pwede butangan it charge o bayad makaron.',
     'today.room': 'Kuwarto',
     'today.expense': 'Dugangan ro gasto',
-    'today.close': 'Isara ro adlaw',
+    'today.close': 'Adlaw-adlaw nga cash sheet',
     'today.rooms': 'Mga kwarto',
     'today.noArrivals': 'Uwa gaabot.',
     'today.noInHouse': 'Uwa bisita sa sueod.',
     'today.noDepartures': 'Uwa magahalin.',
-    'close.title': 'Isara ro adlaw',
+    'close.title': 'Adlaw-adlaw nga cash sheet',
     'close.lead': 'Front desk ro magalista. Manager ro mag-lock.',
     'close.back': 'Balik sa Makaron',
     'close.print': 'I-print',
@@ -38,6 +38,8 @@ export const mln: MessageCatalog = {
     'help.intro': 'Malip-ot nga mga tikang para sa bag-ong shift. Ro app ro magkuwenta. Kamo ro mag-isip it kwarta ag magpangutana sa manager kung kinahanglan it approval.',
     'help.questions': 'Mga pamangkot',
     'help.allGuides': 'Buksan tanan nga giya',
+    'empty.noHotel': 'Uwa hotel nga available sa imong account. Magpangutana sa manager.',
+    'empty.noHotelOwner': 'Uwa hotel nga available sa imong account. Magdugang it hotel o i-on liwat ro isa.',
     'lang.review': 'Draft nga hubad ini ag kinahanglan pa marebyu.'
   },
   guides: {
@@ -46,17 +48,18 @@ export const mln: MessageCatalog = {
       summary: 'Una nga screen. Makita kon sin-o ro gaabot, yara, ag magahalin.',
       steps: [
         'Tan-awa ro property ag ro petsa. Para sa Sotera Café o Tago Resto, pili-a ro outlet.',
-        'Amber nga kwarto ro gaabot. Buksan ag pinduta ro Check-in.',
+        'Amber nga kwarto ro gaabot. Buksan ag pinduta ro I-check in ang bisita.',
+        'Gamita ro Walk-in para sa bag-ong bisita nga uwa booking.',
         'Berde ro yara eon sa sueod.',
         'Asul ro magahalin makaron. Buksan ag pinduta ro Check-out.'
       ]
     },
     close: {
-      title: 'Paano isara ro adlaw',
+      title: 'Paano pun-on ro adlaw-adlaw nga cash sheet',
       summary: 'Nakalkula eon ro mga total. Isipa ro kwarta ag isulat kon sin-o ro responsable.',
       steps: [
         'Basaha ro baligya, gasto, ag cash on hand. Uwa eon pag-type liwat.',
-        'Isipa nga isaea ro revolving fund. Dapat magbalik sa float, masami ₱10,000.',
+        'Isipa nga isaea ro revolving fund (RVF). Dapat magbalik sa float, masami ₱10,000.',
         'Sa pihak nga kahon, isipa ro cash nga i-deposit sa bangko.',
         'Kung Short o Excess, isulat kon basihon. Manager ro mag-lock.'
       ]
@@ -65,6 +68,8 @@ export const mln: MessageCatalog = {
   faqs: [
     { question: 'Paano kung uwa gaabot?', answer: 'Normal ra. Uwa sa arrivals. Tan-awa ro yara sa sueod ag ro magahalin.' },
     { question: 'Sin-o ro nag-lock it adlaw?', answer: 'Front desk ro nagalista. Manager ro nag-lock. Kinahanglan it rason para mabuksan liwat.' },
-    { question: 'Ano ro RVF?', answer: 'Float nga nabilin sa drawer, masami ₱10,000. Ibulag sa i-deposit.' }
+    { question: 'Ano ro RVF (revolving fund)?', answer: 'Float nga nabilin sa drawer, masami ₱10,000. Ibulag sa i-deposit.' },
+    { question: 'Ano ro OTA?', answer: 'Ro OTA hay online travel agency, pareho it Booking.com, Trip.com, o Expedia. May ibang presyo ro mga stay nga to, ag masami ro agency ro magakuha it bayad.' },
+    { question: 'Ano ro MDR?', answer: 'Ro MDR hay card fee it bangko (merchant discount rate). Ginagamit it app para tantyahon kung ano ro i-credit it bangko pagkatapos it card payment. Indi ninyo ini i-type mismo.' }
   ]
 };

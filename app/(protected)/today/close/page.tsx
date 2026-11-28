@@ -11,6 +11,7 @@ import { DayCloseForm } from '@/components/DayCloseForm';
 import { HelpPanel } from '@/components/HelpPanel';
 import { getLocale, label, messagesFor } from '@/lib/i18n';
 import type { Hotel, Outlet } from '@/types/app';
+import { EmptyHotelStateLocalized } from '@/components/EmptyHotelStateLocalized';
 
 type SearchParams = { hotel?: string; outlet?: string; date?: string };
 
@@ -24,7 +25,7 @@ export default async function DailyCashSheetPage({ searchParams }: { searchParam
   const { data: hotelsRaw } = await supabaseAdmin.from('hotels').select('*').eq('active', true).order('name');
   const hotels = ((hotelsRaw || []) as Hotel[]).filter((hotel) => canAccessHotel(staff.profile, hotel.id));
   const hotel = hotels.find((item) => item.id === params.hotel) || hotels[0];
-  if (!hotel) return <div className="card p-6">No property is set up for your account yet. Ask a manager or the owner.</div>;
+  if (!hotel) return <EmptyHotelStateLocalized />;
   const date = params.date || businessToday(hotel.timezone);
   const outletId = params.outlet || null;
   const canLock = allows(staff.profile.role, 'approve');

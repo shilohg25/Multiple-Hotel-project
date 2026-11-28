@@ -11,6 +11,8 @@ import {
   type AuditLogLike
 } from '@/lib/price-history';
 import type { Hotel, PriceChangeLog } from '@/types/app';
+import { getLocale, label } from '@/lib/i18n';
+import { emptyHotelMessageKey } from '@/lib/empty-hotel';
 
 type SearchParams = { hotel?: string };
 
@@ -19,6 +21,8 @@ const PRICE_AUDIT_ACTIONS = ['payment_channel.updated', 'rate.channel_defaults_u
 export default async function PriceHistoryPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const params = (await searchParams) || {};
   const staff = await requireStaff();
+  const locale = await getLocale();
+  const emptyHotelMessage = label(locale, emptyHotelMessageKey(staff.profile.role));
   if (staff.profile.role !== 'owner' && staff.profile.role !== 'manager') redirect('/dashboard');
 
   const { data: hotelsRaw } = await supabaseAdmin.from('hotels').select('*').eq('active', true).order('name');
@@ -68,7 +72,7 @@ export default async function PriceHistoryPage({ searchParams }: { searchParams?
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-black tracking-tight">Price Change History</h1>
-        <p className="mt-1 text-slate-500">Read-only audit trail for room, service, payment-channel, and channel-rate price changes.</p>
+        <p className="mt-1 text-sm text-slate-600">Read-only audit trail for room, service, payment-channel, and channel-rate price changes.</p>
       </div>
 
       <section className="card p-5">
@@ -114,7 +118,7 @@ export default async function PriceHistoryPage({ searchParams }: { searchParams?
               {!entries.length ? (
                 <tr>
                   <td className="px-5 py-6 text-slate-500" colSpan={7}>
-                    {selectedHotel ? 'No price changes recorded for this hotel yet.' : 'No accessible hotels found.'}
+                    {selectedHotel ? 'No price changes recorded for this hotel yet.' : emptyHotelMessage}
                   </td>
                 </tr>
               ) : null}

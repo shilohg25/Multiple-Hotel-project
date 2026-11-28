@@ -15,6 +15,7 @@ import { StayActionLinks } from '@/components/StayActionLinks';
 import { HelpPanel } from '@/components/HelpPanel';
 import { getLocale, label, messagesFor } from '@/lib/i18n';
 import type { Hotel, Outlet, Room } from '@/types/app';
+import { EmptyHotelStateLocalized } from '@/components/EmptyHotelStateLocalized';
 
 type SearchParams = { hotel?: string; outlet?: string; date?: string };
 
@@ -119,7 +120,7 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
   const { data: hotelsRaw } = await supabaseAdmin.from('hotels').select('*').eq('active', true).order('name');
   const hotels = ((hotelsRaw || []) as Hotel[]).filter((hotel) => canAccessHotel(staff.profile, hotel.id));
   const hotel = hotels.find((item) => item.id === params.hotel) || hotels[0];
-  if (!hotel) return <div className="card p-6">Add a property before using Today.</div>;
+  if (!hotel) return <EmptyHotelStateLocalized />;
 
   const date = params.date || businessToday(hotel.timezone);
   const outletsResult = await supabaseAdmin

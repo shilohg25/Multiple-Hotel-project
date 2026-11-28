@@ -5,7 +5,7 @@ export const hil: MessageCatalog = {
   needsReview: true,
   labels: {
     'nav.today': 'Subong',
-    'nav.sales': 'Baligya subong',
+    'nav.sales': 'Adlaw-adlaw nga cash sheet',
     'nav.help': 'Paano',
     'nav.helpButton': 'Bulig',
     'today.title': 'Subong',
@@ -25,12 +25,12 @@ export const hil: MessageCatalog = {
     'today.noStayToCharge': 'Wala sang stay nga pwede butangan sang charge ukon bayad subong.',
     'today.room': 'Kuwarto',
     'today.expense': 'Dugangi ang gasto',
-    'today.close': 'Isira ang adlaw',
+    'today.close': 'Adlaw-adlaw nga cash sheet',
     'today.rooms': 'Mga kuwarto',
     'today.noArrivals': 'Wala sang gaabot.',
     'today.noInHouse': 'Wala sang bisita sa sulod.',
     'today.noDepartures': 'Wala sang maga-halin.',
-    'close.title': 'Isira ang adlaw',
+    'close.title': 'Adlaw-adlaw nga cash sheet',
     'close.lead': 'Ang front desk ang magalistahan. Ang manager ang mag-lock.',
     'close.back': 'Balik sa Subong',
     'close.print': 'I-print',
@@ -38,6 +38,8 @@ export const hil: MessageCatalog = {
     'help.intro': 'Malip-ot nga mga tikang para sa bag-o nga shift. Ang app ang mag-kalkula. Kamo ang mag-isip sang kuwarta kag magpangayo sa manager kon kinahanglan sang approval.',
     'help.questions': 'Mga pamangkot',
     'help.allGuides': 'Buksan ang tanan nga giya',
+    'empty.noHotel': 'Wala sang hotel nga available sa imo account. Magpangayo sa manager.',
+    'empty.noHotelOwner': 'Wala sang hotel nga available sa imo account. Magdugang sang hotel ukon i-on liwat ang isa.',
     'lang.review': 'Draft ini nga hubad kag kinahanglan pa sang review.'
   },
   guides: {
@@ -46,17 +48,18 @@ export const hil: MessageCatalog = {
       summary: 'Amo ini ang una nga screen. Makita kon sin-o ang gaabot, ara, kag maga-halin.',
       steps: [
         'Tan-awa ang property kag ang petsa. Para sa Sotera Café ukon Tago Resto, pili-a ang outlet.',
-        'Ang amber nga kuwarto gaabot. Buksan kag pinduta ang Check-in.',
+        'Ang amber nga kuwarto gaabot. Buksan kag pinduta ang I-check in ang bisita.',
+        'Gamita ang Walk-in para sa bag-o nga bisita nga wala sang booking.',
         'Ang berde ara na sa sulod.',
         'Ang asul maga-halin subong. Buksan kag pinduta ang Check-out.'
       ]
     },
     close: {
-      title: 'Paano isira ang adlaw',
+      title: 'Paano pun-on ang adlaw-adlaw nga cash sheet',
       summary: 'Nakalkula na ang mga total. Isipa ang kuwarta kag isulat kon sin-o ang responsable.',
       steps: [
         'Basaha ang baligya, gasto, kag cash on hand. Indi na pag-type liwat.',
-        'Isipa nga lang ang revolving fund. Dapat magbalik ini sa float, masami ₱10,000.',
+        'Isipa nga lang ang revolving fund (RVF). Dapat magbalik ini sa float, masami ₱10,000.',
         'Sa pihak nga kahon, isipa ang cash nga i-deposit sa bangko.',
         'Kon Short ukon Excess, isulat kon ngaa. Ang manager ang mag-lock.'
       ]
@@ -65,6 +68,8 @@ export const hil: MessageCatalog = {
   faqs: [
     { question: 'Paano kon wala sang gaabot?', answer: 'Normal ina. Wala sang sulod ang arrivals. Tan-awa ang ara sa sulod kag ang maga-halin.' },
     { question: 'Sin-o ang nag-lock sang adlaw?', answer: 'Ang front desk ang nagalistahan. Ang manager ang nag-lock. Kinahanglan sang rason para buksan liwat.' },
-    { question: 'Ano ang RVF?', answer: 'Amo ini ang float nga nabilin sa drawer, masami ₱10,000. Ibulag ini sa i-deposit.' }
+    { question: 'Ano ang RVF (revolving fund)?', answer: 'Amo ini ang float nga nabilin sa drawer, masami ₱10,000. Ibulag ini sa i-deposit.' },
+    { question: 'Ano ang OTA?', answer: 'Ang OTA amo ang online travel agency, pareho sang Booking.com, Trip.com, ukon Expedia. May iba nga presyo ang mga stay nga to, kag masami ang agency ang magkuha sang bayad.' },
+    { question: 'Ano ang MDR?', answer: 'Ang MDR amo ang card fee sang banko (merchant discount rate). Ginagamit ini sang app para tantyahon kung ano ang i-credit sang banko pagkatapos sang card payment. Indi ninyo ini i-type mismo.' }
   ]
 };
