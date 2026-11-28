@@ -38,6 +38,7 @@ export const tl: MessageCatalog = {
     'help.intro': 'Maikling hakbang para sa bagong shift. Kinakalkula ng app ang mga total. Bilangin ninyo ang pera, isulat ang pangalan, at magtanong sa manager kapag kailangan ng approval.',
     'help.questions': 'Mga tanong',
     'help.allGuides': 'Buksan ang lahat ng gabay',
+    'empty.noHotel': 'Walang hotel na available sa account mo. Magtanong sa manager.',
     'lang.review': 'Draft ang saling ito at kailangan pang suriin.'
   },
   guides: {

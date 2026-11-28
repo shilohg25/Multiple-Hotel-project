@@ -4,8 +4,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { Hotel, Role, Room } from '@/types/app';
 import { currency } from '@/lib/money';
+import { EMPTY_HOTEL_MESSAGE_EN } from '@/lib/empty-hotel';
+import { EmptyHotelState } from '@/components/EmptyHotelState';
 
-export function RoomManager({ hotels, rooms, role }: { hotels: Hotel[]; rooms: Room[]; role: Role }) {
+export function RoomManager({ hotels, rooms, role, emptyHotelMessage = EMPTY_HOTEL_MESSAGE_EN }: { hotels: Hotel[]; rooms: Room[]; role: Role; emptyHotelMessage?: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedHotelId = searchParams.get('hotel') || hotels[0]?.id || '';
@@ -90,7 +92,7 @@ export function RoomManager({ hotels, rooms, role }: { hotels: Hotel[]; rooms: R
   }
 
   if (!selectedHotel) {
-    return <div className="card p-6 text-sm text-slate-500">Add a hotel/property first.</div>;
+    return <EmptyHotelState message={emptyHotelMessage} />;
   }
 
   return (

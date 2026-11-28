@@ -3,6 +3,7 @@ import { requireStaff } from '@/lib/auth';
 import { currency } from '@/lib/money';
 import { getMonthlyReportData } from '@/lib/report-data';
 import { SavePrintSnapshotButton } from '@/components/offline/SavePrintSnapshotButton';
+import { EmptyHotelStateLocalized } from '@/components/EmptyHotelStateLocalized';
 
 type SearchParams = { hotel?: string; month?: string };
 
@@ -11,7 +12,8 @@ export default async function MonthlyReportPage({ searchParams }: { searchParams
   const staff = await requireStaff();
   const { hotels, hotel, month, totalsByDay, totals } = await getMonthlyReportData(staff, { hotelId: params.hotel, month: params.month });
 
-  if (!hotel || !totals) return <div className="card p-6 text-sm text-slate-500">Create a hotel before viewing reports.</div>;
+  if (!hotel) return <EmptyHotelStateLocalized />;
+  if (!totals) return <div className="card p-6 text-sm text-slate-500">This report is not available.</div>;
 
   return (
     <div className="space-y-6">

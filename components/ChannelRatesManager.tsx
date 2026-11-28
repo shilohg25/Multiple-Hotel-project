@@ -4,17 +4,21 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { ChannelRate, Hotel, Room, RoomType } from '@/types/app';
 import { currency } from '@/lib/money';
+import { EMPTY_HOTEL_MESSAGE_EN } from '@/lib/empty-hotel';
+import { EmptyHotelState } from '@/components/EmptyHotelState';
 
 export function ChannelRatesManager({
   hotels,
   roomTypes,
   rates,
-  rooms
+  rooms,
+  emptyHotelMessage = EMPTY_HOTEL_MESSAGE_EN
 }: {
   hotels: Hotel[];
   roomTypes: RoomType[];
   rates: ChannelRate[];
   rooms: Room[];
+  emptyHotelMessage?: string;
 }) {
   const router = useRouter();
   const [hotelId, setHotelId] = useState(hotels[0]?.id || '');
@@ -62,7 +66,7 @@ export function ChannelRatesManager({
     if (response.ok) router.refresh();
   }
 
-  if (!hotel) return <p className="text-sm text-slate-500">Add a property first.</p>;
+  if (!hotel) return <EmptyHotelState message={emptyHotelMessage} />;
 
   return (
     <div className="space-y-6">
