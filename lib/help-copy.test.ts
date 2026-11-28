@@ -46,4 +46,44 @@ describe('help wording', () => {
     assert.match(questions, /\bOTA\b/);
     assert.match(questions, /\bMDR\b/);
   });
+
+  it('uses Check in guest and Walk-in, not press Check in', () => {
+    const today = helpGuides.find((guide) => guide.id === 'today');
+    assert.ok(today);
+    const steps = today.steps.join(' ');
+    assert.match(steps, /Check in guest/);
+    assert.match(steps, /Walk-in/);
+    assert.doesNotMatch(steps, /press Check in/);
+    const enToday = en.guides.today.steps.join(' ');
+    assert.match(enToday, /Check in guest/);
+    assert.match(enToday, /Walk-in/);
+    assert.doesNotMatch(enToday, /press Check in/);
+    for (const [locale, catalog] of Object.entries(catalogs)) {
+      const localSteps = catalog.guides.today.steps.join(' ');
+      assert.match(localSteps, /Walk-in/, `${locale} today guide should name Walk-in`);
+      assert.doesNotMatch(localSteps, /press Check in/, locale);
+    }
+  });
+
+  it('translates the cash sheet label instead of Close the day', () => {
+    assert.equal(en.labels['today.close'], 'Daily cash sheet');
+    assert.equal(en.labels['close.title'], 'Daily cash sheet');
+    assert.equal(en.labels['nav.sales'], 'Daily cash sheet');
+    assert.equal(en.labels['today.expense'], 'Add expense');
+    for (const [locale, catalog] of Object.entries(catalogs)) {
+      if (locale === 'en') continue;
+      for (const key of ['today.close', 'close.title', 'nav.sales']) {
+        const value = catalog.labels[key];
+        assert.match(value, /cash sheet/i, `${locale} ${key}`);
+        assert.doesNotMatch(value, /isara|isira|close the day|benta|baligya/i, `${locale} ${key}`);
+      }
+      assert.doesNotMatch(catalog.guides.close.title, /isara|isira/i, `${locale} close guide title`);
+      assert.equal(catalog.labels['today.expense'], {
+        tl: 'Magdagdag ng gastos',
+        hil: 'Dugangi ang gasto',
+        akl: 'Dugangi ro gasto',
+        mln: 'Dugangan ro gasto'
+      }[locale]);
+    }
+  });
 });

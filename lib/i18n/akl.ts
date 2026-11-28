@@ -5,7 +5,7 @@ export const akl: MessageCatalog = {
   needsReview: true,
   labels: {
     'nav.today': 'Makaron',
-    'nav.sales': 'Baligya makaron',
+    'nav.sales': 'Adlaw-adlaw nga cash sheet',
     'nav.help': 'Paano',
     'nav.helpButton': 'Bulig',
     'today.title': 'Makaron',
@@ -25,12 +25,12 @@ export const akl: MessageCatalog = {
     'today.noStayToCharge': 'Ueang stay nga pwede butangan it charge o bayad makaron.',
     'today.room': 'Kuwarto',
     'today.expense': 'Dugangi ro gasto',
-    'today.close': 'Isara ro adlaw',
+    'today.close': 'Adlaw-adlaw nga cash sheet',
     'today.rooms': 'Mga kuwarto',
     'today.noArrivals': 'Ueang gaabot.',
     'today.noInHouse': 'Ueang bisita sa sueod.',
     'today.noDepartures': 'Ueang magahalin.',
-    'close.title': 'Isara ro adlaw',
+    'close.title': 'Adlaw-adlaw nga cash sheet',
     'close.lead': 'Front desk ro magalista. Manager ro mag-lock.',
     'close.back': 'Balik sa Makaron',
     'close.print': 'I-print',
@@ -48,13 +48,14 @@ export const akl: MessageCatalog = {
       summary: 'Una nga screen it shift. Makita kon sin-o ro gaabot, ara, ag magahalin.',
       steps: [
         'Tan-awa ro property ag ro petsa. Para sa Sotera Café o Tago Resto, pili-a ro outlet.',
-        'Amber nga kuwarto ro gaabot. Buksi ag pinduta ro Check-in.',
+        'Amber nga kuwarto ro gaabot. Buksi ag pinduta ro I-check in ang bisita.',
+        'Gamita ro Walk-in para sa bag-ong bisita nga ueang booking.',
         'Berde ro ara eon sa sueod.',
         'Asul ro magahalin makaron. Buksi ag pinduta ro Check-out.'
       ]
     },
     close: {
-      title: 'Paano isara ro adlaw',
+      title: 'Paano pun-on ro adlaw-adlaw nga cash sheet',
       summary: 'Nakalkula eon ro mga total. Isipa ro kuwarta ag isulat kon sin-o ro responsable.',
       steps: [
         'Basaha ro baligya, gasto, ag cash on hand. Indi eon pag-type liwat.',

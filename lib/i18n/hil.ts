@@ -5,7 +5,7 @@ export const hil: MessageCatalog = {
   needsReview: true,
   labels: {
     'nav.today': 'Subong',
-    'nav.sales': 'Baligya subong',
+    'nav.sales': 'Adlaw-adlaw nga cash sheet',
     'nav.help': 'Paano',
     'nav.helpButton': 'Bulig',
     'today.title': 'Subong',
@@ -25,12 +25,12 @@ export const hil: MessageCatalog = {
     'today.noStayToCharge': 'Wala sang stay nga pwede butangan sang charge ukon bayad subong.',
     'today.room': 'Kuwarto',
     'today.expense': 'Dugangi ang gasto',
-    'today.close': 'Isira ang adlaw',
+    'today.close': 'Adlaw-adlaw nga cash sheet',
     'today.rooms': 'Mga kuwarto',
     'today.noArrivals': 'Wala sang gaabot.',
     'today.noInHouse': 'Wala sang bisita sa sulod.',
     'today.noDepartures': 'Wala sang maga-halin.',
-    'close.title': 'Isira ang adlaw',
+    'close.title': 'Adlaw-adlaw nga cash sheet',
     'close.lead': 'Ang front desk ang magalistahan. Ang manager ang mag-lock.',
     'close.back': 'Balik sa Subong',
     'close.print': 'I-print',
@@ -48,13 +48,14 @@ export const hil: MessageCatalog = {
       summary: 'Amo ini ang una nga screen. Makita kon sin-o ang gaabot, ara, kag maga-halin.',
       steps: [
         'Tan-awa ang property kag ang petsa. Para sa Sotera Café ukon Tago Resto, pili-a ang outlet.',
-        'Ang amber nga kuwarto gaabot. Buksan kag pinduta ang Check-in.',
+        'Ang amber nga kuwarto gaabot. Buksan kag pinduta ang I-check in ang bisita.',
+        'Gamita ang Walk-in para sa bag-o nga bisita nga wala sang booking.',
         'Ang berde ara na sa sulod.',
         'Ang asul maga-halin subong. Buksan kag pinduta ang Check-out.'
       ]
     },
     close: {
-      title: 'Paano isira ang adlaw',
+      title: 'Paano pun-on ang adlaw-adlaw nga cash sheet',
       summary: 'Nakalkula na ang mga total. Isipa ang kuwarta kag isulat kon sin-o ang responsable.',
       steps: [
         'Basaha ang baligya, gasto, kag cash on hand. Indi na pag-type liwat.',

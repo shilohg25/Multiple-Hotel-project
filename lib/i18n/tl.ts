@@ -5,7 +5,7 @@ export const tl: MessageCatalog = {
   needsReview: true,
   labels: {
     'nav.today': 'Ngayon',
-    'nav.sales': 'Benta ngayon',
+    'nav.sales': 'Arawang cash sheet',
     'nav.help': 'Paano',
     'nav.helpButton': 'Tulong',
     'today.title': 'Ngayon',
@@ -25,12 +25,12 @@ export const tl: MessageCatalog = {
     'today.noStayToCharge': 'Walang stay na pwedeng dagdagan ng singil o bayad ngayon.',
     'today.room': 'Kuwarto',
     'today.expense': 'Magdagdag ng gastos',
-    'today.close': 'Isara ang araw',
+    'today.close': 'Arawang cash sheet',
     'today.rooms': 'Mga kuwarto',
     'today.noArrivals': 'Walang darating.',
     'today.noInHouse': 'Walang bisita sa loob.',
     'today.noDepartures': 'Walang aalis.',
-    'close.title': 'Isara ang araw',
+    'close.title': 'Arawang cash sheet',
     'close.lead': 'Ang front desk ang magpupuno. Ang manager ang magla-lock.',
     'close.back': 'Bumalik sa Ngayon',
     'close.print': 'I-print',
@@ -48,13 +48,14 @@ export const tl: MessageCatalog = {
       summary: 'Ito ang unang screen ng shift. Makikita kung sino ang darating, narito, at aalis.',
       steps: [
         'Tingnan ang property at ang petsa sa itaas. Para sa Sotera Café o Tago Resto, piliin ang outlet.',
-        'Ang amber na kuwarto ay darating. Buksan ito at pindutin ang Check-in.',
+        'Ang amber na kuwarto ay darating. Buksan ito at pindutin ang I-check in ang bisita.',
+        'Gamitin ang Walk-in para sa bagong bisita na walang booking.',
         'Ang berde ay bisitang nasa loob na.',
         'Ang asul ay aalis ngayon. Buksan at pindutin ang Check-out.'
       ]
     },
     close: {
-      title: 'Paano isara ang araw',
+      title: 'Paano punan ang arawang cash sheet',
       summary: 'Kinakalkula na ang mga total. Bilangin ninyo ang pera at isulat kung sino ang responsable.',
       steps: [
         'Basahin ang benta, gastos, at cash on hand. Huwag nang i-type ulit.',

@@ -64,7 +64,8 @@ export const en: MessageCatalog = {
       summary: 'Today is the first screen of the shift. It shows who is coming, who is here, who is leaving, and anyone still checked in after checkout.',
       steps: [
         'Check the property and the date at the top. For Sotera Café or Tago Resto, pick that outlet.',
-        'Amber rooms are arrivals. Open the room and press Check in.',
+        'Amber rooms are arrivals. Open the stay and use Check in guest.',
+        'Use Walk-in for a new guest who has no booking yet. The other big buttons are for a charge, a payment, an expense, or the Daily cash sheet.',
         'Green rooms are guests already in the hotel.',
         'Blue rooms leave today. Open the room and press Check out.',
         'Rose rooms are overdue: still checked in after their checkout date. Open the stay, collect any balance, and check them out.'

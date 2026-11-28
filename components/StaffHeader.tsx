@@ -9,10 +9,16 @@ import type { Locale } from '@/lib/i18n/types';
 import type { Profile } from '@/types/app';
 
 function navLinkClass(active: boolean, compact: boolean): string {
-  const padding = compact ? 'px-2 py-1.5' : 'px-3 py-2';
+  const padding = compact ? 'px-1 py-0.5 xl:px-1.5 xl:py-1' : 'px-3 py-2';
+  const type = compact
+    ? 'text-xs font-medium tracking-tight xl:text-sm'
+    : 'text-sm font-medium';
+  const activeType = compact
+    ? 'text-xs font-semibold tracking-tight xl:text-sm'
+    : 'text-sm font-semibold';
   return active
-    ? `shrink-0 rounded-lg bg-slate-900 ${padding} text-sm font-semibold text-white`
-    : `shrink-0 rounded-lg ${padding} text-sm font-medium text-slate-700 hover:bg-slate-100`;
+    ? `shrink-0 rounded-lg bg-slate-900 ${padding} ${activeType} text-white`
+    : `shrink-0 rounded-lg ${padding} ${type} text-slate-700 hover:bg-slate-100`;
 }
 
 export function StaffHeader({
@@ -36,7 +42,7 @@ export function StaffHeader({
       <div
         className={
           stackedNav
-            ? 'relative mx-auto flex max-w-7xl flex-wrap items-center gap-2 px-3 py-2 md:flex-col md:items-stretch md:gap-1'
+            ? 'relative mx-auto flex max-w-7xl flex-wrap items-center gap-2 px-2 py-2 xl:px-3 md:flex-col md:items-stretch md:gap-1'
             : 'relative mx-auto flex max-w-7xl flex-wrap items-center gap-2 px-3 py-2'
         }
       >
@@ -90,12 +96,12 @@ export function StaffHeader({
         </div>
         {stackedNav ? (
           <nav
-            className="hidden min-w-0 w-full flex-wrap items-center gap-x-1 gap-y-1 md:flex"
+            className="hidden min-w-0 w-full flex-nowrap items-center gap-x-0 xl:gap-x-0.5 md:flex"
             aria-label="Staff"
           >
             {groups.map((group, index) => (
               <div key={group.id} className="contents">
-                {index > 0 ? <span className="mx-1 h-4 w-px shrink-0 bg-slate-200" aria-hidden /> : null}
+                {index > 0 ? <span className="mx-0 h-4 w-px shrink-0 bg-slate-200 xl:mx-0.5" aria-hidden /> : null}
                 <span className="sr-only">{group.label}</span>
                 {group.items.map((item) => {
                   const active = isNavItemActive(item.href, pathname);

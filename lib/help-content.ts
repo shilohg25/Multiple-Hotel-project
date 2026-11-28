@@ -14,11 +14,11 @@ export const helpGuides: HelpGuide[] = [
     summary: 'Today is the first screen of the shift. It shows who is coming, who is here, and who is leaving.',
     steps: [
       'Check the property and the date at the top. For Sotera Café or Tago Resto, pick that outlet.',
-      'Amber rooms are arrivals. Open the room and press Check in.',
+      'Amber rooms are arrivals. Open the stay and use Check in guest.',
       'Green rooms are guests already in the hotel.',
       'Blue rooms leave today. Open the room and press Check out.',
       'Grey rooms are empty.',
-      'Use the big buttons for a new check-in, a charge, a payment, an expense, or to close the day.'
+      'Use Walk-in for a new guest who has no booking yet. The other big buttons are for a charge, a payment, an expense, or the Daily cash sheet.'
     ]
   },
   {

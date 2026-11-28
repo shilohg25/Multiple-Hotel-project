@@ -27,7 +27,7 @@ function rangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: strin
 
 function reservationColor(status: Reservation['status']) {
   switch (status) {
-    case 'secured': return 'bg-emerald-600 border-emerald-700 text-white';
+    case 'secured': return 'bg-emerald-700 border-emerald-800 text-white';
     case 'payment_submitted': return 'bg-blue-600 border-blue-700 text-white';
     case 'checked_in': return 'bg-indigo-600 border-indigo-700 text-white';
     case 'cancelled': return 'bg-red-100 border-red-200 text-red-700';
