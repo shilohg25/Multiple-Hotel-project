@@ -23,16 +23,17 @@ export const helpGuides: HelpGuide[] = [
   },
   {
     id: 'close',
-    title: 'How to close the day',
+    title: 'How to fill in the daily cash sheet',
     screen: 'close',
-    summary: 'The totals are calculated. You count the money and name who was responsible.',
+    summary: 'One sheet for the day. Room payments fill in by themselves. You type the rest and count the money once.',
     steps: [
-      'Read the sales, expenses, and cash on hand. Do not retype those numbers.',
+      'Look at "Already in the app". Confirmed room payments are there already. Do not type them again.',
+      'Under "Typed today", add only walk-in or restaurant sales, add-ons sold at the desk, expenses, and unpaid amounts.',
       'Count the revolving fund by itself. It should come back to the float, usually ₱10,000.',
-      'Count the cash that will go to the bank in the other box.',
+      'Count the cash still in the drawer in the other box. This is the only cash count for the day.',
       'Choose the staff member responsible for this shift.',
       'If the result says Short or Excess, write what happened.',
-      'Save the draft. A manager locks the day. After that, the day cannot be edited unless a manager unlocks it.'
+      'Press Save cash sheet. A manager locks the day. After that, the day cannot be edited unless a manager unlocks it.'
     ]
   },
   {

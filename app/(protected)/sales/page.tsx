@@ -1,96 +1,14 @@
-import { requireStaff, canAccessHotel } from '@/lib/auth';
-import { businessToday, localDayBounds } from '@/lib/date';
-import { supabaseAdmin } from '@/lib/supabase-admin';
-import { SalesCashManager } from '@/components/SalesCashManager';
-import type { CashCount, Hotel, LedgerEntry } from '@/types/app';
-import Link from 'next/link';
+import { redirect } from 'next/navigation';
 
 type SearchParams = { hotel?: string; date?: string; outlet?: string };
 
+/** Daily sales and Close the day are now one Daily cash sheet at /today/close. */
 export default async function SalesPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   const params = (await searchParams) || {};
-  const staff = await requireStaff();
-
-  const { data: hotelsRaw } = await supabaseAdmin.from('hotels').select('*').eq('active', true).order('name');
-  const hotels = ((hotelsRaw || []) as Hotel[]).filter((hotel) => canAccessHotel(staff.profile, hotel.id));
-  const selectedHotel = hotels.find((hotel) => hotel.id === params.hotel) || hotels[0];
-  const selectedDate = params.date || businessToday(selectedHotel?.timezone);
-
-  if (!selectedHotel) {
-    return (
-      <div className="card p-6">
-        <h1 className="text-2xl font-black">Sales / Cash count</h1>
-        <p className="mt-2 text-sm text-slate-500">Create a hotel first.</p>
-      </div>
-    );
-  }
-
-  const { start: dayStart, end: dayEnd } = localDayBounds(selectedDate, selectedHotel.timezone);
-
-  const [{ data: ledgerRaw }, { data: cashRaw }, { data: paymentsRaw }, { data: chargesRaw }, { data: dayToursRaw }, { data: remittancesRaw }] = await Promise.all([
-    (params.outlet
-      ? supabaseAdmin.from('ledger_entries').select('*').eq('hotel_id', selectedHotel.id).eq('entry_date', selectedDate).eq('outlet_id', params.outlet).order('created_at', { ascending: false })
-      : supabaseAdmin.from('ledger_entries').select('*').eq('hotel_id', selectedHotel.id).eq('entry_date', selectedDate).order('created_at', { ascending: false })),
-    supabaseAdmin
-      .from('cash_counts')
-      .select('*')
-      .eq('hotel_id', selectedHotel.id)
-      .eq('count_date', selectedDate)
-      .order('denomination', { ascending: false }),
-    supabaseAdmin
-      .from('payments')
-      .select('amount, reservations!inner(hotel_id)')
-      .eq('status', 'confirmed')
-      .eq('reservations.hotel_id', selectedHotel.id)
-      .gte('confirmed_at', dayStart)
-      .lte('confirmed_at', dayEnd),
-    supabaseAdmin
-      .from('reservation_charges')
-      .select('category,total_amount,remittance_required')
-      .eq('hotel_id', selectedHotel.id)
-      .gte('created_at', dayStart)
-      .lte('created_at', dayEnd),
-    supabaseAdmin
-      .from('day_tour_bookings')
-      .select('total_amount')
-      .eq('hotel_id', selectedHotel.id)
-      .eq('tour_date', selectedDate)
-      .in('status', ['secured', 'completed']),
-    supabaseAdmin
-      .from('remittances')
-      .select('amount_due,amount_paid')
-      .eq('from_hotel_id', selectedHotel.id)
-      .lte('period_start', selectedDate)
-      .gte('period_end', selectedDate)
-  ]);
-
-  const charges = (chargesRaw || []) as { category: string; total_amount: number; remittance_required: boolean }[];
-  const breakdown = {
-    roomPayments: (paymentsRaw || []).reduce((sum, item) => sum + Number(item.amount || 0), 0),
-    serviceCharges: charges.reduce((sum, item) => sum + Number(item.total_amount || 0), 0),
-    breakfastCharges: charges.filter((item) => item.category === 'breakfast' || item.category === 'extra_bed').reduce((sum, item) => sum + Number(item.total_amount || 0), 0),
-    dayTourSales: (dayToursRaw || []).reduce((sum, item) => sum + Number(item.total_amount || 0), 0),
-    remittanceDue: (remittancesRaw || []).reduce((sum, item) => sum + Number(item.amount_due || 0), 0),
-    remittancePaid: (remittancesRaw || []).reduce((sum, item) => sum + Number(item.amount_paid || 0), 0)
-  };
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-black tracking-tight">Sales / Cash count</h1>
-        <p className="mt-1 text-slate-500">Daily ledger, collectibles, and cash count for front desk closing.</p>
-      </div>
-      <Link href={`/print/reports/daily?hotel=${selectedHotel.id}&date=${selectedDate}`} className="btn-secondary print-hidden">Print Daily Report</Link>
-      <SalesCashManager
-        hotels={hotels}
-        selectedHotel={selectedHotel}
-        userId={staff.userId}
-        selectedDate={selectedDate}
-        ledgerEntries={(ledgerRaw || []) as LedgerEntry[]}
-        cashCounts={(cashRaw || []) as CashCount[]}
-        breakdown={breakdown}
-        outletId={params.outlet || null}
-      />
-    </div>
-  );
+  const query = new URLSearchParams();
+  if (params.hotel) query.set('hotel', params.hotel);
+  if (params.date) query.set('date', params.date);
+  if (params.outlet) query.set('outlet', params.outlet);
+  const suffix = query.toString();
+  redirect(`/today/close${suffix ? `?${suffix}` : ''}`);
 }

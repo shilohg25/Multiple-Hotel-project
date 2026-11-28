@@ -3,6 +3,7 @@ import { requireStaff } from '@/lib/auth';
 import { currency } from '@/lib/money';
 import { readToBeBilled } from '@/lib/public-quote';
 import { getDailyReportData } from '@/lib/report-data';
+import { endingCashSourceLabel } from '@/lib/report-cash';
 import { SavePrintSnapshotButton } from '@/components/offline/SavePrintSnapshotButton';
 
 type SearchParams = { hotel?: string; date?: string };
@@ -64,6 +65,9 @@ export default async function DailyReportPage({ searchParams }: { searchParams?:
         <Card label="Cash variance" value={currency(report.totals.variance, report.hotel.default_currency)} />
         <Card label="To be billed still owed" value={currency(report.totals.toBeBilled, report.hotel.default_currency)} />
       </section>
+      {endingCashSourceLabel(report.totals.endingCashSource) ? (
+        <p className="text-sm text-slate-600">{endingCashSourceLabel(report.totals.endingCashSource)} <Link className="font-semibold underline print-hidden" href={`/today/close?hotel=${report.hotel.id}&date=${date}`}>Open the Daily cash sheet</Link></p>
+      ) : null}
       <section className="card overflow-hidden">
         <TableTitle title="Reservations" helper="Reservations touching this date or created today." />
         <div className="overflow-x-auto">

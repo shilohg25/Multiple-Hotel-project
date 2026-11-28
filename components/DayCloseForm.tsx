@@ -2,8 +2,10 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CASH_DENOMINATIONS, closeFiguresFromCounts, countMapForBucket, countRowsFromMap, formNumberValue, resolveReturnToFund, summarizeClose, type CloseFigures, type SavedCountRow } from '@/lib/day-close';
+import { CASH_DENOMINATIONS, countMapForBucket, formNumberValue, type CloseFigures, type SavedCountRow } from '@/lib/day-close';
+import { sheetCloseSummary, sheetReturnToFund } from '@/lib/cash-sheet';
 import { currency } from '@/lib/money';
+import { fetchJsonWithTimeout, RequestTimeoutError } from '@/lib/fetch-timeout';
 
 type CountMap = Record<number, number>;
 
@@ -37,14 +39,15 @@ export function DayCloseForm({
   const [message, setMessage] = useState('');
   const [unlockReason, setUnlockReason] = useState('');
   const [bankDeposit, setBankDeposit] = useState(Number(existing?.bank_deposit || 0));
-  const [returnToFund, setReturnToFund] = useState(resolveReturnToFund(existing?.return_to_fund, figures.returnToFund));
+  // null = staff have not touched Return to fund. Then it follows the current default (saved close
+  // value, or the expenses from the ledger), so an expense typed above updates it after the refresh.
+  // Counts and the bank deposit are only ever typed by staff, so keeping them across a refresh is right.
+  const [returnToFundEdit, setReturnToFundEdit] = useState<number | null>(null);
+  const returnToFund = sheetReturnToFund(existing, figures, returnToFundEdit);
+  const [saving, setSaving] = useState(false);
+  // Same helpers and order as POST /api/day-closes, so the preview equals what gets stored.
   const preview = useMemo(
-    () => summarizeClose(closeFiguresFromCounts(figures, {
-      floatCounts: countRowsFromMap(floatCounts),
-      drawerCounts: countRowsFromMap(drawerCounts),
-      bankDeposit,
-      returnToFund
-    })),
+    () => sheetCloseSummary(figures, { floatCounts, drawerCounts, bankDeposit, returnToFund }),
     [figures, floatCounts, drawerCounts, bankDeposit, returnToFund]
   );
   const floatCounted = preview.floatCounted;
@@ -53,24 +56,36 @@ export function DayCloseForm({
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const response = await fetch('/api/day-closes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        hotel_id: hotelId,
-        outlet_id: outletId,
-        business_date: businessDate,
-        responsible_profile_id: form.get('responsible_profile_id'),
-        bank_deposit: bankDeposit,
-        return_to_fund: returnToFund,
-        variance_note: form.get('variance_note'),
-        float_counts: CASH_DENOMINATIONS.map((denomination) => ({ denomination, quantity: floatCounts[denomination] || 0 })),
-        drawer_counts: CASH_DENOMINATIONS.map((denomination) => ({ denomination, quantity: drawerCounts[denomination] || 0 }))
-      })
-    });
-    const json = await response.json().catch(() => ({}));
-    setMessage(response.ok ? `Saved. The day is ${json.summary?.status || 'saved'}.` : json.error || 'Could not save.');
-    if (response.ok) router.refresh();
+    setSaving(true);
+    setMessage('');
+    try {
+      const { response, json: raw } = await fetchJsonWithTimeout('/api/day-closes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hotel_id: hotelId,
+          outlet_id: outletId,
+          business_date: businessDate,
+          responsible_profile_id: form.get('responsible_profile_id'),
+          bank_deposit: bankDeposit,
+          return_to_fund: returnToFund,
+          variance_note: form.get('variance_note'),
+          float_counts: CASH_DENOMINATIONS.map((denomination) => ({ denomination, quantity: floatCounts[denomination] || 0 })),
+          drawer_counts: CASH_DENOMINATIONS.map((denomination) => ({ denomination, quantity: drawerCounts[denomination] || 0 }))
+        })
+      });
+      const json = (raw || {}) as { error?: string; summary?: { status?: string } };
+      setMessage(response.ok ? `Saved. The day is ${json.summary?.status || 'saved'}.` : json.error || 'Could not save.');
+      if (response.ok) router.refresh();
+    } catch (error) {
+      if (error instanceof RequestTimeoutError) {
+        setMessage('No answer from the server. The cash sheet may not be saved. Your count is still on the screen. Press Save cash sheet again.');
+        return;
+      }
+      setMessage('No internet. The cash sheet was not saved. Your count is still on the screen. Press Save again when you are back online.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function lockOrUnlock(action: 'lock' | 'unlock') {
@@ -88,6 +103,7 @@ export function DayCloseForm({
   return (
     <form className="space-y-6" onSubmit={save}>
       {message ? <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm">{message}</p> : null}
+      <h2 className="text-xl font-bold">3. Close figures</h2>
       <section className="grid gap-3 md:grid-cols-4">
         <Stat label="Room sales" value={currency(preview.roomSales, currencyCode)} />
         <Stat label="Add-ons" value={currency(preview.addonSales, currencyCode)} />
@@ -103,6 +119,10 @@ export function DayCloseForm({
         <Stat label={preview.status} value={currency(preview.variance, currencyCode)} />
       </section>
 
+      <div>
+        <h2 className="text-xl font-bold">4. Count the cash once</h2>
+        <p className="mt-1 text-sm text-slate-600">This is the only cash count for the day. Count the float, then the cash still in the drawer.</p>
+      </div>
       <label className="block max-w-md space-y-1">Staff responsible for this shift
         <select name="responsible_profile_id" className="w-full" defaultValue={existing?.responsible_profile_id || ''} required disabled={locked}>
           <option value="">Choose a person</option>
@@ -118,7 +138,7 @@ export function DayCloseForm({
 
       <div className="grid gap-3 md:grid-cols-2">
         <label className="space-y-1">Return to fund
-          <input name="return_to_fund" type="number" min="0" step="0.01" value={formNumberValue(returnToFund)} onChange={(event) => setReturnToFund(Number(event.target.value || 0))} className="w-full" disabled={locked} />
+          <input name="return_to_fund" type="number" min="0" step="0.01" value={formNumberValue(returnToFund)} onChange={(event) => setReturnToFundEdit(Number(event.target.value || 0))} className="w-full" disabled={locked} />
         </label>
         <label className="space-y-1">Already deposited to the bank
           <input name="bank_deposit" type="number" min="0" step="0.01" value={bankDeposit || ''} onChange={(event) => setBankDeposit(Number(event.target.value || 0))} className="w-full" disabled={locked} />
@@ -127,7 +147,7 @@ export function DayCloseForm({
           <textarea name="variance_note" rows={3} defaultValue={existing?.variance_note || ''} className="w-full" disabled={locked} placeholder="Required when the count is not balanced." />
         </label>
       </div>
-      {!locked ? <button className="btn-primary" type="submit">Save draft</button> : <p className="font-semibold">This day is locked. Entries are read-only.</p>}
+      {!locked ? <button className="btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save cash sheet'}</button> : <p className="font-semibold">This day is locked. Entries are read-only.</p>}
 
       {canLock && existing && !locked ? <button className="btn-primary ml-2" type="button" onClick={() => lockOrUnlock('lock')}>Lock the day</button> : null}
       {canLock && locked ? (

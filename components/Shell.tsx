@@ -10,7 +10,7 @@ const navItems = [
   { href: '/reservations', label: 'Reservations' },
   { href: '/board', label: 'Board' },
   { href: '/payments', label: 'Payments' },
-  { href: '/sales', label: 'Daily sales' },
+  { href: '/sales', label: 'Daily cash sheet' },
   { href: '/reports/daily', label: 'Reports' },
   { href: '/reports/monthly', label: 'Monthly' },
   { href: '/rooms', label: 'Rooms / Units' },
