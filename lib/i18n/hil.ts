@@ -38,6 +38,15 @@ export const hil: MessageCatalog = {
     'help.intro': 'Malip-ot nga mga tikang para sa bag-o nga shift. Ang app ang mag-kalkula. Kamo ang mag-isip sang kuwarta kag magpangayo sa manager kon kinahanglan sang approval.',
     'help.questions': 'Mga pamangkot',
     'help.allGuides': 'Buksan ang tanan nga giya',
+    'payment.leadCash': 'Kinahanglan ang nota. Opsiyonal ang litrato para sa cash. Tentative ang booking hasta kumpirmahon sang manager ang bayad.',
+    'payment.leadOther': 'Kinahanglan ang nota kag pruweba sang bayad. Tentative ang booking hasta kumpirmahon ang bayad.',
+    'payment.notes': 'Impormasyon / nota sang bayad',
+    'payment.proof': 'Pruweba sang bayad',
+    'payment.optional': 'opsiyonal',
+    'payment.noPhoto': 'Wala sing litrato',
+    'payment.submit': 'Ipadala ang pruweba',
+    'payment.submitCash': 'Ipadala ang bayad',
+    'payment.listLead': 'Kinahanglan ang nota sa cash nga bayad. Kinahanglan man ang litrato sa iban nga paagi. Ang kumpirmado nga down payment nagasegurado sang booking.',
     'lang.review': 'Draft ini nga hubad kag kinahanglan pa sang review.'
   },
   guides: {

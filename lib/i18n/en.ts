@@ -54,6 +54,15 @@ export const en: MessageCatalog = {
     'help.intro': 'Short steps for a new shift. The app calculates the totals. You count the cash, name the guest, and ask a manager when a price or a day needs approval.',
     'help.questions': 'Questions',
     'help.allGuides': 'Open all guides',
+    'payment.leadCash': 'Write a note. A photo is optional for cash. The booking stays tentative until a manager confirms the payment.',
+    'payment.leadOther': 'A note and a payment proof are required. The booking remains tentative until payment is confirmed.',
+    'payment.notes': 'Payment information / notes',
+    'payment.proof': 'Payment proof',
+    'payment.optional': 'optional',
+    'payment.noPhoto': 'No photo',
+    'payment.submit': 'Submit proof',
+    'payment.submitCash': 'Submit payment',
+    'payment.listLead': 'Cash payments need a note. Other methods also need a photo. Confirmed down payments secure bookings.',
     'lang.review': 'This translation is a draft and needs review.'
   },
   guides: {

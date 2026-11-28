@@ -38,6 +38,15 @@ export const mln: MessageCatalog = {
     'help.intro': 'Malip-ot nga mga tikang para sa bag-ong shift. Ro app ro magkuwenta. Kamo ro mag-isip it kwarta ag magpangutana sa manager kung kinahanglan it approval.',
     'help.questions': 'Mga pamangkot',
     'help.allGuides': 'Buksan tanan nga giya',
+    'payment.leadCash': 'Kinahanglan ro nota. Opsiyonal ro litrato para sa cash. Tentative ro booking hasta kumpirmahon it manager ro bayad.',
+    'payment.leadOther': 'Kinahanglan ro nota ag pruweba it bayad. Tentative ro booking hasta kumpirmahon ro bayad.',
+    'payment.notes': 'Impormasyon / nota it bayad',
+    'payment.proof': 'Pruweba it bayad',
+    'payment.optional': 'opsiyonal',
+    'payment.noPhoto': 'Wara it litrato',
+    'payment.submit': 'Ipadala ro pruweba',
+    'payment.submitCash': 'Ipadala ro bayad',
+    'payment.listLead': 'Kinahanglan ro nota sa cash nga bayad. Kinahanglan man ro litrato sa ibang paagi. Ro kumpirmado nga down payment nagaasegurar it booking.',
     'lang.review': 'Draft nga hubad ini ag kinahanglan pa marebyu.'
   },
   guides: {

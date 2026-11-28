@@ -27,11 +27,14 @@ import { ScrollToHash } from '@/components/ScrollToHash';
 import type { ChannelRate, RateOverrideRequest } from '@/types/app';
 import { SavePrintSnapshotButton } from '@/components/offline/SavePrintSnapshotButton';
 import type { Guest, Hotel, Payment, Reservation, ReservationCharge, Room, ServiceItem } from '@/types/app';
+import { getLocale, label } from '@/lib/i18n';
+import { isSentinelProofPath } from '@/lib/payment-proof';
 
 type PaymentWithUrl = Payment & { proof_url?: string | null };
 
 export default async function ReservationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const staff = await requireStaff();
+  const locale = await getLocale();
   const { id } = await params;
 
   const { data, error } = await supabaseAdmin
@@ -64,6 +67,9 @@ export default async function ReservationDetailPage({ params }: { params: Promis
   ]);
 
   const payments = await Promise.all(((paymentsRaw || []) as Payment[]).map(async (payment) => {
+    if (isSentinelProofPath(payment.proof_path) || !payment.proof_path) {
+      return { ...payment, proof_url: null } as PaymentWithUrl;
+    }
     const { data: signed } = await supabaseAdmin.storage.from('payment-proofs').createSignedUrl(payment.proof_path, 60 * 60);
     return { ...payment, proof_url: signed?.signedUrl || null } as PaymentWithUrl;
   }));
@@ -257,6 +263,16 @@ export default async function ReservationDetailPage({ params }: { params: Promis
         cardMdrPercent={Number(cardChannel?.mdr_percent ?? 3.5)}
         stayTotal={folio.total}
         toBeBilled={Boolean(billed)}
+        copy={{
+          leadCash: label(locale, 'payment.leadCash'),
+          leadOther: label(locale, 'payment.leadOther'),
+          notes: label(locale, 'payment.notes'),
+          proof: label(locale, 'payment.proof'),
+          optional: label(locale, 'payment.optional'),
+          noPhoto: label(locale, 'payment.noPhoto'),
+          submit: label(locale, 'payment.submit'),
+          submitCash: label(locale, 'payment.submitCash')
+        }}
       />
     </div>
   );

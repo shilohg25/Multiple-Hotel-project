@@ -38,6 +38,15 @@ export const tl: MessageCatalog = {
     'help.intro': 'Maikling hakbang para sa bagong shift. Kinakalkula ng app ang mga total. Bilangin ninyo ang pera, isulat ang pangalan, at magtanong sa manager kapag kailangan ng approval.',
     'help.questions': 'Mga tanong',
     'help.allGuides': 'Buksan ang lahat ng gabay',
+    'payment.leadCash': 'Kailangan ang tala. Opsiyonal ang larawan para sa cash. Tentative ang booking hanggang kumpirmahin ng manager ang bayad.',
+    'payment.leadOther': 'Kailangan ang tala at patunay ng bayad. Tentative ang booking hanggang kumpirmahin ang bayad.',
+    'payment.notes': 'Impormasyon / tala ng bayad',
+    'payment.proof': 'Patunay ng bayad',
+    'payment.optional': 'opsiyonal',
+    'payment.noPhoto': 'Walang larawan',
+    'payment.submit': 'Ipadala ang patunay',
+    'payment.submitCash': 'Ipadala ang bayad',
+    'payment.listLead': 'Kailangan ng tala ang bayad na cash. Kailangan din ng larawan ang ibang paraan. Ang kumpirmadong down payment ang tumitiyak sa booking.',
     'lang.review': 'Draft ang saling ito at kailangan pang suriin.'
   },
   guides: {

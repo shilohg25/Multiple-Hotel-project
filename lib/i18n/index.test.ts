@@ -25,3 +25,30 @@ describe('translations', () => {
     assert.equal(tl.needsReview && hil.needsReview && akl.needsReview && mln.needsReview, true);
   });
 });
+
+const paymentKeys = [
+  'payment.leadCash',
+  'payment.leadOther',
+  'payment.notes',
+  'payment.proof',
+  'payment.optional',
+  'payment.noPhoto',
+  'payment.submit',
+  'payment.submitCash',
+  'payment.listLead'
+] as const;
+
+describe('payment proof copy', () => {
+  it('has the cash-and-other-method strings in every locale', () => {
+    const catalogs = { en, tl, hil, akl, mln };
+    for (const locale of Object.keys(catalogs) as Array<keyof typeof catalogs>) {
+      for (const key of paymentKeys) {
+        const value = catalogs[locale].labels[key];
+        assert.equal(typeof value, 'string', `${locale} ${key}`);
+        assert.ok(value.length > 0, `${locale} ${key} is empty`);
+      }
+      assert.match(catalogs[locale].labels['payment.leadCash'], /cash/i);
+    }
+  });
+});
+
