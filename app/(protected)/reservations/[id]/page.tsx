@@ -27,11 +27,13 @@ import { ScrollToHash } from '@/components/ScrollToHash';
 import type { ChannelRate, RateOverrideRequest } from '@/types/app';
 import { SavePrintSnapshotButton } from '@/components/offline/SavePrintSnapshotButton';
 import type { Guest, Hotel, Payment, Reservation, ReservationCharge, Room, ServiceItem } from '@/types/app';
+import { getLocale, label } from '@/lib/i18n';
 
 type PaymentWithUrl = Payment & { proof_url?: string | null };
 
 export default async function ReservationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const staff = await requireStaff();
+  const locale = await getLocale();
   const { id } = await params;
 
   const { data, error } = await supabaseAdmin
@@ -257,6 +259,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
         cardMdrPercent={Number(cardChannel?.mdr_percent ?? 3.5)}
         stayTotal={folio.total}
         toBeBilled={Boolean(billed)}
+        heading={label(locale, 'payment.recordTitle')}
       />
     </div>
   );

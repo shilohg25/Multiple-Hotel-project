@@ -21,7 +21,8 @@ export function PaymentPanel({
   cardSurchargePercent = 3,
   cardMdrPercent = 3.5,
   stayTotal,
-  toBeBilled = false
+  toBeBilled = false,
+  heading = 'Record payment'
 }: {
   reservationId: string;
   payments: PaymentWithUrl[];
@@ -31,6 +32,7 @@ export function PaymentPanel({
   cardMdrPercent?: number;
   stayTotal?: number;
   toBeBilled?: boolean;
+  heading?: string;
 }) {
   const router = useRouter();
   const [message, setMessage] = useState('');
@@ -210,7 +212,7 @@ export function PaymentPanel({
       </section>
 
       <section id="record-payment" className="card scroll-mt-24 p-5">
-        <h2 className="text-lg font-bold">Add payment proof</h2>
+        <h2 className="text-lg font-bold">{heading}</h2>
         <p className="mt-1 text-sm text-slate-500">Proof and payment details are mandatory. The booking remains tentative until payment is confirmed.</p>
         {message ? <div className="mt-4 rounded-lg bg-slate-100 px-3 py-2 text-sm">{message}</div> : null}
         <form onSubmit={uploadPayment} className="mt-4 space-y-4">

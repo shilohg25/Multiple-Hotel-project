@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { canCreateReservation } from '@/lib/access';
-import { canAccessHotel, requireStaff } from '@/lib/auth';
+import { canAccessHotel, canAddReservationCharges, requireStaff } from '@/lib/auth';
 import { AUTO_BREAKFAST_REMOVED_ACTION, autoChargeRemovedFromRead } from '@/lib/breakfast-toggle';
 import { businessToday } from '@/lib/date';
 import { currency } from '@/lib/money';
@@ -9,7 +9,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { balanceDueLabel } from '@/lib/stay-cleanup';
 import { stayFolioView } from '@/lib/stay-total';
 import { roomStatus, staysOnDate, type DatedStay, type StaySlice } from '@/lib/today-board';
-import type { StayPickerStay } from '@/lib/stay-picker';
+import { stayPickerCountLabel, type StayPickerStay } from '@/lib/stay-picker';
 import { BookingAlerts, type BookingAlert } from '@/components/BookingAlerts';
 import { StayActionLinks } from '@/components/StayActionLinks';
 import { HelpPanel } from '@/components/HelpPanel';
@@ -281,6 +281,8 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
         prompt={label(locale, 'today.whichStay')}
         chooseLabel={label(locale, 'today.chooseStay')}
         emptyLabel={label(locale, 'today.noStayToCharge')}
+        stayCountLabel={stayPickerCountLabel(pickerStays.length, label(locale, 'today.stayCountOne'), label(locale, 'today.stayCount'))}
+        canAddCharge={canAddReservationCharges(staff.profile)}
       />
       <div className={`grid gap-3 ${canCreate ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
         {canCreate ? <Link href={`/reservations/new`} className="btn-primary min-h-16 text-base">{label(locale, 'today.checkIn')}</Link> : null}

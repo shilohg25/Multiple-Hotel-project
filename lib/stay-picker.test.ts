@@ -1,8 +1,18 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  STAY_PICKER_ROW_GAP_PX,
+  STAY_PICKER_ROW_HEIGHT_PX,
+  STAY_PICKER_VISIBLE_ROWS,
   formatStayPickerDates,
   stayPickerActionHref,
+  stayPickerActions,
+  stayPickerCountLabel,
+  stayPickerLinkActivatesOnKey,
+  stayPickerListMaxHeightFromRowBoxes,
+  stayPickerListMaxHeightFromRowHeights,
+  stayPickerListMaxHeightPx,
+  stayPickerListNeedsMaxHeight,
   stayPickerRow,
   stayPickerRows,
   type StayPickerLabels,
@@ -90,5 +100,66 @@ describe('stay picker rows', () => {
     assert.equal(row.roomLabel, 'Kuwarto 202');
     assert.equal(row.statusLabel, 'Nasa loob');
     assert.equal(row.summary, 'TEST- Ben In-House · Kuwarto 202 · Nov 25, 2026 – Nov 28, 2026 · Nasa loob');
+  });
+});
+
+describe('stay picker follow-ups', () => {
+  it('sizes the CSS fallback to a whole number of assumed row heights', () => {
+    assert.equal(STAY_PICKER_VISIBLE_ROWS, 5);
+    assert.equal(
+      stayPickerListMaxHeightPx(),
+      STAY_PICKER_VISIBLE_ROWS * STAY_PICKER_ROW_HEIGHT_PX + (STAY_PICKER_VISIBLE_ROWS - 1) * STAY_PICKER_ROW_GAP_PX
+    );
+    assert.equal(stayPickerListMaxHeightPx(4), 4 * STAY_PICKER_ROW_HEIGHT_PX + 3 * STAY_PICKER_ROW_GAP_PX);
+    assert.equal(stayPickerListMaxHeightPx(1), STAY_PICKER_ROW_HEIGHT_PX);
+  });
+
+  it('does not cap the list when there are at most five stays, even if rows are taller than 96px', () => {
+    assert.equal(stayPickerListNeedsMaxHeight(0), false);
+    assert.equal(stayPickerListNeedsMaxHeight(5), false);
+    assert.equal(stayPickerListNeedsMaxHeight(6), true);
+    const tallFive = [140, 140, 160, 140, 140];
+    assert.equal(stayPickerListMaxHeightFromRowHeights(tallFive), undefined);
+    assert.equal(stayPickerListMaxHeightFromRowBoxes([
+      { top: 0, bottom: 140 },
+      { top: 148, bottom: 288 },
+      { top: 296, bottom: 456 },
+      { top: 464, bottom: 604 },
+      { top: 612, bottom: 752 }
+    ]), undefined);
+  });
+
+  it('caps a longer list to the measured height of the first five rows, not a fixed 96px assumption', () => {
+    const heights = [140, 96, 160, 120, 140, 96];
+    assert.equal(
+      stayPickerListMaxHeightFromRowHeights(heights),
+      140 + 96 + 160 + 120 + 140 + 4 * STAY_PICKER_ROW_GAP_PX
+    );
+    assert.equal(stayPickerListMaxHeightFromRowBoxes([
+      { top: 10, bottom: 150 },
+      { top: 158, bottom: 254 },
+      { top: 262, bottom: 422 },
+      { top: 430, bottom: 550 },
+      { top: 558, bottom: 698 },
+      { top: 706, bottom: 802 }
+    ]), 698 - 10);
+  });
+
+  it('shows a stay count so a scrolled list is not silent about hidden rows', () => {
+    assert.equal(stayPickerCountLabel(1, '1 stay', '{n} stays'), '1 stay');
+    assert.equal(stayPickerCountLabel(4, '1 stay', '{n} stays'), '4 stays');
+    assert.equal(stayPickerCountLabel(0, '1 stay', '{n} stays'), '0 stays');
+  });
+
+  it('treats Space like Enter on the charge and payment links', () => {
+    assert.equal(stayPickerLinkActivatesOnKey(' '), true);
+    assert.equal(stayPickerLinkActivatesOnKey('Spacebar'), true);
+    assert.equal(stayPickerLinkActivatesOnKey('Enter'), false);
+    assert.equal(stayPickerLinkActivatesOnKey('Tab'), false);
+  });
+
+  it('hides Add charge when the caller cannot add charges, without changing the rule', () => {
+    assert.deepEqual(stayPickerActions(true), ['charge', 'payment']);
+    assert.deepEqual(stayPickerActions(false), ['payment']);
   });
 });
