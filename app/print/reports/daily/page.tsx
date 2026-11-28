@@ -4,6 +4,7 @@ import { currency } from '@/lib/money';
 import { readToBeBilled } from '@/lib/public-quote';
 import { getDailyReportData } from '@/lib/report-data';
 import { endingCashSourceLabel } from '@/lib/report-cash';
+import { paymentGuestLabel } from '@/lib/report-payment-guest';
 import { PrintButton } from '@/components/PrintButton';
 import { PrintHeader } from '@/components/print/PrintHeader';
 import { PrintFooter } from '@/components/print/PrintFooter';
@@ -97,11 +98,11 @@ export default async function DailyReportPrintPage({ searchParams }: { searchPar
       <section>
         <h2 className="mb-2 text-lg font-bold">Confirmed Payments</h2>
         <table className="print-table">
-          <thead><tr><th>Reservation</th><th>Method</th><th>Reference</th><th>Amount</th><th>Confirmed at</th></tr></thead>
+          <thead><tr><th>Guest</th><th>Method</th><th>Reference</th><th>Amount</th><th>Confirmed at</th></tr></thead>
           <tbody>
             {report.confirmedPayments.map((payment) => (
               <tr key={payment.id}>
-                <td>{payment.reservation_id.slice(0, 8).toUpperCase()}</td>
+                <td>{paymentGuestLabel(payment)}</td>
                 <td>{payment.method.replaceAll('_', ' ')}</td>
                 <td>{payment.payment_reference || payment.payment_details || '-'}</td>
                 <td>{currency(payment.amount, report.hotel.default_currency)}</td>
