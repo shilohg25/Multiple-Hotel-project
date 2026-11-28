@@ -49,3 +49,19 @@ export function storedProofPath(input: { method: string | null | undefined; uplo
   if (!proofFileRequired(input.method)) return STAFF_NO_PROOF_PATH;
   return { ok: false, error: PAYMENT_PROOF_REQUIRED };
 }
+
+export const NO_PHOTO_CASH_LABEL = 'No photo (cash)';
+
+/** Receipt line for the proof file name. Sentinel paths are not a file reference. */
+export function receiptProofReference(
+  proofPath: string | null | undefined,
+  proofOriginalName: string | null | undefined,
+  formatPath: (path: string) => string,
+  noPhotoCashLabel = NO_PHOTO_CASH_LABEL
+): string {
+  if (isSentinelProofPath(proofPath) || !String(proofPath || '').trim()) {
+    return noPhotoCashLabel;
+  }
+  const name = String(proofOriginalName || '').trim();
+  return name || formatPath(String(proofPath));
+}

@@ -44,6 +44,8 @@ export const tl: MessageCatalog = {
     'payment.proof': 'Patunay ng bayad',
     'payment.optional': 'opsiyonal',
     'payment.noPhoto': 'Walang larawan',
+    'payment.noPhotoCash': 'Walang larawan (cash)',
+    'payment.proofUploaded': 'may na-upload na patunay',
     'payment.submit': 'Ipadala ang patunay',
     'payment.submitCash': 'Ipadala ang bayad',
     'payment.listLead': 'Kailangan ng tala ang bayad na cash. Kailangan din ng larawan ang ibang paraan. Ang kumpirmadong down payment ang tumitiyak sa booking.',

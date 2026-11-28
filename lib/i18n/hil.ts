@@ -44,6 +44,8 @@ export const hil: MessageCatalog = {
     'payment.proof': 'Pruweba sang bayad',
     'payment.optional': 'opsiyonal',
     'payment.noPhoto': 'Wala sing litrato',
+    'payment.noPhotoCash': 'Wala sing litrato (cash)',
+    'payment.proofUploaded': 'may na-upload nga pruweba',
     'payment.submit': 'Ipadala ang pruweba',
     'payment.submitCash': 'Ipadala ang bayad',
     'payment.listLead': 'Kinahanglan ang nota sa cash nga bayad. Kinahanglan man ang litrato sa iban nga paagi. Ang kumpirmado nga down payment nagasegurado sang booking.',

@@ -9,10 +9,13 @@ import { BookingAlerts, type BookingAlert } from '@/components/BookingAlerts';
 import { StatCard } from '@/components/StatCard';
 import { ReservationStatusBadge, PaymentStatusBadge } from '@/components/StatusBadge';
 import type { Hotel, Payment, Reservation } from '@/types/app';
+import { getLocale, label } from '@/lib/i18n';
+import { isSentinelProofPath } from '@/lib/payment-proof';
 
 export default async function DashboardPage() {
   const staff = await requireStaff();
   if (isFrontline(staff.profile.role)) redirect('/today');
+  const locale = await getLocale();
 
   const { data: hotelsRaw } = await supabaseAdmin.from('hotels').select('*').eq('active', true).order('name');
   const hotels = ((hotelsRaw || []) as Hotel[]).filter((hotel) => canAccessHotel(staff.profile, hotel.id));
@@ -186,7 +189,7 @@ export default async function DashboardPage() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="font-semibold">{currency(payment.amount)}</p>
-                    <p className="text-sm text-slate-500">{payment.method.replaceAll('_', ' ')} · proof uploaded</p>
+                    <p className="text-sm text-slate-500">{payment.method.replaceAll('_', ' ')} · {isSentinelProofPath(payment.proof_path) ? label(locale, 'payment.noPhoto') : label(locale, 'payment.proofUploaded')}</p>
                   </div>
                   <PaymentStatusBadge status={payment.status} />
                 </div>

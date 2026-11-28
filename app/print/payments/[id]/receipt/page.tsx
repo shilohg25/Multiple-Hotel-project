@@ -3,15 +3,24 @@ import { requireStaff } from '@/lib/auth';
 import { paymentInstructionLines } from '@/lib/payment-instructions';
 import { currency } from '@/lib/money';
 import { getPaymentPrintData, shortId } from '@/lib/print-data';
+import { getLocale, label } from '@/lib/i18n';
+import { receiptProofReference } from '@/lib/payment-proof';
 import { PrintButton } from '@/components/PrintButton';
 import { PrintHeader } from '@/components/print/PrintHeader';
 import { PrintFooter } from '@/components/print/PrintFooter';
 
 export default async function PaymentReceiptPrintPage({ params }: { params: Promise<{ id: string }> }) {
   const staff = await requireStaff();
+  const locale = await getLocale();
   const { id } = await params;
   const { payment, reservation } = await getPaymentPrintData(id, staff);
   const printedAt = new Date();
+  const proofReference = receiptProofReference(
+    payment.proof_path,
+    payment.proof_original_name,
+    shortId,
+    label(locale, 'payment.noPhotoCash')
+  );
 
   return (
     <div className="print-page space-y-6">
@@ -31,7 +40,7 @@ export default async function PaymentReceiptPrintPage({ params }: { params: Prom
         <p>Status: {payment.status}</p>
         <p>Confirmed at: {payment.confirmed_at ? new Date(payment.confirmed_at).toLocaleString() : '-'}</p>
         <p>Confirmed by: {payment.profiles?.full_name || '-'}</p>
-        <p>Payment proof reference: {payment.proof_original_name || shortId(payment.proof_path)}</p>
+        <p>Payment proof reference: {proofReference}</p>
       </section>
       <section className="print-card">
         <h2 className="mb-2 text-lg font-bold">Payment</h2>

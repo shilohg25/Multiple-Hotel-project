@@ -33,6 +33,8 @@ const paymentKeys = [
   'payment.proof',
   'payment.optional',
   'payment.noPhoto',
+  'payment.noPhotoCash',
+  'payment.proofUploaded',
   'payment.submit',
   'payment.submitCash',
   'payment.listLead'

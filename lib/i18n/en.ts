@@ -60,6 +60,8 @@ export const en: MessageCatalog = {
     'payment.proof': 'Payment proof',
     'payment.optional': 'optional',
     'payment.noPhoto': 'No photo',
+    'payment.noPhotoCash': 'No photo (cash)',
+    'payment.proofUploaded': 'proof uploaded',
     'payment.submit': 'Submit proof',
     'payment.submitCash': 'Submit payment',
     'payment.listLead': 'Cash payments need a note. Other methods also need a photo. Confirmed down payments secure bookings.',

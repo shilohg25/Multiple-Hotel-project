@@ -6,8 +6,10 @@ import {
   STAFF_NO_PROOF_PATH,
   WALK_IN_DESK_CASH_PROOF_PATH,
   hasProofFile,
+  NO_PHOTO_CASH_LABEL,
   isSentinelProofPath,
   proofFileRequired,
+  receiptProofReference,
   storedProofPath,
   validatePaymentProofInput
 } from './payment-proof.ts';
@@ -96,5 +98,22 @@ describe('payment proof rules', () => {
     assert.equal(hasProofFile({ size: 12 }), true);
     assert.equal(hasProofFile({ size: 0 }), false);
     assert.equal(hasProofFile(null), false);
+  });
+
+  it('prints No photo (cash) on a receipt instead of a sentinel path fragment', () => {
+    const formatPath = (path: string) => path.slice(0, 8).toUpperCase();
+    assert.equal(formatPath(STAFF_NO_PROOF_PATH), 'STAFF/NO');
+    assert.equal(receiptProofReference(STAFF_NO_PROOF_PATH, null, formatPath), NO_PHOTO_CASH_LABEL);
+    assert.equal(receiptProofReference(WALK_IN_DESK_CASH_PROOF_PATH, 'ignored.jpg', formatPath), NO_PHOTO_CASH_LABEL);
+    assert.equal(receiptProofReference('', null, formatPath), NO_PHOTO_CASH_LABEL);
+    assert.equal(
+      receiptProofReference('hotel/stay/123-gcash.jpg', 'gcash.jpg', formatPath),
+      'gcash.jpg'
+    );
+    assert.equal(receiptProofReference('hotel/stay/123-gcash.jpg', null, formatPath), 'HOTEL/ST');
+    assert.equal(
+      receiptProofReference(STAFF_NO_PROOF_PATH, null, formatPath, 'Walang larawan (cash)'),
+      'Walang larawan (cash)'
+    );
   });
 });

@@ -44,6 +44,8 @@ export const akl: MessageCatalog = {
     'payment.proof': 'Pruweba it bayad',
     'payment.optional': 'opsiyonal',
     'payment.noPhoto': 'Uwa it litrato',
+    'payment.noPhotoCash': 'Uwa it litrato (cash)',
+    'payment.proofUploaded': 'may na-upload nga pruweba',
     'payment.submit': 'Ipadala ro pruweba',
     'payment.submitCash': 'Ipadala ro bayad',
     'payment.listLead': 'Kinahanglan ro nota sa cash nga bayad. Kinahanglan man ro litrato sa ibang paagi. Ro kumpirmado nga down payment naga-asegurar it booking.',
