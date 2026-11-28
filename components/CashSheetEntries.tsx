@@ -55,6 +55,7 @@ import {
 import { currency } from '@/lib/money';
 import { sheetTabIdentity } from '@/lib/sheet-tab-id';
 import { createSheetBusyGate, startSheetAutoSend, watchSheetSource, type SheetAutoSendReason } from '@/lib/sheet-auto-send';
+import { ScrollToHash } from '@/components/ScrollToHash';
 
 type Row = {
   id?: string;
@@ -681,7 +682,8 @@ export function CashSheetEntries({
   }, [router, userId, hotelId, outletId, businessDate, busy]);
 
   return (
-    <section className="card p-5">
+    <section id="expense" className="card scroll-mt-24 p-5">
+      <ScrollToHash />
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h2 className="text-xl font-bold">2. Typed today</h2>
