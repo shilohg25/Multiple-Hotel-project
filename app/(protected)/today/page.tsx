@@ -4,6 +4,7 @@ import { canAccessHotel, requireStaff } from '@/lib/auth';
 import { AUTO_BREAKFAST_REMOVED_ACTION, autoChargeRemovedFromRead } from '@/lib/breakfast-toggle';
 import { businessToday } from '@/lib/date';
 import { currency } from '@/lib/money';
+import { todayCashSheetHref, todayExpenseHref, todayWalkInHref } from '@/lib/today-wording';
 import { readToBeBilled } from '@/lib/public-quote';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { balanceDueLabel } from '@/lib/stay-cleanup';
@@ -283,14 +284,14 @@ export default async function TodayPage({ searchParams }: { searchParams?: Promi
         emptyLabel={label(locale, 'today.noStayToCharge')}
       />
       <div className={`grid gap-3 ${canCreate ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
-        {canCreate ? <Link href={`/reservations/new`} className="btn-primary min-h-16 text-base">{label(locale, 'today.checkIn')}</Link> : null}
-        <Link href={`/sales?hotel=${hotel.id}&date=${date}${outlet ? `&outlet=${outlet.id}` : ''}`} className="btn-primary min-h-16 text-base">{label(locale, 'today.expense')}</Link>
-        <Link href={`/today/close?${query}`} className="btn-primary min-h-16 bg-emerald-800 text-base hover:bg-emerald-700">{label(locale, 'today.close')}</Link>
+        {canCreate ? <Link href={todayWalkInHref()} className="btn-primary min-h-16 text-base">{label(locale, 'today.walkIn')}</Link> : null}
+        <Link href={todayExpenseHref(query)} className="btn-primary min-h-16 text-base">{label(locale, 'today.expense')}</Link>
+        <Link href={todayCashSheetHref(query)} className="btn-primary min-h-16 bg-emerald-800 text-base hover:bg-emerald-700">{label(locale, 'today.close')}</Link>
       </div>
 
       {outlet ? (
         <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-950">
-          {outlet.name} is a reporting unit. It uses this same daily page. Room numbers below belong to {hotel.name}. Restaurant sales go through Add expense and Close the day.
+          {outlet.name} is a reporting unit. It uses this same daily page. Room numbers below belong to {hotel.name}. Restaurant sales go through Add expense and the Daily cash sheet.
         </p>
       ) : null}
 
