@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { canAccessHotel, canManageReservationCharges } from '@/lib/auth';
 import { businessToday } from '@/lib/date';
 import { lockedDayMessage } from '@/lib/day-lock';
+import { isGeneratedTotalAmountError, withoutTotalAmount } from '@/lib/charge-total';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { AUTO_BREAKFAST_REMOVED_ACTION, canDeleteFolioCharge, isAutoBreakfastCharge } from '@/lib/breakfast-toggle';
 import { stayFolioView } from '@/lib/stay-total';
@@ -21,11 +22,6 @@ function hasOwn(object: Record<string, unknown>, key: string) {
   return Object.prototype.hasOwnProperty.call(object, key);
 }
 
-function isGeneratedTotalAmountError(error: { message?: string } | null) {
-  const message = error?.message || '';
-  return message.includes('generated column') || message.includes('non-DEFAULT value into column "total_amount"');
-}
-
 async function updateCharge(chargeId: string, payload: Record<string, unknown>) {
   const updated = await supabaseAdmin
     .from('reservation_charges')
@@ -38,10 +34,9 @@ async function updateCharge(chargeId: string, payload: Record<string, unknown>) 
     return updated;
   }
 
-  const { total_amount: _totalAmount, ...withoutTotal } = payload;
   return supabaseAdmin
     .from('reservation_charges')
-    .update(withoutTotal)
+    .update(withoutTotalAmount(payload))
     .eq('id', chargeId)
     .select('*')
     .single();

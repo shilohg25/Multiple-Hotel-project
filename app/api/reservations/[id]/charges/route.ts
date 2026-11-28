@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { canAccessHotel, canAddReservationCharges } from '@/lib/auth';
 import { businessToday } from '@/lib/date';
 import { lockedDayMessage } from '@/lib/day-lock';
+import { isGeneratedTotalAmountError, withoutTotalAmount } from '@/lib/charge-total';
 import { jsonError, requireApiStaff, denyUnless } from '@/lib/api';
 import { normalizeServiceCategory } from '@/lib/service-categories';
 import { supabaseAdmin } from '@/lib/supabase-admin';
@@ -16,11 +17,6 @@ function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
 }
 
-function isGeneratedTotalAmountError(error: { message?: string } | null) {
-  const message = error?.message || '';
-  return message.includes('generated column') || message.includes('non-DEFAULT value into column "total_amount"');
-}
-
 async function insertCharge(payload: Record<string, unknown>) {
   const inserted = await supabaseAdmin
     .from('reservation_charges')
@@ -32,10 +28,9 @@ async function insertCharge(payload: Record<string, unknown>) {
     return inserted;
   }
 
-  const { total_amount: _totalAmount, ...withoutTotal } = payload;
   return supabaseAdmin
     .from('reservation_charges')
-    .insert(withoutTotal)
+    .insert(withoutTotalAmount(payload))
     .select('*')
     .single();
 }
